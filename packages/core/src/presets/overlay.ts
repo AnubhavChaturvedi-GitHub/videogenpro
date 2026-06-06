@@ -42,7 +42,7 @@ export const overlayPresets: Preset[] = [
   {
     id: 'overlay.fade', category: 'overlay', description: 'fade', tags: ['dim'], continuous: true,
     params: { amount: { default: 0.5, min: 0, max: 1 } },
-    defaultDuration: 5, apply: (_p, prm) => ({ opacity: 1 - prm.amount }),
+    defaultDuration: 5, apply: (_p, prm) => ({ css: { background: `rgba(0,0,0,${prm.amount})` } }),
   },
   {
     id: 'overlay.vignette', category: 'overlay', description: 'vignette', tags: ['cinematic'], continuous: true,

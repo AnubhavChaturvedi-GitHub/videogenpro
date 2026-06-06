@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { overlayPresets } from './presets/overlay';
 
 // Validation for the IR. Agent edits and hand-written JSON are checked here
 // before they ever reach the renderer, so bad documents fail loud and early.
@@ -34,6 +35,16 @@ const transform = z.object({
 
 const rect = z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).optional();
 
+// Single source of truth: the set of legal overlay effects is derived from the
+// overlay preset library (overlayPresets), not a hand-maintained list. The
+// editor builds overlay layers via `effect = id.split('.')[1]` (overlayLayerFromId),
+// so the effect name is exactly the preset id with its 'overlay.' prefix stripped.
+// Deriving here guarantees every overlay the editor can create validates,
+// persists (POST /api/composition) and renders — while a bad id (e.g. 'grayscale')
+// still fails loud instead of rendering as a silent no-op.
+const overlayEffectValues = overlayPresets.map((p) => p.id.replace(/^overlay\./, ''));
+const overlayEffect = z.enum(overlayEffectValues as [string, ...string[]]);
+
 const baseLayer = {
   id: z.string().optional(),
   start: z.number().optional(),
@@ -52,7 +63,7 @@ const layer = z.discriminatedUnion('type', [
   z.object({ ...baseLayer, type: z.literal('html'), html: z.string() }),
   z.object({ ...baseLayer, type: z.literal('three'), scene: z.string(), props: z.record(z.number()).optional() }),
   z.object({ ...baseLayer, type: z.literal('shape'), shape: z.enum(['rect', 'circle', 'line']), fill: z.string().optional(), radius: z.number().optional() }),
-  z.object({ ...baseLayer, type: z.literal('overlay'), effect: z.string(), params: z.record(z.number()).optional() }),
+  z.object({ ...baseLayer, type: z.literal('overlay'), effect: overlayEffect, params: z.record(z.number()).optional() }),
   z.object({ ...baseLayer, type: z.literal('fx'), effect: z.string(), params: z.record(z.number()).optional() }),
 ]);
 

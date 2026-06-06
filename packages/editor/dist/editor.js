@@ -23,6 +23,18 @@
   };
   var ease = (name, p) => (EASINGS[name ?? "linear"] ?? EASINGS.linear)(clamp01(p));
 
+  // packages/core/src/preset.ts
+  var resolveParams = (preset, given) => {
+    const out = {};
+    for (const [k, spec] of Object.entries(preset.params)) {
+      let v = given?.[k] ?? spec.default;
+      if (spec.min !== void 0) v = Math.max(spec.min, v);
+      if (spec.max !== void 0) v = Math.min(spec.max, v);
+      out[k] = v;
+    }
+    return out;
+  };
+
   // node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
   var external_exports = {};
   __export(external_exports, {
@@ -4064,6 +4076,110 @@
   };
   var NEVER = INVALID;
 
+  // packages/core/src/presets/overlay.ts
+  var overlayPresets = [
+    {
+      id: "overlay.blur",
+      category: "overlay",
+      description: "blur",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 8, min: 0, max: 40, unit: "px" } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `blur(${prm.amount}px)` } })
+    },
+    {
+      id: "overlay.black-white",
+      category: "overlay",
+      description: "black & white",
+      tags: ["filter", "mono"],
+      continuous: true,
+      params: { amount: { default: 1, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `grayscale(${prm.amount})` } })
+    },
+    {
+      id: "overlay.sepia",
+      category: "overlay",
+      description: "sepia",
+      tags: ["filter", "warm"],
+      continuous: true,
+      params: { amount: { default: 0.8, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `sepia(${prm.amount})` } })
+    },
+    {
+      id: "overlay.brighten",
+      category: "overlay",
+      description: "brighten",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 0.3, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `brightness(${1 + prm.amount})` } })
+    },
+    {
+      id: "overlay.darken",
+      category: "overlay",
+      description: "darken",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 0.4, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `brightness(${1 - prm.amount})` } })
+    },
+    {
+      id: "overlay.contrast",
+      category: "overlay",
+      description: "contrast",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 0.4, min: 0, max: 1.5 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `contrast(${1 + prm.amount})` } })
+    },
+    {
+      id: "overlay.saturate",
+      category: "overlay",
+      description: "saturate",
+      tags: ["filter", "color"],
+      continuous: true,
+      params: { amount: { default: 1.6, min: 0, max: 3 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `saturate(${prm.amount})` } })
+    },
+    {
+      id: "overlay.fade",
+      category: "overlay",
+      description: "fade",
+      tags: ["dim"],
+      continuous: true,
+      params: { amount: { default: 0.5, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { background: `rgba(0,0,0,${prm.amount})` } })
+    },
+    {
+      id: "overlay.vignette",
+      category: "overlay",
+      description: "vignette",
+      tags: ["cinematic"],
+      continuous: true,
+      params: { amount: { default: 0.7, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { boxShadow: `inset 0 0 140px ${40 * prm.amount}px rgba(0,0,0,${0.85 * prm.amount})` } })
+    },
+    {
+      id: "overlay.invert",
+      category: "overlay",
+      description: "invert",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 1, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `invert(${prm.amount})` } })
+    }
+  ];
+
   // packages/core/src/schema.ts
   var presetInstance = external_exports.object({
     id: external_exports.string(),
@@ -4095,6 +4211,8 @@
     anchor: external_exports.tuple([external_exports.number(), external_exports.number()]).optional()
   }).optional();
   var rect = external_exports.object({ x: external_exports.number(), y: external_exports.number(), w: external_exports.number(), h: external_exports.number() }).optional();
+  var overlayEffectValues = overlayPresets.map((p) => p.id.replace(/^overlay\./, ""));
+  var overlayEffect = external_exports.enum(overlayEffectValues);
   var baseLayer = {
     id: external_exports.string().optional(),
     start: external_exports.number().optional(),
@@ -4112,7 +4230,7 @@
     external_exports.object({ ...baseLayer, type: external_exports.literal("html"), html: external_exports.string() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("three"), scene: external_exports.string(), props: external_exports.record(external_exports.number()).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("shape"), shape: external_exports.enum(["rect", "circle", "line"]), fill: external_exports.string().optional(), radius: external_exports.number().optional() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("overlay"), effect: external_exports.string(), params: external_exports.record(external_exports.number()).optional() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("overlay"), effect: overlayEffect, params: external_exports.record(external_exports.number()).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("fx"), effect: external_exports.string(), params: external_exports.record(external_exports.number()).optional() })
   ]);
   var scene = external_exports.object({
@@ -4978,110 +5096,6 @@
     }
   ];
 
-  // packages/core/src/presets/overlay.ts
-  var overlayPresets = [
-    {
-      id: "overlay.blur",
-      category: "overlay",
-      description: "blur",
-      tags: ["filter"],
-      continuous: true,
-      params: { amount: { default: 8, min: 0, max: 40, unit: "px" } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ css: { filter: `blur(${prm.amount}px)` } })
-    },
-    {
-      id: "overlay.black-white",
-      category: "overlay",
-      description: "black & white",
-      tags: ["filter", "mono"],
-      continuous: true,
-      params: { amount: { default: 1, min: 0, max: 1 } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ css: { filter: `grayscale(${prm.amount})` } })
-    },
-    {
-      id: "overlay.sepia",
-      category: "overlay",
-      description: "sepia",
-      tags: ["filter", "warm"],
-      continuous: true,
-      params: { amount: { default: 0.8, min: 0, max: 1 } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ css: { filter: `sepia(${prm.amount})` } })
-    },
-    {
-      id: "overlay.brighten",
-      category: "overlay",
-      description: "brighten",
-      tags: ["filter"],
-      continuous: true,
-      params: { amount: { default: 0.3, min: 0, max: 1 } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ css: { filter: `brightness(${1 + prm.amount})` } })
-    },
-    {
-      id: "overlay.darken",
-      category: "overlay",
-      description: "darken",
-      tags: ["filter"],
-      continuous: true,
-      params: { amount: { default: 0.4, min: 0, max: 1 } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ css: { filter: `brightness(${1 - prm.amount})` } })
-    },
-    {
-      id: "overlay.contrast",
-      category: "overlay",
-      description: "contrast",
-      tags: ["filter"],
-      continuous: true,
-      params: { amount: { default: 0.4, min: 0, max: 1.5 } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ css: { filter: `contrast(${1 + prm.amount})` } })
-    },
-    {
-      id: "overlay.saturate",
-      category: "overlay",
-      description: "saturate",
-      tags: ["filter", "color"],
-      continuous: true,
-      params: { amount: { default: 1.6, min: 0, max: 3 } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ css: { filter: `saturate(${prm.amount})` } })
-    },
-    {
-      id: "overlay.fade",
-      category: "overlay",
-      description: "fade",
-      tags: ["dim"],
-      continuous: true,
-      params: { amount: { default: 0.5, min: 0, max: 1 } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ opacity: 1 - prm.amount })
-    },
-    {
-      id: "overlay.vignette",
-      category: "overlay",
-      description: "vignette",
-      tags: ["cinematic"],
-      continuous: true,
-      params: { amount: { default: 0.7, min: 0, max: 1 } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ css: { boxShadow: `inset 0 0 140px ${40 * prm.amount}px rgba(0,0,0,${0.85 * prm.amount})` } })
-    },
-    {
-      id: "overlay.invert",
-      category: "overlay",
-      description: "invert",
-      tags: ["filter"],
-      continuous: true,
-      params: { amount: { default: 1, min: 0, max: 1 } },
-      defaultDuration: 5,
-      apply: (_p, prm) => ({ css: { filter: `invert(${prm.amount})` } })
-    }
-  ];
-
   // packages/core/src/presets/index.ts
   var ALL = [
     ...textPresets,
@@ -5093,6 +5107,7 @@
     ...transitionPresets
   ];
   var REGISTRY = new Map(ALL.map((p) => [p.id, p]));
+  var getPreset = (id) => REGISTRY.get(id);
   var allPresets = () => [...REGISTRY.values()];
   var buildManifest = () => allPresets().map((p) => ({
     id: p.id,
@@ -5108,7 +5123,10 @@
   // packages/editor/src/editor.ts
   var MANIFEST = buildManifest();
   var MAN = new Map(MANIFEST.map((e) => [e.id, e]));
-  var LABELW = 98;
+  var LABELW = 104;
+  var PX_MIN = 6;
+  var PX_MAX = 800;
+  var KF_EASINGS = ["linear", "easeIn", "easeOut", "easeInOut", "easeOutBack", "easeOutExpo", "easeOutCubic", "easeInOutCubic"];
   var I = {
     play: '<polygon points="6 3 20 12 6 21 6 3"/>',
     pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
@@ -5204,7 +5222,7 @@
     if (S.sceneBase.length !== S.ir.scenes.length) captureSceneBase();
     S.ir.scenes.forEach((sc, i) => {
       let maxEnd = 0;
-      for (const l of sc.layers) if (l.duration != null) maxEnd = Math.max(maxEnd, (l.start ?? 0) + l.duration);
+      for (const l of sc.layers) if (l.duration != null && l.type !== "fx") maxEnd = Math.max(maxEnd, (l.start ?? 0) + l.duration);
       const base = S.sceneBase[i] ?? 0.5;
       sc.duration = +Math.max(0.5, base, maxEnd).toFixed(2);
     });
@@ -5224,6 +5242,191 @@
       break;
     }
     return si;
+  }
+  function effectiveTotal() {
+    let t = S.total;
+    const info = typeof VGP?.audioInfo === "function" ? VGP.audioInfo() : [];
+    (S.ir?.audio ?? []).forEach((a, i) => {
+      let dur = a.duration;
+      if (dur == null) {
+        const fileDur = info?.[i]?.duration ?? null;
+        if (fileDur != null) dur = Math.max(0, fileDur - (a.trimStart ?? 0));
+      }
+      const end = (a.start ?? 0) + (dur ?? 0);
+      if (end > t) t = end;
+    });
+    return t;
+  }
+  var EASE_FNS = {
+    linear: (p) => p,
+    easeIn: (p) => p * p,
+    easeOut: (p) => 1 - (1 - p) * (1 - p),
+    easeInOut: (p) => p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2,
+    easeOutCubic: (p) => 1 - Math.pow(1 - p, 3),
+    easeInOutCubic: (p) => p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2,
+    easeOutExpo: (p) => p >= 1 ? 1 : 1 - Math.pow(2, -10 * p),
+    easeOutBack: (p) => {
+      const c1 = 1.70158, c3 = c1 + 1;
+      return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+    }
+  };
+  function keyframeValueAt(kfs, t, fallback) {
+    if (!kfs || kfs.length === 0) return fallback;
+    if (t <= kfs[0].t) return kfs[0].value;
+    if (t >= kfs[kfs.length - 1].t) return kfs[kfs.length - 1].value;
+    for (let i = 0; i < kfs.length - 1; i++) {
+      const a = kfs[i], b = kfs[i + 1];
+      if (t >= a.t && t <= b.t) {
+        const local = (t - a.t) / (b.t - a.t);
+        const e = (EASE_FNS[b.easing] ?? EASE_FNS.linear)(local);
+        return a.value + (b.value - a.value) * e;
+      }
+    }
+    return fallback;
+  }
+  function tfAt(layer2, sceneIdx, prop, fallback) {
+    const off = S.offsets[sceneIdx] ?? 0;
+    const localT = S.playhead - (off + (layer2.start ?? 0));
+    return keyframeValueAt(layer2.keyframes?.[prop], localT, fallback);
+  }
+  var isKeyframed = (layer2, prop) => (layer2?.keyframes?.[prop]?.length ?? 0) > 0;
+  var clamp012 = (v) => Math.max(0, Math.min(1, v));
+  function presetProgressE(inst, layerLocalT, layerDur, continuous) {
+    if (continuous) return clamp012(layerLocalT / Math.max(1e-4, layerDur));
+    const preset = getPreset(inst.id);
+    const dur = inst.duration ?? preset?.defaultDuration ?? 0.6;
+    if (preset?.fromEnd) {
+      const effDur = Math.min(dur, layerDur);
+      return clamp012((layerLocalT - (layerDur - effDur)) / Math.max(1e-4, effDur));
+    }
+    const start = inst.start ?? 0;
+    return clamp012((layerLocalT - start) / Math.max(1e-4, dur));
+  }
+  function renderedDelta(layer2, sceneIdx) {
+    const scene2 = S.ir.scenes[sceneIdx];
+    const off = S.offsets[sceneIdx] ?? 0;
+    const sceneLocalT = S.playhead - off;
+    const start = layer2.start ?? 0;
+    const dur = layer2.duration ?? scene2.duration;
+    const layerLocalT = sceneLocalT - start;
+    const out = {
+      x: tfAt(layer2, sceneIdx, "x", layer2.transform?.x ?? 0),
+      y: tfAt(layer2, sceneIdx, "y", layer2.transform?.y ?? 0),
+      scale: tfAt(layer2, sceneIdx, "scale", layer2.transform?.scale ?? 1),
+      rotate: tfAt(layer2, sceneIdx, "rotate", layer2.transform?.rotate ?? 0),
+      opacity: tfAt(layer2, sceneIdx, "opacity", layer2.transform?.opacity ?? 1)
+    };
+    const entries = (layer2.presets ?? []).map((inst) => ({ inst, localT: layerLocalT, dur }));
+    const myIdx = scene2.layers.indexOf(layer2);
+    scene2.layers.forEach((fx, j) => {
+      if (fx.type !== "fx") return;
+      const tgt = resolveFxTarget(scene2, j);
+      if (!tgt || tgt.index !== myIdx) return;
+      const fs = fx.start ?? 0, fd = fx.duration ?? scene2.duration;
+      if (sceneLocalT >= fs - 1e-4 && sceneLocalT < fs + fd + 1e-4) entries.push({ inst: { id: fx.effect, params: fx.params }, localT: sceneLocalT - fs, dur: fd });
+    });
+    for (const e of entries) {
+      const preset = getPreset(e.inst.id);
+      if (!preset || !preset.apply || preset.split) continue;
+      if (preset.category === "text" && layer2.type !== "text") continue;
+      const p = presetProgressE(e.inst, e.localT, e.dur, !!preset.continuous);
+      const d = preset.apply(p, resolveParams(preset, e.inst.params), { index: 0, count: 1, time: e.localT, dur: e.dur });
+      if (d.x) out.x += d.x;
+      if (d.y) out.y += d.y;
+      if (d.scale !== void 0) out.scale *= d.scale;
+      if (d.scaleX !== void 0) out.scale *= d.scaleX;
+      if (d.scaleY !== void 0) out.scale *= d.scaleY;
+      if (d.rotate) out.rotate += d.rotate;
+      if (d.opacity !== void 0) out.opacity *= d.opacity;
+    }
+    return out;
+  }
+  function activeTransformPreset(layer2, sceneIdx) {
+    const scene2 = S.ir.scenes[sceneIdx];
+    const off = S.offsets[sceneIdx] ?? 0;
+    const sceneLocalT = S.playhead - off;
+    const start = layer2.start ?? 0;
+    const dur = layer2.duration ?? scene2.duration;
+    const layerLocalT = sceneLocalT - start;
+    const entries = (layer2.presets ?? []).map((inst) => ({ inst, localT: layerLocalT, dur }));
+    const myIdx = scene2.layers.indexOf(layer2);
+    scene2.layers.forEach((fx, j) => {
+      if (fx.type !== "fx") return;
+      const tgt = resolveFxTarget(scene2, j);
+      if (!tgt || tgt.index !== myIdx) return;
+      const fs = fx.start ?? 0, fd = fx.duration ?? scene2.duration;
+      if (sceneLocalT >= fs - 1e-4 && sceneLocalT < fs + fd + 1e-4) entries.push({ inst: { id: fx.effect, params: fx.params }, localT: sceneLocalT - fs, dur: fd });
+    });
+    for (const e of entries) {
+      const preset = getPreset(e.inst.id);
+      if (!preset || !preset.apply || preset.split || preset.continuous) continue;
+      if (preset.category === "text" && layer2.type !== "text") continue;
+      const p = presetProgressE(e.inst, e.localT, e.dur, false);
+      if (p <= 1e-4 || p >= 0.9999) continue;
+      const d = preset.apply(p, resolveParams(preset, e.inst.params), { index: 0, count: 1, time: e.localT, dur: e.dur });
+      if (d.x || d.y || d.rotate || d.scale !== void 0 && d.scale !== 1 || d.scaleX !== void 0 && d.scaleX !== 1 || d.scaleY !== void 0 && d.scaleY !== 1) return true;
+    }
+    return false;
+  }
+  function videoSrcDuration(layer2) {
+    if (layer2?.type !== "video" || !layer2.src) return null;
+    const want = assetUrl(layer2.src);
+    const vids = Array.from(document.querySelectorAll("#stage video"));
+    for (const v of vids) {
+      if ((v.currentSrc || v.src) === want && isFinite(v.duration) && v.duration > 0) return v.duration;
+    }
+    return null;
+  }
+  function resolveFxTarget(scene2, idx) {
+    for (let j = idx - 1; j >= 0; j--) {
+      const ty = scene2.layers[j]?.type;
+      if (ty !== "fx" && ty !== "overlay") return { layer: scene2.layers[j], index: j };
+    }
+    return null;
+  }
+  function normalizeZ(sceneIdx) {
+    const arr = S.ir.scenes[sceneIdx]?.layers;
+    if (!arr) return;
+    arr.forEach((L, i) => {
+      L.zIndex = L.type === "overlay" ? 9e3 + i : i;
+    });
+  }
+  function timeAtClientX(clientX, rectLeft) {
+    const left = rectLeft ?? $("tlInner").getBoundingClientRect().left;
+    return (clientX - left - LABELW) / S.pxPerSec;
+  }
+  var clampStart = (s, max) => +Math.max(0, Math.min(max, s)).toFixed(3);
+  var clampDuration = (d, min, max) => +Math.max(min, Math.min(max, d)).toFixed(3);
+  var SNAP_PX = 8;
+  function snapTime(absT, targets, bypass) {
+    if (bypass) return absT;
+    const tol = SNAP_PX / S.pxPerSec;
+    let best = absT, bestD = tol;
+    for (const t of targets) {
+      const d = Math.abs(t - absT);
+      if (d <= bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+  function sceneSnapTargets(si, scene2, exceptLi) {
+    const out = [0, S.playhead, ...S.offsets];
+    const sceneOff = S.offsets[si] ?? 0;
+    scene2.layers.forEach((L, j) => {
+      if (j === exceptLi) return;
+      const st = sceneOff + (L.start ?? 0);
+      const du = L.duration ?? scene2.duration;
+      out.push(st, st + du);
+    });
+    return out;
+  }
+  function presetAppliesTo(presetId, layerType) {
+    if (layerType === "overlay") return false;
+    const e = MAN.get(presetId);
+    if (e && (e.category === "text" || e.split) && layerType !== "text") return false;
+    return true;
   }
   function fit() {
     const wrap = document.querySelector(".stagewrap") ?? $("scaler").parentElement;
@@ -5331,6 +5534,7 @@
     S.history = [S.lastSyncJson];
     S.histIndex = 0;
     captureSceneBase();
+    ir.scenes.forEach((_, i) => normalizeZ(i));
     derive();
     autoFit();
     mountPreview();
@@ -5345,26 +5549,32 @@
   var overlayLayerFromId = (id) => {
     const entry = MAN.get(id);
     const effect = id.split(".")[1];
-    return { type: "overlay", effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: 3, zIndex: 9999, presets: [{ id: "in.fade" }], transform: {} };
+    return { type: "overlay", effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: entry?.defaultDuration ?? 5, presets: [{ id: "in.fade" }], transform: {} };
   };
-  var newFxLayer = (target, sceneDur, presetId) => ({ type: "fx", effect: presetId, params: {}, start: target.start ?? 0, duration: target.duration ?? sceneDur });
+  var newFxLayer = (target, sceneDur, presetId) => {
+    const entry = MAN.get(presetId);
+    const full = target.duration ?? sceneDur;
+    const dur = entry?.split && !entry?.continuous && entry?.defaultDuration ? Math.min(full, entry.defaultDuration) : full;
+    return { type: "fx", effect: presetId, params: {}, start: target.start ?? 0, duration: dur };
+  };
   var newAssetLayer = (a) => ({ type: a.type, src: a.src, fit: "cover", duration: 2.5, presets: a.type === "image" ? [{ id: "image.ken-burns" }] : [], transform: {} });
   function addLayerAtPlayhead(layer2) {
     const si = sceneAt(S.playhead);
     const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2);
     layer2.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2)));
     S.ir.scenes[si].layers.push(layer2);
+    normalizeZ(si);
     S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 };
     setTab("props");
     structuralEdit();
   }
   function dropLayerAt(clientX, layer2) {
-    const r = $("tlInner").getBoundingClientRect();
-    const t = Math.max(0, Math.min(S.total, (clientX - r.left - LABELW) / S.pxPerSec));
+    const t = Math.max(0, Math.min(S.total, timeAtClientX(clientX)));
     const si = sceneAt(t);
     const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2);
     layer2.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2)));
     S.ir.scenes[si].layers.push(layer2);
+    normalizeZ(si);
     S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 };
     setTab("props");
     structuralEdit();
@@ -5377,16 +5587,31 @@
     }
     renderAssets();
   }
-  async function uploadFiles(files) {
-    for (const f of Array.from(files)) {
-      const type = f.type.startsWith("video") ? "video" : "image";
-      try {
-        const a = await (await fetch("/api/upload?name=" + encodeURIComponent(f.name) + "&type=" + type, { method: "POST", body: f })).json();
-        if (a?.src) S.assets.unshift(a);
-      } catch {
-      }
+  var fileType = (f) => f.type.startsWith("video") ? "video" : f.type.startsWith("audio") ? "audio" : "image";
+  async function uploadOne(f, type) {
+    const ty = type ?? fileType(f);
+    try {
+      const a = await (await fetch("/api/upload?name=" + encodeURIComponent(f.name) + "&type=" + ty, { method: "POST", body: f })).json();
+      if (a?.src) S.assets.unshift(a);
+      return a;
+    } catch {
+      return null;
     }
+  }
+  async function uploadFiles(files) {
+    for (const f of Array.from(files)) await uploadOne(f);
     renderAssets();
+  }
+  function addAudioTrack(src, clientX) {
+    S.ir.audio = S.ir.audio || [];
+    const maxStart = Math.max(0, S.total - 0.1);
+    const start = clientX != null ? Math.min(maxStart, Math.max(0, +timeAtClientX(clientX).toFixed(2))) : 0;
+    S.ir.audio.push({ src, start, volume: 1 });
+    S.selAudio = S.ir.audio.length - 1;
+    S.selected = null;
+    setTab("props");
+    structuralEdit();
+    showToast("Audio track added: " + src.split("/").pop());
   }
   function renderAssets() {
     const g = $("assetGrid");
@@ -5407,6 +5632,11 @@
         v.src = u;
         v.muted = true;
         d.appendChild(v);
+      } else if (a.type === "audio") {
+        const ph = el("div");
+        ph.style.cssText = "display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:var(--t-audio)";
+        ph.innerHTML = icon("audio");
+        d.appendChild(ph);
       } else {
         const im = el("img");
         im.src = u;
@@ -5426,17 +5656,47 @@
     derive();
     const inner = $("tlInner");
     inner.innerHTML = "";
-    const width = LABELW + S.total * S.pxPerSec + 40;
+    const eff = effectiveTotal();
+    const width = LABELW + eff * S.pxPerSec + 40;
     inner.style.width = width + "px";
     const ruler = el("div", "ruler");
     ruler.style.width = width + "px";
     const STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
     const tickStep = STEPS.find((s) => s * S.pxPerSec >= 64) ?? 600;
-    for (let t = 0; t <= S.total + 1e-3; t += tickStep) {
+    const fmtTick = (t) => tickStep < 1 ? `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}` : fmtClock(t);
+    const minorStep = tickStep / 5;
+    for (let t = minorStep; t < eff; t += minorStep) {
+      if (Math.abs(t / tickStep - Math.round(t / tickStep)) < 1e-6) continue;
+      const mk = el("div", "tick minor");
+      mk.style.cssText = `left:${LABELW + t * S.pxPerSec}px;top:14px;height:12px;border-left:1px solid var(--border);opacity:.4;padding:0`;
+      ruler.appendChild(mk);
+    }
+    if (eff > S.total + 1e-6) {
+      const tailBand = el("div");
+      tailBand.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:${(eff - S.total) * S.pxPerSec}px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.04) 0 6px,transparent 6px 12px);pointer-events:none`;
+      ruler.appendChild(tailBand);
+      const mark = el("div");
+      mark.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:0;border-left:1px dashed var(--t-audio);opacity:.6;pointer-events:none`;
+      mark.title = `scenes end at ${fmtTick(S.total)} \u2014 audio tail beyond this point`;
+      ruler.appendChild(mark);
+    }
+    let lastMajorT = 0;
+    for (let t = 0; t <= eff + 1e-3; t += tickStep) {
       const tk = el("div", "tick");
       tk.style.left = LABELW + t * S.pxPerSec + "px";
-      tk.textContent = fmtClock(t);
+      tk.textContent = fmtTick(t);
       ruler.appendChild(tk);
+      lastMajorT = t;
+    }
+    if (eff - Math.floor(eff / tickStep) * tickStep > 0.01) {
+      const endk = el("div", "tick");
+      endk.style.left = LABELW + eff * S.pxPerSec + "px";
+      const collides = (eff - lastMajorT) * S.pxPerSec < 64;
+      if (collides) {
+        endk.textContent = "";
+        endk.style.borderColor = "var(--border)";
+      } else endk.textContent = fmtTick(eff);
+      ruler.appendChild(endk);
     }
     inner.appendChild(ruler);
     S.ir.scenes.forEach((scene2, si) => {
@@ -5445,7 +5705,8 @@
       tag.innerHTML = icon("film" in I ? "film" : "video") + `Scene ${si + 1} \xB7 ${fmtClock(scene2.duration)}`;
       sr.appendChild(tag);
       inner.appendChild(sr);
-      scene2.layers.map((layer2, li) => ({ layer: layer2, li })).reverse().forEach(({ layer: layer2, li }) => {
+      const effZ = (layer2, i) => layer2.type === "overlay" ? 9e3 + i : i;
+      scene2.layers.map((layer2, li) => ({ layer: layer2, li, z: effZ(layer2, li) })).sort((a, b) => b.z - a.z).forEach(({ layer: layer2, li }) => {
         const track = el("div", "track");
         const label = el("div", "track-label");
         label.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${layerLabel(layer2).slice(0, 9)}</span>`;
@@ -5458,10 +5719,50 @@
         clip.style.background = clipColor[layer2.type] ?? "#555";
         clip.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${layerLabel(layer2).slice(0, 16)}</span>`;
         if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add("sel");
+        if (layer2.type === "fx" && !resolveFxTarget(scene2, li)) {
+          clip.style.opacity = ".5";
+          clip.style.outline = "1px dashed var(--clip-fx)";
+          clip.title = "effect has no target layer below it";
+        }
+        if (layer2.keyframes) {
+          const KF_PROPS = ["x", "y", "scale", "rotate", "opacity"];
+          const propRow = (prop) => {
+            const ix = KF_PROPS.indexOf(prop);
+            return ix < 0 ? KF_PROPS.length : ix;
+          };
+          for (const prop of Object.keys(layer2.keyframes)) {
+            for (const k of layer2.keyframes[prop] || []) {
+              const m = el("div", "kf-marker");
+              m.style.cssText = `position:absolute;top:${1 + propRow(prop) * 8}px;width:7px;height:7px;background:var(--accent);border:1px solid #000;transform:rotate(45deg);left:${Math.max(0, k.t * S.pxPerSec - 3)}px;z-index:3;cursor:pointer`;
+              m.title = `${prop} keyframe @ ${k.t.toFixed(2)}s (click=seek, right-click=delete)`;
+              m.addEventListener("mousedown", (ev) => ev.stopPropagation());
+              m.addEventListener("click", (ev) => {
+                ev.stopPropagation();
+                seekTo(S.offsets[si] + (layer2.start ?? 0) + k.t);
+              });
+              m.addEventListener("contextmenu", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                const arr = layer2.keyframes[prop];
+                const ix = arr.indexOf(k);
+                if (ix >= 0) arr.splice(ix, 1);
+                if (!arr.length) delete layer2.keyframes[prop];
+                structuralEdit();
+              });
+              clip.appendChild(m);
+            }
+          }
+        }
         const handle = el("div", "handle");
         clip.appendChild(handle);
         clip.addEventListener("dragover", (e) => {
-          if (e.dataTransfer?.types.includes("application/x-vgp-preset")) {
+          const ty = e.dataTransfer?.types ?? [];
+          const presetId = ty.includes("application/x-vgp-preset") ? "__p" : "";
+          const overlayDrop = ty.includes("application/x-vgp-overlay");
+          if (overlayDrop) {
+            e.preventDefault();
+            clip.style.outline = "2px solid #fff";
+          } else if (presetId) {
             e.preventDefault();
             clip.style.outline = "2px solid #fff";
           }
@@ -5472,50 +5773,109 @@
         clip.addEventListener("drop", (e) => {
           e.preventDefault();
           clip.style.outline = "";
-          const id = e.dataTransfer?.getData("application/x-vgp-preset");
-          if (id) {
-            scene2.layers.splice(li + 1, 0, newFxLayer(layer2, scene2.duration, id));
-            S.selected = { s: si, l: li + 1 };
-            S.playhead = S.offsets[si] + (layer2.start ?? 0) + 0.05;
-            structuralEdit();
-            showToast("Added " + id.split(".")[1].replace(/-/g, " "));
+          const ov = e.dataTransfer?.getData("application/x-vgp-overlay");
+          if (ov) {
+            dropLayerAt(e.clientX, overlayLayerFromId(ov));
+            showToast("Overlay layer added: " + ov.split(".")[1].replace(/-/g, " "));
+            return;
           }
+          const id = e.dataTransfer?.getData("application/x-vgp-preset");
+          if (!id) return;
+          if (!presetAppliesTo(id, layer2.type)) {
+            showToast(layer2.type === "overlay" ? "effects can't target an overlay layer" : "this effect only works on text layers");
+            return;
+          }
+          scene2.layers.splice(li + 1, 0, newFxLayer(layer2, scene2.duration, id));
+          normalizeZ(si);
+          S.selected = { s: si, l: li + 1 };
+          S.playhead = S.offsets[si] + (layer2.start ?? 0) + 0.05;
+          structuralEdit();
+          showToast("Added " + id.split(".")[1].replace(/-/g, " "));
         });
         clip.onmousedown = (e) => {
-          if (e.target === handle) return;
+          if (e.target === handle || e.button !== 0) return;
           e.preventDefault();
+          const rectLeft = $("tlInner").getBoundingClientRect().left;
           const sx = e.clientX, os = layer2.start ?? 0;
           let moved = false;
+          let cand = os;
+          const isFullScene = layer2.duration == null && layer2.type !== "fx";
+          let maxStart = isFullScene ? Math.max(0, scene2.duration - 0.2) : Math.max(scene2.duration, S.total) || scene2.duration;
+          if (layer2.type === "fx") {
+            const tgt = resolveFxTarget(scene2, li);
+            const winMax = (tgt?.layer.start ?? 0) + (tgt?.layer.duration ?? scene2.duration);
+            maxStart = Math.max(0, winMax - 0.1);
+          }
+          const sceneOff = S.offsets[si] ?? 0;
           const mv = (ev) => {
             const dx = ev.clientX - sx;
             if (Math.abs(dx) > 3) moved = true;
-            layer2.start = +Math.max(0, Math.min(scene2.duration - 0.1, os + dx / S.pxPerSec)).toFixed(3);
-            clip.style.left = LABELW + (S.offsets[si] + layer2.start) * S.pxPerSec + "px";
+            const rawAbs = sceneOff + os + dx / S.pxPerSec;
+            const snappedAbs = snapTime(rawAbs, sceneSnapTargets(si, scene2, li), ev.altKey);
+            cand = clampStart(snappedAbs - sceneOff, maxStart);
+            clip.style.left = LABELW + (sceneOff + cand) * S.pxPerSec + "px";
           };
-          const up = () => {
+          const up = (ev) => {
             window.removeEventListener("mousemove", mv);
             window.removeEventListener("mouseup", up);
-            if (moved) timingEdit();
-            else {
+            if (moved) {
+              layer2.start = clampStart(cand, maxStart);
+              timingEdit();
+            } else if (ev.shiftKey || ev.metaKey || ev.ctrlKey) {
               select(si, li);
-              seekTo((sx - $("tlInner").getBoundingClientRect().left - LABELW) / S.pxPerSec);
+            } else {
+              seekTo(timeAtClientX(sx, rectLeft));
             }
           };
           window.addEventListener("mousemove", mv);
           window.addEventListener("mouseup", up);
         };
+        clip.ondblclick = (e) => {
+          e.stopPropagation();
+          select(si, li);
+        };
         handle.onmousedown = (e) => {
+          if (e.button !== 0) return;
           e.preventDefault();
           e.stopPropagation();
           const sx = e.clientX, od = layer2.duration ?? scene2.duration;
-          const maxDur = Math.max(scene2.duration, S.total) || scene2.duration;
+          const isFx = layer2.type === "fx";
+          const isFullSceneTrim = layer2.duration == null && layer2.type !== "fx";
+          if (layer2.type === "video" && videoSrcDuration(layer2) == null) {
+            showToast("media still loading\u2026");
+            return;
+          }
+          const sceneCap = Math.max(0.1, scene2.duration - (layer2.start ?? 0));
+          const growCap = Math.max(scene2.duration, S.total) || scene2.duration;
+          let maxDur = isFx || isFullSceneTrim ? growCap : e.shiftKey ? growCap : sceneCap;
+          if (layer2.type === "video") {
+            const vd = videoSrcDuration(layer2);
+            if (vd != null) maxDur = Math.min(maxDur, Math.max(0.1, vd - (layer2.trimStart ?? 0)));
+          }
+          if (isFx) {
+            const tgt = resolveFxTarget(scene2, li);
+            const winMax = (tgt?.layer.start ?? 0) + (tgt?.layer.duration ?? scene2.duration);
+            maxDur = Math.max(0.1, winMax - (layer2.start ?? 0));
+          }
+          const sceneOff = S.offsets[si] ?? 0;
+          const clipStartAbs = sceneOff + (layer2.start ?? 0);
+          let moved = false;
+          let pending = od;
           const mv = (ev) => {
-            layer2.duration = +Math.max(0.1, Math.min(maxDur, od + (ev.clientX - sx) / S.pxPerSec)).toFixed(3);
+            if (Math.abs(ev.clientX - sx) > 3) moved = true;
+            if (!moved) return;
+            const minDur = Math.max(0.1, 24 / S.pxPerSec);
+            const rawEndAbs = clipStartAbs + od + (ev.clientX - sx) / S.pxPerSec;
+            const snappedEndAbs = snapTime(rawEndAbs, sceneSnapTargets(si, scene2, li), ev.altKey);
+            pending = clampDuration(snappedEndAbs - clipStartAbs, minDur, maxDur);
+            layer2.duration = pending;
             clip.style.width = Math.max(24, layer2.duration * S.pxPerSec) + "px";
           };
           const up = () => {
             window.removeEventListener("mousemove", mv);
             window.removeEventListener("mouseup", up);
+            if (!moved) return;
+            layer2.duration = clampDuration(pending, Math.max(0.1, 24 / S.pxPerSec), maxDur);
             timingEdit();
           };
           window.addEventListener("mousemove", mv);
@@ -5540,49 +5900,119 @@
         label.innerHTML = tintIcon("audio", "audio") + `<span>${name.slice(0, 9)}</span>`;
         track.appendChild(label);
         const start = a.start ?? 0;
-        const dur = a.duration ?? info[ai]?.duration ?? Math.max(2, S.total - start);
+        const fileDur = info[ai]?.duration ?? null;
+        const metaReady = fileDur != null;
+        const dur = a.duration ?? fileDur ?? Math.max(2, S.total - start);
+        const maxDur = metaReady ? Math.max(0.2, fileDur - (a.trimStart ?? 0)) : Infinity;
         const clip = el("div", "clip audio-clip");
         clip.style.left = LABELW + start * S.pxPerSec + "px";
-        clip.style.width = Math.max(24, dur * S.pxPerSec) + "px";
-        clip.innerHTML = icon("audio") + `<span>${name}</span>`;
+        if (!metaReady && a.duration == null) {
+          clip.style.width = "64px";
+          clip.style.opacity = ".5";
+          clip.style.backgroundImage = "repeating-linear-gradient(45deg,rgba(255,255,255,.08) 0 6px,transparent 6px 12px)";
+        } else clip.style.width = Math.max(24, Math.min(dur, metaReady ? maxDur : dur) * S.pxPerSec) + "px";
+        const vol = a.volume ?? 1;
+        const volBadge = vol === 0 ? "\u{1F507}" : `${Math.round(vol * 100)}%`;
+        clip.innerHTML = icon("audio") + `<span>${name}</span><span style="margin-left:auto;font-size:9px;opacity:${vol === 0 ? ".6" : ".85"}">${volBadge}</span>`;
         if (S.selAudio === ai) clip.classList.add("sel");
+        const lh = el("div", "handle");
+        lh.style.cssText = "right:auto;left:0";
+        clip.appendChild(lh);
         const handle = el("div", "handle");
         clip.appendChild(handle);
+        const audioRectLeft0 = () => $("tlInner").getBoundingClientRect().left;
         clip.onmousedown = (e) => {
-          if (e.target === handle) return;
+          if (e.target === handle || e.target === lh || e.button !== 0) return;
           e.preventDefault();
+          const rectLeft = audioRectLeft0();
           const sx = e.clientX, os = start;
           let moved = false;
+          let cand = os;
+          const maxStart = Math.max(0, effectiveTotal() - 0.1);
           const mv = (ev) => {
             const dx = ev.clientX - sx;
             if (Math.abs(dx) > 3) moved = true;
-            a.start = Math.max(0, +(os + dx / S.pxPerSec).toFixed(2));
-            clip.style.left = LABELW + a.start * S.pxPerSec + "px";
+            const snapped = snapTime(os + dx / S.pxPerSec, [0, S.playhead, ...S.offsets, S.total], ev.altKey);
+            cand = clampStart(snapped, maxStart);
+            clip.style.left = LABELW + cand * S.pxPerSec + "px";
           };
           const up = () => {
             window.removeEventListener("mousemove", mv);
             window.removeEventListener("mouseup", up);
             if (moved) {
+              a.start = clampStart(cand, maxStart);
               liveSeek();
               scheduleSave();
               buildTimeline();
-            } else selectAudio(ai);
+              if (S.selAudio === ai) buildProps();
+            } else if (e.shiftKey || e.metaKey || e.ctrlKey) selectAudio(ai);
+            else seekTo(timeAtClientX(sx, rectLeft));
           };
           window.addEventListener("mousemove", mv);
           window.addEventListener("mouseup", up);
         };
+        clip.ondblclick = (e) => {
+          e.stopPropagation();
+          selectAudio(ai);
+        };
         handle.onmousedown = (e) => {
+          if (e.button !== 0) return;
           e.preventDefault();
           e.stopPropagation();
-          const sx = e.clientX, od = dur;
+          if (!metaReady && a.duration == null) {
+            showToast("audio still loading\u2026");
+            return;
+          }
+          const sx = e.clientX, od = metaReady ? Math.min(dur, maxDur) : dur;
+          let moved = false;
           const mv = (ev) => {
-            a.duration = Math.max(0.2, +(od + (ev.clientX - sx) / S.pxPerSec).toFixed(2));
+            if (Math.abs(ev.clientX - sx) > 3) moved = true;
+            if (!moved) return;
+            const startAbs = a.start ?? 0;
+            const rawEnd = startAbs + od + (ev.clientX - sx) / S.pxPerSec;
+            const snappedEnd = snapTime(rawEnd, [S.playhead, ...S.offsets, S.total], ev.altKey);
+            a.duration = +Math.max(0.2, Math.min(maxDur, snappedEnd - startAbs)).toFixed(2);
             clip.style.width = Math.max(24, a.duration * S.pxPerSec) + "px";
+            liveSeek();
           };
           const up = () => {
             window.removeEventListener("mousemove", mv);
             window.removeEventListener("mouseup", up);
+            if (!moved) return;
             scheduleSave();
+            buildTimeline();
+            if (S.selAudio === ai) buildProps();
+          };
+          window.addEventListener("mousemove", mv);
+          window.addEventListener("mouseup", up);
+        };
+        lh.onmousedown = (e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (!metaReady && a.duration == null) {
+            showToast("audio still loading\u2026");
+            return;
+          }
+          const sx = e.clientX, os = start, ots = a.trimStart ?? 0, od = dur;
+          const mv = (ev) => {
+            let dt = (ev.clientX - sx) / S.pxPerSec;
+            dt = Math.max(-ots, Math.min(od - 0.2, dt));
+            if (os + dt < 0) dt = -os;
+            a.trimStart = +Math.max(0, ots + dt).toFixed(3);
+            a.start = +Math.max(0, os + dt).toFixed(3);
+            a.duration = +Math.max(0.2, od - dt).toFixed(2);
+            clip.style.left = LABELW + a.start * S.pxPerSec + "px";
+            clip.style.width = Math.max(24, a.duration * S.pxPerSec) + "px";
+            liveSeek();
+          };
+          const up = () => {
+            window.removeEventListener("mousemove", mv);
+            window.removeEventListener("mouseup", up);
+            liveSeek();
+            scheduleSave();
+            buildTimeline();
+            if (S.selAudio === ai) buildProps();
           };
           window.addEventListener("mousemove", mv);
           window.addEventListener("mouseup", up);
@@ -5595,14 +6025,27 @@
     ph.id = "playhead";
     inner.appendChild(ph);
     positionPlayhead();
+    const defTrans = S.ir.defaultTransition;
     for (let i = 1; i < S.ir.scenes.length; i++) {
-      const has = !!S.ir.scenes[i].transitionIn;
-      const seam = el("div", "seam" + (has ? "" : " empty"));
+      const own = S.ir.scenes[i].transitionIn;
+      const isCleared = !!own && own.id === "none";
+      const effInst = isCleared ? null : own ?? defTrans;
+      const has = !!effInst;
+      const isDefault = !own && !!defTrans;
+      const seam = el("div", "seam" + (has ? "" : " empty") + (isDefault ? " is-default" : "") + (isCleared ? " cleared" : ""));
       seam.style.left = LABELW + S.offsets[i] * S.pxPerSec - 7 + "px";
-      seam.style.height = "46px";
-      seam.title = has ? `transition: ${S.ir.scenes[i].transitionIn.id} (click to remove)` : "drop a transition here";
+      seam.style.top = "28px";
+      seam.style.height = "40px";
+      if (isCleared) seam.style.opacity = ".45";
+      seam.title = isCleared ? "transition disabled (click to restore default)" : own ? `transition: ${own.id} (click to remove)` : isDefault ? `default transition: ${defTrans.id} (click to override/clear on this boundary)` : "drop a transition here (click to browse)";
       const dot = el("div", "dot");
       seam.appendChild(dot);
+      if (isDefault && !isCleared) {
+        dot.style.background = "transparent";
+        dot.style.border = "1.5px solid var(--accent)";
+        dot.style.boxSizing = "border-box";
+      }
+      seam.addEventListener("mousedown", (e) => e.stopPropagation());
       seam.addEventListener("dragover", (e) => {
         if (e.dataTransfer?.types.includes("application/x-vgp-transition")) {
           e.preventDefault();
@@ -5615,17 +6058,35 @@
         seam.classList.remove("droptgt");
         const id = e.dataTransfer?.getData("application/x-vgp-transition");
         if (id) {
+          const wasOwn = !!own && own.id !== "none";
+          const hadEffective = wasOwn || !own && !!defTrans;
           S.ir.scenes[i].transitionIn = { id };
-          S.playhead = Math.max(0, S.offsets[i] - 0.25);
+          const tEntry = MAN.get(id);
+          const defDur = tEntry?.defaultDuration ?? 0.6;
+          const prevDur = S.ir.scenes[i - 1]?.duration ?? defDur;
+          const tdur = Math.min(defDur, prevDur);
+          S.playhead = S.offsets[i] + Math.min(tdur, defDur) / 2;
           structuralEdit();
-          showToast("Transition added: " + id.split(".")[1]);
+          showToast((hadEffective ? "Transition overridden: " : "Transition added: ") + id.split(".")[1]);
         }
       });
       seam.addEventListener("click", () => {
-        if (S.ir.scenes[i].transitionIn) {
+        if (isCleared) {
+          delete S.ir.scenes[i].transitionIn;
+          structuralEdit();
+          showToast("Default transition restored");
+        } else if (own) {
           delete S.ir.scenes[i].transitionIn;
           structuralEdit();
           showToast("Transition removed");
+        } else if (isDefault) {
+          S.ir.scenes[i].transitionIn = { id: "none" };
+          structuralEdit();
+          showToast("Default transition disabled on this boundary");
+        } else {
+          S.cat = "transition";
+          setTab("anim");
+          showToast("Drop a transition here");
         }
       });
       inner.appendChild(seam);
@@ -5656,6 +6117,10 @@
       box.style.display = "none";
       return;
     }
+    if (layer2.type === "overlay" || layer2.type === "fx") {
+      box.style.display = "none";
+      return;
+    }
     const off = S.offsets[sel.s] ?? 0;
     const st = off + (layer2.start ?? 0);
     const dur = layer2.duration ?? S.ir.scenes[sel.s].duration;
@@ -5663,23 +6128,27 @@
       box.style.display = "none";
       return;
     }
-    const r = layer2.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
-    const tf = layer2.transform ?? {};
-    const sc = tf.scale ?? 1;
-    const cx = r.x + r.w / 2 + (tf.x ?? 0);
-    const cy = r.y + r.h / 2 + (tf.y ?? 0);
+    const r = layer2.rect ?? { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
+    const d = renderedDelta(layer2, sel.s);
+    const sc = d.scale;
+    const cx = r.x + r.w / 2 + d.x;
+    const cy = r.y + r.h / 2 + d.y;
     const w = r.w * sc, h = r.h * sc;
     box.style.display = "block";
     box.style.left = cx - w / 2 + "px";
     box.style.top = cy - h / 2 + "px";
     box.style.width = w + "px";
     box.style.height = h + "px";
-    const rot = tf.rotate ?? 0;
+    const rot = d.rotate;
     box.style.transform = rot ? `rotate(${rot}deg)` : "";
     box.style.transformOrigin = "center center";
     const inv = Math.min(2.4, 1 / (S.scale || 1));
+    const presetActive = activeTransformPreset(layer2, sel.s);
     box.querySelectorAll(".sh").forEach((h2) => {
-      h2.style.transform = `scale(${inv})`;
+      const he = h2;
+      he.style.transform = `scale(${inv})`;
+      he.style.opacity = presetActive ? ".3" : "";
+      he.style.cursor = presetActive ? "not-allowed" : "";
     });
   }
   function initSelHandles() {
@@ -5689,35 +6158,43 @@
         e.preventDefault();
         e.stopPropagation();
         const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
-        if (!layer2.rect) layer2.rect = { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
+        if (activeTransformPreset(layer2, S.selected.s)) {
+          showToast("Move the playhead past the entrance animation to resize.");
+          return;
+        }
+        if (!layer2.rect) layer2.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
         const corner = h.getAttribute("data-h");
         const sx = e.clientX, sy = e.clientY;
         const r0 = { ...layer2.rect };
         const sc = S.scale || 1;
+        const d0 = renderedDelta(layer2, S.selected.s);
+        const tfs = d0.scale || 1;
+        const rot = d0.rotate * Math.PI / 180;
+        const offX = d0.x, offY = d0.y;
+        const cosr = Math.cos(rot), sinr = Math.sin(rot);
+        const sgnX = corner.includes("e") ? 1 : -1;
+        const sgnY = corner.includes("s") ? 1 : -1;
+        const anchorLX = -sgnX * r0.w / 2, anchorLY = -sgnY * r0.h / 2;
+        const ax = anchorLX * tfs, ay = anchorLY * tfs;
+        const anchorSX = ax * cosr - ay * sinr, anchorSY = ax * sinr + ay * cosr;
         const mv = (ev) => {
-          const dx = (ev.clientX - sx) / sc, dy = (ev.clientY - sy) / sc;
-          let x = r0.x, y = r0.y, w = r0.w, hh = r0.h;
-          if (corner === "se") {
-            w = Math.max(20, r0.w + dx);
-            hh = Math.max(20, r0.h + dy);
+          let ldx = (ev.clientX - sx) / sc, ldy = (ev.clientY - sy) / sc;
+          const localDX = (ldx * cosr + ldy * sinr) / tfs;
+          const localDY = (-ldx * sinr + ldy * cosr) / tfs;
+          let w = Math.max(20, r0.w + sgnX * localDX);
+          let hh = Math.max(20, r0.h + sgnY * localDY);
+          if (ev.shiftKey) {
+            const sW = w / (r0.w || 1), sH = hh / (r0.h || 1);
+            const k = Math.abs(sW - 1) >= Math.abs(sH - 1) ? sW : sH;
+            w = Math.max(20, r0.w * k);
+            hh = Math.max(20, r0.h * k);
           }
-          if (corner === "sw") {
-            w = Math.max(20, r0.w - dx);
-            hh = Math.max(20, r0.h + dy);
-            x = r0.x + (r0.w - w);
-          }
-          if (corner === "ne") {
-            w = Math.max(20, r0.w + dx);
-            hh = Math.max(20, r0.h - dy);
-            y = r0.y + (r0.h - hh);
-          }
-          if (corner === "nw") {
-            w = Math.max(20, r0.w - dx);
-            hh = Math.max(20, r0.h - dy);
-            x = r0.x + (r0.w - w);
-            y = r0.y + (r0.h - hh);
-          }
-          layer2.rect = { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(hh) };
+          const newAnchorLX = -sgnX * w / 2, newAnchorLY = -sgnY * hh / 2;
+          const nax = newAnchorLX * tfs, nay = newAnchorLY * tfs;
+          const naSX = nax * cosr - nay * sinr, naSY = nax * sinr + nay * cosr;
+          const c0x = r0.x + r0.w / 2 + offX, c0y = r0.y + r0.h / 2 + offY;
+          const ncx = c0x + anchorSX - naSX, ncy = c0y + anchorSY - naSY;
+          layer2.rect = { x: Math.round(ncx - offX - w / 2), y: Math.round(ncy - offY - hh / 2), w: Math.round(w), h: Math.round(hh) };
           liveSeek();
           updateSelBox();
         };
@@ -5772,32 +6249,156 @@
     return f;
   }
   function kfField(label, prop, value, min, max, step, onIn) {
-    const f = numField(label, value, min, max, step, onIn);
-    const lab = f.querySelector("label");
     const layer2 = S.selected ? S.ir.scenes[S.selected.s].layers[S.selected.l] : null;
-    const n = layer2?.keyframes?.[prop]?.length ?? 0;
+    const keyed2 = !!layer2 && isKeyframed(layer2, prop);
+    const shown = keyed2 && layer2 ? tfAt(layer2, S.selected.s, prop, value) : value;
+    const f = numField(label, shown, min, max, step, (v) => {
+      if (keyed2 && layer2) setKeyframeAtPlayhead(prop, v);
+      else onIn(v);
+    });
+    const lab = f.querySelector("label");
+    const arr = layer2?.keyframes?.[prop] ?? [];
+    const n = arr.length;
+    if (keyed2) lab.title = "keyframe-driven \u2014 editing sets the keyframe at the playhead";
+    if (n > 0) {
+      const eps = kfEpsilon();
+      const prev = el("button", "icon-btn");
+      prev.textContent = "\u2039";
+      prev.title = "prev keyframe";
+      prev.style.cssText = "float:right;padding:1px 6px;font-size:11px";
+      prev.onclick = () => {
+        const lt = playheadLocal();
+        const before = [...arr].reverse().find((k) => k.t < lt - eps);
+        if (before && layer2) seekTo(S.offsets[S.selected.s] + (layer2.start ?? 0) + before.t);
+      };
+      const next = el("button", "icon-btn");
+      next.textContent = "\u203A";
+      next.title = "next keyframe";
+      next.style.cssText = "float:right;padding:1px 6px;font-size:11px";
+      next.onclick = () => {
+        const lt = playheadLocal();
+        const after = arr.find((k) => k.t > lt + eps);
+        if (after && layer2) seekTo(S.offsets[S.selected.s] + (layer2.start ?? 0) + after.t);
+      };
+      const clr = el("button", "icon-btn");
+      clr.textContent = "\u2715";
+      clr.title = "clear all keyframes for this property";
+      clr.style.cssText = "float:right;padding:1px 6px;font-size:10px";
+      clr.onclick = () => clearKeyframes(prop);
+      lab.appendChild(clr);
+      lab.appendChild(next);
+      lab.appendChild(prev);
+    }
     const key = el("button", "icon-btn");
     key.innerHTML = n ? `\u25C6 ${n}` : "\u25C6";
-    key.title = "add keyframe at playhead";
+    key.title = "toggle keyframe at playhead (alt-click clears all)";
     key.style.cssText = "float:right;padding:1px 7px;font-size:10px" + (n ? ";color:var(--accent)" : "");
-    key.onclick = () => addKeyframe(prop);
+    key.onclick = (ev) => {
+      if (ev.altKey) clearKeyframes(prop);
+      else addKeyframe(prop);
+    };
     lab.appendChild(key);
+    if (n > 0) {
+      const lt = playheadLocal();
+      const at = arr.find((k) => Math.abs(k.t - lt) < kfEpsilon());
+      if (at) {
+        const ef = el("div", "field");
+        ef.style.cssText = "margin-top:-2px";
+        const sel = el("select");
+        sel.style.cssText = "font-size:10px;padding:1px 3px";
+        KF_EASINGS.forEach((nm) => {
+          const op = el("option");
+          op.value = nm;
+          op.textContent = nm;
+          if ((at.easing ?? "linear") === nm) op.selected = true;
+          sel.appendChild(op);
+        });
+        sel.onchange = () => {
+          at.easing = sel.value;
+          liveEdit();
+        };
+        const elab = el("label");
+        elab.textContent = "ease \u2190 (into)";
+        elab.title = "easing of the segment arriving into this keyframe";
+        elab.style.cssText = "font-size:9px;color:var(--dim)";
+        const row = el("div", "row");
+        row.appendChild(elab);
+        row.appendChild(sel);
+        ef.appendChild(row);
+        f.appendChild(ef);
+      }
+    }
     return f;
+  }
+  var playheadLocal = () => {
+    if (!S.selected) return 0;
+    const { s, l } = S.selected;
+    const layer2 = S.ir.scenes[s].layers[l];
+    return Math.max(0, S.playhead - (S.offsets[s] + (layer2.start ?? 0)));
+  };
+  var kfEpsilon = () => Math.max(0.02, 0.5 / (S.ir?.fps ?? 30));
+  function snapLocalT(layer2) {
+    const { s } = S.selected;
+    const ld = layer2.duration ?? S.ir.scenes[s].duration;
+    let t = S.playhead - (S.offsets[s] + (layer2.start ?? 0));
+    return +Math.max(0, Math.min(ld, t)).toFixed(3);
+  }
+  function setKeyframeAtPlayhead(prop, value) {
+    if (!S.selected) return;
+    const { s, l } = S.selected;
+    const layer2 = S.ir.scenes[s].layers[l];
+    const off = S.offsets[s] + (layer2.start ?? 0);
+    const ld = layer2.duration ?? S.ir.scenes[s].duration;
+    if (S.playhead < off - 1e-4 || S.playhead > off + ld + 1e-4) {
+      showToast("Move the playhead over the clip to keyframe.");
+      return;
+    }
+    layer2.keyframes = layer2.keyframes || {};
+    const arr = layer2.keyframes[prop] || (layer2.keyframes[prop] = []);
+    const localT = snapLocalT(layer2);
+    const ex = arr.find((k) => Math.abs(k.t - localT) < kfEpsilon());
+    if (ex) ex.value = value;
+    else arr.push({ t: localT, value, easing: "linear" });
+    arr.sort((a, b) => a.t - b.t);
+    liveEdit();
   }
   function addKeyframe(prop) {
     if (!S.selected) return;
     const { s, l } = S.selected;
     const layer2 = S.ir.scenes[s].layers[l];
-    const localT = Math.max(0, +(S.playhead - (S.offsets[s] + (layer2.start ?? 0))).toFixed(2));
-    const cur = layer2.transform?.[prop] ?? (prop === "scale" || prop === "opacity" ? 1 : 0);
+    const off = S.offsets[s] + (layer2.start ?? 0);
+    const ld = layer2.duration ?? S.ir.scenes[s].duration;
+    if (S.playhead < off - 1e-4 || S.playhead > off + ld + 1e-4) {
+      showToast("Move the playhead over the clip to keyframe.");
+      return;
+    }
+    const localT = snapLocalT(layer2);
+    const cur = keyed(prop) ? tfAt(layer2, s, prop, defForProp(prop)) : layer2.transform?.[prop] ?? defForProp(prop);
     layer2.keyframes = layer2.keyframes || {};
     const arr = layer2.keyframes[prop] || (layer2.keyframes[prop] = []);
-    const ex = arr.find((k) => Math.abs(k.t - localT) < 0.04);
-    if (ex) ex.value = cur;
-    else arr.push({ t: localT, value: cur, easing: "easeInOut" });
-    arr.sort((a, b) => a.t - b.t);
+    const exIx = arr.findIndex((k) => Math.abs(k.t - localT) < kfEpsilon());
+    if (exIx >= 0) {
+      arr.splice(exIx, 1);
+      if (!arr.length) delete layer2.keyframes[prop];
+    } else arr.push({ t: localT, value: cur, easing: "linear" });
+    if (arr.length) arr.sort((a, b) => a.t - b.t);
     liveEdit();
+    buildTimeline();
     buildProps();
+  }
+  var defForProp = (prop) => prop === "scale" || prop === "opacity" ? 1 : 0;
+  var keyed = (prop) => {
+    if (!S.selected) return false;
+    const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
+    return isKeyframed(layer2, prop);
+  };
+  function clearKeyframes(prop) {
+    if (!S.selected) return;
+    const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
+    if (layer2.keyframes) {
+      delete layer2.keyframes[prop];
+      structuralEdit();
+    }
   }
   function splitSelected() {
     if (!S.selected) {
@@ -5814,6 +6415,7 @@
       return;
     }
     const second = JSON.parse(JSON.stringify(layer2));
+    delete second.zIndex;
     layer2.duration = +local.toFixed(2);
     second.start = +(ls + local).toFixed(2);
     second.duration = +(ld - local).toFixed(2);
@@ -5822,11 +6424,28 @@
         second.keyframes[prop] = second.keyframes[prop].map((k) => ({ ...k, t: +Math.max(0, k.t - local).toFixed(3) }));
       }
     }
+    if (layer2.keyframes) {
+      for (const prop of Object.keys(layer2.keyframes)) {
+        const arr = layer2.keyframes[prop];
+        const boundaryVal = keyframeValueAt(arr, local, arr[0]?.value ?? defForProp(prop));
+        const kept = arr.filter((k) => k.t < local - 1e-4);
+        const hadBeyond = kept.length !== arr.length;
+        if (hadBeyond) {
+          const lastEasing = kept[kept.length - 1]?.easing ?? "linear";
+          kept.push({ t: +local.toFixed(3), value: +boundaryVal.toFixed(4), easing: lastEasing });
+        }
+        kept.sort((a, b) => a.t - b.t);
+        layer2.keyframes[prop] = kept;
+      }
+    }
     const isExit = (id) => MAN.get(id)?.category === "out" || id.startsWith("out.");
     const isEnter = (id) => !isExit(id) && (MAN.get(id)?.category === "in" || id.startsWith("in."));
     if (Array.isArray(layer2.presets)) layer2.presets = layer2.presets.filter((pr) => !isExit(pr.id));
     if (Array.isArray(second.presets)) second.presets = second.presets.filter((pr) => !isEnter(pr.id));
-    scene2.layers.splice(l + 1, 0, second);
+    let insertAt = l + 1;
+    while (insertAt < scene2.layers.length && scene2.layers[insertAt].type === "fx") insertAt++;
+    scene2.layers.splice(insertAt, 0, second);
+    normalizeZ(s);
     structuralEdit();
   }
   function duplicateSelected() {
@@ -5834,8 +6453,10 @@
     const { s, l } = S.selected;
     const scene2 = S.ir.scenes[s];
     const copy = JSON.parse(JSON.stringify(scene2.layers[l]));
+    delete copy.zIndex;
     copy.start = (copy.start ?? 0) + 0.2;
     scene2.layers.splice(l + 1, 0, copy);
+    normalizeZ(s);
     S.selected = { s, l: l + 1 };
     structuralEdit();
   }
@@ -5847,31 +6468,60 @@
     const { s, l } = S.selected;
     const arr = S.ir.scenes[s].layers;
     const moved = arr[l];
-    const units = [];
-    let cur = null;
-    arr.forEach((L) => {
-      if (L.type === "fx" && cur) cur.push(L);
-      else {
-        cur = [L];
-        units.push(cur);
+    if (!moved) return;
+    const isOverlay = moved.type === "overlay";
+    const overlaySlots = [];
+    const contentSlots = [];
+    arr.forEach((L, i) => {
+      (L.type === "overlay" ? overlaySlots : contentSlots).push(i);
+    });
+    if (isOverlay) {
+      if (overlaySlots.length < 2) {
+        showToast("Only one overlay \u2014 nothing to reorder. Add another overlay to restack.");
+        return;
       }
-    });
-    let ui = units.findIndex((u2) => u2.includes(moved));
-    if (ui < 0 || units.length < 2) return;
-    let ni = ui;
-    if (mode === "top") ni = units.length - 1;
-    else if (mode === "bottom") ni = 0;
-    else if (mode === "up") ni = Math.min(units.length - 1, ui + 1);
-    else ni = Math.max(0, ui - 1);
-    if (ni === ui) return;
-    const [u] = units.splice(ui, 1);
-    units.splice(ni, 0, u);
-    const flat = units.flat();
-    flat.forEach((L, i) => {
-      L.zIndex = L.type === "overlay" ? 9e3 + i : i;
-    });
-    S.ir.scenes[s].layers = flat;
-    S.selected = { s, l: flat.indexOf(moved) };
+      const overlays = overlaySlots.map((i) => arr[i]);
+      let oi = overlays.indexOf(moved);
+      if (oi < 0) return;
+      let ni = oi;
+      if (mode === "top") ni = overlays.length - 1;
+      else if (mode === "bottom") ni = 0;
+      else if (mode === "up") ni = Math.min(overlays.length - 1, oi + 1);
+      else ni = Math.max(0, oi - 1);
+      if (ni === oi) return;
+      const [u] = overlays.splice(oi, 1);
+      overlays.splice(ni, 0, u);
+      overlaySlots.forEach((slot, k) => {
+        arr[slot] = overlays[k];
+      });
+    } else {
+      const contentArr = contentSlots.map((i) => arr[i]);
+      const units = [];
+      let curContent = null;
+      contentArr.forEach((L) => {
+        if (L.type === "fx" && curContent) curContent.push(L);
+        else {
+          curContent = [L];
+          units.push(curContent);
+        }
+      });
+      let ui = units.findIndex((u2) => u2.includes(moved));
+      if (ui < 0 || units.length < 2) return;
+      let ni = ui;
+      if (mode === "top") ni = units.length - 1;
+      else if (mode === "bottom") ni = 0;
+      else if (mode === "up") ni = Math.min(units.length - 1, ui + 1);
+      else ni = Math.max(0, ui - 1);
+      if (ni === ui) return;
+      const [u] = units.splice(ui, 1);
+      units.splice(ni, 0, u);
+      const flat = units.flat();
+      contentSlots.forEach((slot, k) => {
+        arr[slot] = flat[k];
+      });
+    }
+    normalizeZ(s);
+    S.selected = { s, l: arr.indexOf(moved) };
     structuralEdit();
   }
   var projTab = "comp";
@@ -5961,6 +6611,26 @@
       title2.textContent = String(a.src).split("/").pop() ?? "audio";
       title2.style.cssText = "flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis";
       head2.appendChild(title2);
+      const mute = el("button", "icon-btn");
+      mute.textContent = (a.volume ?? 1) === 0 ? "\u{1F507}" : "\u{1F50A}";
+      mute.title = "mute / unmute";
+      mute.onclick = () => {
+        a.volume = (a.volume ?? 1) === 0 ? 1 : 0;
+        liveEdit();
+        buildTimeline();
+        buildProps();
+      };
+      head2.appendChild(mute);
+      const ai = S.selAudio;
+      const del2 = el("button", "icon-btn");
+      del2.innerHTML = icon("trash");
+      del2.title = "delete audio track";
+      del2.onclick = () => {
+        S.ir.audio.splice(ai, 1);
+        S.selAudio = null;
+        structuralEdit();
+      };
+      head2.appendChild(del2);
       p.appendChild(head2);
       const h3 = el("h3");
       h3.textContent = "audio";
@@ -5968,16 +6638,19 @@
       p.appendChild(numField("volume", a.volume ?? 1, 0, 1, 0.01, (v) => {
         a.volume = v;
         liveEdit();
+        buildTimeline();
       }));
-      p.appendChild(numField("start (s)", a.start ?? 0, 0, Math.max(1, S.total), 0.05, (v) => {
+      p.appendChild(numField("start (s)", a.start ?? 0, 0, Math.max(1, S.total - 0.1, effectiveTotal() - 0.1), 0.05, (v) => {
         a.start = v;
         liveSeek();
         buildTimeline();
         scheduleSave();
       }));
       const info = (typeof VGP.audioInfo === "function" ? VGP.audioInfo() : [])[S.selAudio];
-      const curDur = a.duration ?? info?.duration ?? Math.max(1, S.total - (a.start ?? 0));
-      p.appendChild(numField("duration (s)", curDur, 0.2, Math.max(curDur, S.total), 0.05, (v) => {
+      const fileDur = info?.duration ?? null;
+      const curDur = a.duration ?? fileDur ?? Math.max(1, S.total - (a.start ?? 0));
+      const maxDur = fileDur != null ? Math.max(0.2, fileDur - (a.trimStart ?? 0)) : Math.max(curDur, S.total);
+      p.appendChild(numField("duration (s)", Math.min(curDur, maxDur), 0.2, maxDur, 0.05, (v) => {
         a.duration = v;
         buildTimeline();
         scheduleSave();
@@ -6015,14 +6688,16 @@
       del2.innerHTML = icon("trash");
       del2.onclick = () => {
         scene2.layers.splice(l, 1);
+        normalizeZ(s);
         S.selected = null;
         structuralEdit();
       };
       head2.appendChild(del2);
       p.appendChild(head2);
+      const tgt = resolveFxTarget(scene2, l);
       const note = el("div");
       note.style.cssText = "font-size:11px;color:var(--dim);margin-bottom:8px";
-      note.textContent = "applies to the layer directly below this fx track";
+      note.innerHTML = tgt ? `driving: <b>${layerLabel(tgt.layer)}</b>` : "\u26A0 no target layer below this fx \u2014 it renders nothing";
       p.appendChild(note);
       layer2.params = layer2.params || {};
       if (entry) {
@@ -6036,11 +6711,15 @@
         }
       }
       h("timing");
-      p.appendChild(numField("start (s)", layer2.start ?? 0, 0, scene2.duration, 0.05, (v) => {
+      const tgtStart = tgt?.layer.start ?? 0;
+      const tgtDur = tgt?.layer.duration ?? scene2.duration;
+      const winMax = tgtStart + tgtDur;
+      p.appendChild(numField("start (s)", layer2.start ?? 0, 0, Math.max(0, winMax - 0.1), 0.05, (v) => {
         layer2.start = v;
         timingEdit();
       }));
-      p.appendChild(numField("duration (s)", layer2.duration ?? scene2.duration, 0.1, Math.max(scene2.duration, S.total), 0.05, (v) => {
+      const fxDurMax = Math.max(0.1, winMax - (layer2.start ?? 0));
+      p.appendChild(numField("duration (s)", Math.min(layer2.duration ?? fxDurMax, fxDurMax), 0.1, fxDurMax, 0.05, (v) => {
         layer2.duration = v;
         timingEdit();
       }));
@@ -6059,19 +6738,38 @@
     del.innerHTML = icon("trash");
     del.onclick = () => {
       scene2.layers.splice(l, 1);
+      normalizeZ(s);
       S.selected = null;
       structuralEdit();
     };
     head.appendChild(del);
     p.appendChild(head);
-    const arrange = el("div", "arrange");
-    [["arrTop", "To front", "top"], ["arrUp", "Forward", "up"], ["arrDown", "Backward", "down"], ["arrBot", "To back", "bottom"]].forEach(([ic, lbl, mode]) => {
-      const bn = el("button");
-      bn.innerHTML = icon(ic) + `<span>${lbl}</span>`;
-      bn.onclick = () => arrangeLayer(mode);
-      arrange.appendChild(bn);
-    });
-    p.appendChild(arrange);
+    if (layer2.type === "overlay") {
+      const overlayCount = scene2.layers.filter((L) => L.type === "overlay").length;
+      const note = el("div");
+      note.style.cssText = "font-size:11px;color:var(--dim);margin-bottom:8px";
+      note.textContent = overlayCount > 1 ? "Overlays sit above all content; arrange restacks this overlay relative to other overlays." : "Overlays sit above all content. Add another overlay to restack them.";
+      p.appendChild(note);
+      if (overlayCount > 1) {
+        const arrange = el("div", "arrange");
+        [["arrTop", "To front", "top"], ["arrUp", "Forward", "up"], ["arrDown", "Backward", "down"], ["arrBot", "To back", "bottom"]].forEach(([ic, lbl, mode]) => {
+          const bn = el("button");
+          bn.innerHTML = icon(ic) + `<span>${lbl}</span>`;
+          bn.onclick = () => arrangeLayer(mode);
+          arrange.appendChild(bn);
+        });
+        p.appendChild(arrange);
+      }
+    } else {
+      const arrange = el("div", "arrange");
+      [["arrTop", "To front", "top"], ["arrUp", "Forward", "up"], ["arrDown", "Backward", "down"], ["arrBot", "To back", "bottom"]].forEach(([ic, lbl, mode]) => {
+        const bn = el("button");
+        bn.innerHTML = icon(ic) + `<span>${lbl}</span>`;
+        bn.onclick = () => arrangeLayer(mode);
+        arrange.appendChild(bn);
+      });
+      p.appendChild(arrange);
+    }
     if (layer2.type === "text") {
       const f = el("div", "field");
       const lab = el("label");
@@ -6275,8 +6973,16 @@
   function applyFromLibrary(entry) {
     if (entry.category === "transition") {
       const si = S.selected ? S.selected.s : sceneAt(S.playhead);
+      if (si < 1) {
+        showToast("Transitions apply between scenes \u2014 select scene 2 or later.");
+        return;
+      }
       S.ir.scenes[si].transitionIn = { id: entry.id };
-      if (S.selected) S.playhead = Math.max(0, S.offsets[si] - 0.2);
+      const tEntry = MAN.get(entry.id);
+      const defDur = tEntry?.defaultDuration ?? 0.6;
+      const prevDur = S.ir.scenes[si - 1]?.duration ?? defDur;
+      const tdur = Math.min(defDur, prevDur);
+      S.playhead = S.offsets[si] + tdur / 2;
       structuralEdit();
       return;
     }
@@ -6292,7 +6998,12 @@
     const { s, l } = S.selected;
     const scene2 = S.ir.scenes[s];
     const target = scene2.layers[l];
+    if (!presetAppliesTo(entry.id, target.type)) {
+      showToast(target.type === "overlay" ? "effects can't target an overlay layer" : "this effect only works on text layers");
+      return;
+    }
     scene2.layers.splice(l + 1, 0, newFxLayer(target, scene2.duration, entry.id));
+    normalizeZ(s);
     S.selected = { s, l: l + 1 };
     S.playhead = (S.offsets[s] ?? 0) + (target.start ?? 0) + 0.05;
     setTab("props");
@@ -6302,20 +7013,35 @@
   }
   function updateTime() {
     $("tpTime").textContent = fmtClockMs(S.playhead);
-    $("tpTotal").textContent = " / " + fmtClockMs(S.total);
+    $("tpTotal").textContent = " / " + fmtClockMs(effectiveTotal());
+  }
+  function setZoom(px, anchorClientX, persist = true) {
+    const tl = $("tlScroll");
+    const vrect = tl.getBoundingClientRect();
+    const anchorView = anchorClientX != null ? anchorClientX - vrect.left : null;
+    const curT = anchorView != null ? (anchorView + tl.scrollLeft - LABELW) / S.pxPerSec : 0;
+    S.pxPerSec = Math.max(PX_MIN, Math.min(PX_MAX, px));
+    buildTimeline();
+    if (anchorView != null) tl.scrollLeft = LABELW + curT * S.pxPerSec - anchorView;
+    if (persist) {
+      try {
+        localStorage.setItem("vgp.pxPerSec", String(S.pxPerSec));
+      } catch {
+      }
+    }
   }
   function fitTimeline() {
     const w = $("tlScroll").clientWidth || 900;
-    S.pxPerSec = Math.max(6, Math.min(400, (w - LABELW - 40) / Math.max(1, S.total)));
-    buildTimeline();
+    setZoom((w - LABELW - 40) / Math.max(1, effectiveTotal()));
     $("tlScroll").scrollLeft = 0;
   }
   function zoomBy(f) {
-    S.pxPerSec = Math.max(6, Math.min(800, S.pxPerSec * f));
-    buildTimeline();
+    const tl = $("tlScroll");
+    const vr = tl.getBoundingClientRect();
+    setZoom(S.pxPerSec * f, vr.left + vr.width / 2);
   }
   function seekTo(t) {
-    S.playhead = Math.max(0, Math.min(S.total, t));
+    S.playhead = Math.max(0, Math.min(effectiveTotal(), t));
     liveSeek();
     positionPlayhead();
     updateTime();
@@ -6332,11 +7058,12 @@
   var last = performance.now();
   function loop(now) {
     if (S.playing) {
+      const tot = effectiveTotal();
       S.playhead += (now - last) / 1e3;
-      if (S.playhead >= S.total) {
+      if (S.playhead >= tot) {
         if (S.loop) S.playhead = 0;
         else {
-          S.playhead = S.total;
+          S.playhead = tot;
           togglePlay();
         }
       }
@@ -6348,8 +7075,14 @@
     requestAnimationFrame(loop);
   }
   function autoFit() {
+    let stored = NaN;
+    try {
+      stored = parseFloat(localStorage.getItem("vgp.pxPerSec") || "");
+    } catch {
+    }
     const w = $("tlScroll").clientWidth || 900;
-    S.pxPerSec = Math.max(40, Math.min(220, (w - LABELW - 40) / Math.max(1, S.total)));
+    const px = isFinite(stored) && stored > 0 ? stored : (w - LABELW - 40) / Math.max(1, effectiveTotal());
+    S.pxPerSec = Math.max(PX_MIN, Math.min(PX_MAX, px));
   }
   function buildFileMenu() {
     const m = $("fileMenu");
@@ -6450,6 +7183,7 @@
     S.history = [S.lastSyncJson];
     S.histIndex = 0;
     captureSceneBase();
+    S.ir.scenes.forEach((_, i) => normalizeZ(i));
     derive();
     autoFit();
     mountPreview();
@@ -6512,6 +7246,7 @@
       if (S.selected) {
         const { s, l } = S.selected;
         S.ir.scenes[s].layers.splice(l, 1);
+        normalizeZ(s);
         S.selected = null;
         structuralEdit();
       }
@@ -6565,9 +7300,12 @@
     };
     const tl = $("tlScroll");
     tl.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
       const t = e.target;
-      if (t.closest(".clip") || t.closest(".track-label") || t.closest(".sh")) return;
-      const seekFrom = (ev) => seekTo((ev.clientX - $("tlInner").getBoundingClientRect().left - LABELW) / S.pxPerSec);
+      if (t.closest(".clip") || t.closest(".track-label") || t.closest(".scene-tag") || t.closest(".sh") || t.closest(".seam") || t.closest(".kf-marker")) return;
+      e.preventDefault();
+      const rectLeft = $("tlInner").getBoundingClientRect().left;
+      const seekFrom = (ev) => seekTo(timeAtClientX(ev.clientX, rectLeft));
       seekFrom(e);
       const mv = (ev) => seekFrom(ev);
       const up = () => {
@@ -6593,32 +7331,42 @@
       }
       const d = e.dataTransfer?.getData("application/x-vgp-asset");
       if (d) {
-        dropLayerAt(e.clientX, newAssetLayer(JSON.parse(d)));
+        const a = JSON.parse(d);
+        if (a.type === "audio") {
+          addAudioTrack(a.src, e.clientX);
+          return;
+        }
+        dropLayerAt(e.clientX, newAssetLayer(a));
         return;
       }
       if (e.dataTransfer?.files.length) {
+        const files = Array.from(e.dataTransfer.files);
+        const audioFile = files.find((f) => f.type.startsWith("audio"));
+        if (audioFile) {
+          const up = await uploadOne(audioFile, "audio");
+          if (up?.src) addAudioTrack(up.src, e.clientX);
+          return;
+        }
         const before = S.assets.length;
-        await uploadFiles(e.dataTransfer.files);
+        await uploadFiles(files);
         if (S.assets.length > before) dropLayerAt(e.clientX, newAssetLayer(S.assets[0]));
       }
     });
     tl.addEventListener("wheel", (e) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      const r = $("tlInner").getBoundingClientRect();
-      const curT = (e.clientX - r.left - LABELW) / S.pxPerSec;
-      S.pxPerSec = Math.max(30, Math.min(800, S.pxPerSec * (e.deltaY < 0 ? 1.12 : 0.89)));
-      buildTimeline();
-      tl.scrollLeft = LABELW + curT * S.pxPerSec - (e.clientX - r.left);
+      setZoom(S.pxPerSec * (e.deltaY < 0 ? 1.12 : 0.89), e.clientX);
     }, { passive: false });
     const stage = $("stage");
     stage.style.cursor = "move";
     stage.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
       const rect2 = stage.getBoundingClientRect();
       const sc = S.scale || 1;
       const cx = (e.clientX - rect2.left) / sc, cy = (e.clientY - rect2.top) / sc;
       const si = sceneAt(S.playhead);
       const scene2 = S.ir.scenes[si];
+      if (!scene2) return;
       const localT = S.playhead - S.offsets[si];
       let hit = -1;
       for (let li = scene2.layers.length - 1; li >= 0; li--) {
@@ -6627,10 +7375,15 @@
         if (L.type === "overlay" || L.type === "fx") continue;
         if (localT < st - 0.01 || localT > st + du + 0.01) continue;
         const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
-        const tf = L.transform ?? {};
-        const scl = tf.scale ?? 1;
-        const ccx = r.x + r.w / 2 + (tf.x ?? 0), ccy = r.y + r.h / 2 + (tf.y ?? 0), hw = r.w * scl / 2, hh = r.h * scl / 2;
-        if (Math.abs(cx - ccx) <= hw && Math.abs(cy - ccy) <= hh) {
+        const d = renderedDelta(L, si);
+        const scl = d.scale;
+        const ccx = r.x + r.w / 2 + d.x;
+        const ccy = r.y + r.h / 2 + d.y;
+        const rot = -d.rotate * Math.PI / 180;
+        const dxp = cx - ccx, dyp = cy - ccy;
+        const lx = dxp * Math.cos(rot) - dyp * Math.sin(rot), ly = dxp * Math.sin(rot) + dyp * Math.cos(rot);
+        const hw = r.w * scl / 2, hh = r.h * scl / 2;
+        if (Math.abs(lx) <= hw && Math.abs(ly) <= hh) {
           hit = li;
           break;
         }
@@ -6640,12 +7393,18 @@
       if (!S.selected || S.selected.s !== si || S.selected.l !== hit) select(si, hit);
       const layer2 = scene2.layers[hit];
       layer2.transform = layer2.transform || {};
-      const sx = e.clientX, sy = e.clientY, ox = layer2.transform.x ?? 0, oy = layer2.transform.y ?? 0;
+      const xKeyed = isKeyframed(layer2, "x"), yKeyed = isKeyframed(layer2, "y");
+      const baseX = xKeyed ? tfAt(layer2, si, "x", 0) : layer2.transform.x ?? 0;
+      const baseY = yKeyed ? tfAt(layer2, si, "y", 0) : layer2.transform.y ?? 0;
+      const sx = e.clientX, sy = e.clientY;
       let moved = false;
       const mv = (ev) => {
         if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 2) moved = true;
-        layer2.transform.x = Math.round(ox + (ev.clientX - sx) / sc);
-        layer2.transform.y = Math.round(oy + (ev.clientY - sy) / sc);
+        const nx = Math.round(baseX + (ev.clientX - sx) / sc), ny = Math.round(baseY + (ev.clientY - sy) / sc);
+        if (xKeyed) setKeyframeAtPlayhead("x", nx);
+        else layer2.transform.x = nx;
+        if (yKeyed) setKeyframeAtPlayhead("y", ny);
+        else layer2.transform.y = ny;
         liveSeek();
         updateSelBox();
       };
@@ -6653,6 +7412,7 @@
         window.removeEventListener("mousemove", mv);
         window.removeEventListener("mouseup", up);
         if (moved) {
+          if (xKeyed || yKeyed) buildTimeline();
           scheduleSave();
           buildProps();
         }
@@ -6694,32 +7454,73 @@
         splitSelected();
         return;
       }
+      if (meta && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        zoomBy(1.3);
+        return;
+      }
+      if (meta && e.key === "-") {
+        e.preventDefault();
+        zoomBy(1 / 1.3);
+        return;
+      }
+      if (meta && e.key === "0") {
+        e.preventDefault();
+        fitTimeline();
+        return;
+      }
+      if (!meta && e.shiftKey && (e.key === "F" || e.key === "f")) {
+        e.preventDefault();
+        fitTimeline();
+        return;
+      }
       if (!meta && (e.key === "s" || e.key === "S")) {
         splitSelected();
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && S.selAudio != null) {
+        S.ir.audio.splice(S.selAudio, 1);
+        S.selAudio = null;
+        structuralEdit();
         return;
       }
       if ((e.key === "Delete" || e.key === "Backspace") && S.selected) {
         const { s, l } = S.selected;
         S.ir.scenes[s].layers.splice(l, 1);
+        normalizeZ(s);
         S.selected = null;
         structuralEdit();
         return;
       }
       if (S.selected && e.key.startsWith("Arrow")) {
         e.preventDefault();
-        const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
+        const { s, l } = S.selected;
+        const layer2 = S.ir.scenes[s].layers[l];
         layer2.transform = layer2.transform || {};
         const step = e.shiftKey ? 1 : 10;
-        if (e.key === "ArrowLeft") layer2.transform.x = (layer2.transform.x ?? 0) - step;
-        if (e.key === "ArrowRight") layer2.transform.x = (layer2.transform.x ?? 0) + step;
-        if (e.key === "ArrowUp") layer2.transform.y = (layer2.transform.y ?? 0) - step;
-        if (e.key === "ArrowDown") layer2.transform.y = (layer2.transform.y ?? 0) + step;
+        const xKeyed = isKeyframed(layer2, "x"), yKeyed = isKeyframed(layer2, "y");
+        const nx = (xKeyed ? tfAt(layer2, s, "x", 0) : layer2.transform.x ?? 0) + (e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0);
+        const ny = (yKeyed ? tfAt(layer2, s, "y", 0) : layer2.transform.y ?? 0) + (e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0);
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          if (xKeyed) setKeyframeAtPlayhead("x", nx);
+          else layer2.transform.x = nx;
+        }
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          if (yKeyed) setKeyframeAtPlayhead("y", ny);
+          else layer2.transform.y = ny;
+        }
         liveSeek();
         scheduleSave();
+        buildTimeline();
         buildProps();
       }
     });
-    window.addEventListener("resize", fit);
+    let resizeT;
+    window.addEventListener("resize", () => {
+      fit();
+      clearTimeout(resizeT);
+      resizeT = setTimeout(() => buildTimeline(), 120);
+    });
     const kick = () => {
       if (S.playing) VGP.seek(S.playhead, { playing: true });
       window.removeEventListener("pointerdown", kick);
@@ -6741,6 +7542,7 @@
         S.lastSyncJson = j;
         pushHistory(j);
         captureSceneBase();
+        S.ir.scenes.forEach((_, i) => normalizeZ(i));
         derive();
         mountPreview();
         buildTimeline();

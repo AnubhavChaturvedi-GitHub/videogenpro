@@ -30,6 +30,30 @@ let audioEls: { el: HTMLAudioElement; track: any }[] = [];
 const isAbsUrl = (s: string) => /^(https?:|data:|file:|blob:)/.test(s);
 const resolveSrc = (src: string) => (assetBase && !isAbsUrl(src) ? new URL(src, assetBase).href : src);
 
+// Audio-aware total duration. compositionDuration() sums ONLY scene durations and
+// ignores audio[], so a narration tail that runs past the last scene would otherwise
+// be clamped away in seek() and never play/scrub. The editor's playhead deliberately
+// runs to this effective total (effectiveTotal()) to keep those tails reachable, so the
+// runtime must clamp to the same value. Each track's end = start + (track.duration or,
+// if known, the loaded element duration minus trimStart). This stays a pure function of
+// the IR + loaded metadata (no wall-clock, no randomness), preserving determinism.
+function effectiveDuration(c: Composition): number {
+  let total = compositionDuration(c);
+  for (const a of audioEls) {
+    const track = a.track;
+    if (!track) continue;
+    const start = track.start ?? 0;
+    const trimStart = track.trimStart ?? 0;
+    let playDur = track.duration;
+    if (playDur == null) {
+      const meta = a.el.duration;
+      playDur = isFinite(meta) ? Math.max(0, meta - trimStart) : 0;
+    }
+    total = Math.max(total, start + playDur);
+  }
+  return total;
+}
+
 // ---- Three.js demo scenes (registered by id). Deterministic: driven by time. ----
 const THREE_SCENES: Record<string, (canvas: HTMLCanvasElement, w: number, h: number) => ThreeHandle> = {
   particles: (canvas, w, h) => {
@@ -68,17 +92,60 @@ const THREE_SCENES: Record<string, (canvas: HTMLCanvasElement, w: number, h: num
 // ---- helpers ----
 const px = (n: number) => `${n}px`;
 
-// overlay adjustment-layer effects -> CSS filter string (applied as backdrop-filter)
-const OVERLAY_FILTER: Record<string, (a?: number) => string> = {
-  blur: (a) => `blur(${a ?? 8}px)`,
-  'black-white': (a) => `grayscale(${a ?? 1})`,
-  sepia: (a) => `sepia(${a ?? 0.8})`,
-  brighten: (a) => `brightness(${1 + (a ?? 0.3)})`,
-  darken: (a) => `brightness(${1 - (a ?? 0.4)})`,
-  contrast: (a) => `contrast(${1 + (a ?? 0.4)})`,
-  saturate: (a) => `saturate(${a ?? 1.6})`,
-  invert: (a) => `invert(${a ?? 1})`,
-};
+// Overlay adjustment-layers render through the SINGLE source of truth: the core
+// overlayPresets ('overlay.<effect>') apply() functions. They already return
+// css.filter / opacity / css.background / css.boxShadow tagged continuous:true.
+//
+// Every overlay must affect the content painted BENEATH it. There are two
+// well-defined ways an overlay does this, and the runtime/schema/editor must agree on
+// which presets are valid and which subclass each belongs to:
+//
+//   (1) BACKDROP-FILTER overlays (blur, B&W, etc.): the preset returns css.filter,
+//       which is remapped to `backdrop-filter` (capital-W -webkit- fallback) so it
+//       FILTERS the backdrop — the content below is sampled and transformed. This is
+//       the literal "adjustment layer" mechanism.
+//
+//   (2) PAINT-ON-TOP overlays (fade, vignette): the preset returns css.background
+//       (rgba) or css.boxShadow (inset), which are applied to the overlay's OWN
+//       full-frame box (buildLayer sizes it to the scene/rect bounds; it is
+//       position:absolute, pointerEvents:none, sitting above content by z-index).
+//       These do not sample the backdrop — they composite a tint/darkening OVER it.
+//       This is a legitimate, deterministic "affects everything below" mechanism, just
+//       a different subclass from backdrop-filter; it is NOT a filter of the backdrop.
+//
+// Both subclasses are valid; the distinction is intentional and must be mirrored in the
+// overlay schema/editor (fade/vignette are paint-on-top, not backdrop-filter) so that
+// validation never rejects them and the "affects everything below" invariant is
+// understood per-subclass rather than assumed uniform.
+// Result: adding/changing an effect in overlay.ts is enough — no duplication.
+//
+// `amount` may be keyframed (cast: not in the core Keyable union yet) so the effect
+// strength can be ramped over the layer like any other timeline-driven property.
+// Determinism: output is a pure function of `amount`, which itself comes from the
+// keyframes/params (a pure function of the seek time) — no wall-clock, no randomness.
+function overlayStyle(layer: Layer & { type: 'overlay' }, layerLocalT: number, layerDur: number): { css: Record<string, string>; opacity: number } {
+  const preset = getPreset(`overlay.${layer.effect}`);
+  if (!preset || !preset.apply) {
+    // Unknown effect: warn (don't silently no-op) and apply nothing.
+    console.warn(`[VGP] unknown overlay effect "${layer.effect}" — no preset overlay.${layer.effect} found`);
+    return { css: {}, opacity: 1 };
+  }
+  // amount: keyframed value (if present) wins over the static param; both fall back
+  // to the preset's default via resolveParams.
+  const kfs = (layer.keyframes as any)?.amount as Keyframe[] | undefined;
+  const params = resolveParams(preset, layer.params);
+  if (kfs && kfs.length) params.amount = keyframeValue(kfs, layerLocalT, params.amount);
+  const p = presetProgress({ id: preset.id, params }, layerLocalT, layerDur, !!preset.continuous);
+  const d = preset.apply(p, params, { index: 0, count: 1, time: layerLocalT, dur: layerDur });
+  const css: Record<string, string> = {};
+  if (d.css) {
+    for (const [k, v] of Object.entries(d.css)) {
+      if (k === 'filter') { css.backdropFilter = v; (css as any).WebkitBackdropFilter = v; } // adjustment layer: filter the backdrop (capital W: CSSOM key for -webkit-backdrop-filter)
+      else css[k] = v;
+    }
+  }
+  return { css, opacity: d.opacity ?? 1 };
+}
 
 // Inject reusable SVG filters (sketch / edge-detect) once per document.
 function ensureSvgFilters() {
@@ -103,6 +170,12 @@ function sceneOffsets(c: Composition): number[] {
   return offs;
 }
 
+// Easing semantics: each [a,b] segment is eased by b.easing — i.e. easing belongs to
+// the INCOMING segment that ENDS at a keyframe. Consequently the FIRST keyframe's
+// easing (index 0) is intentionally inert: no segment ever ends at index 0, so there
+// is nothing for it to govern. The editor's easing selector must hide/disable the
+// control on the first keyframe of a property (it is a no-op there); every other
+// keyframe's easing drives the segment arriving INTO it. Pure function of t -> deterministic.
 function keyframeValue(kfs: Keyframe[] | undefined, t: number, fallback: number): number {
   if (!kfs || kfs.length === 0) return fallback;
   if (t <= kfs[0].t) return kfs[0].value;
@@ -111,7 +184,7 @@ function keyframeValue(kfs: Keyframe[] | undefined, t: number, fallback: number)
     const a = kfs[i], b = kfs[i + 1];
     if (t >= a.t && t <= b.t) {
       const local = (t - a.t) / (b.t - a.t);
-      const e = ease(b.easing as any, local);
+      const e = ease(b.easing as any, local); // b.easing: easing of the segment ENDING at b
       return a.value + (b.value - a.value) * e;
     }
   }
@@ -238,6 +311,13 @@ function buildLayer(layer: Layer, sceneDur: number, fxLayers: any[] = []): Layer
         fontFamily: 'Inter, system-ui, sans-serif', fontSize: '80px', fontWeight: '800', color: '#fff',
       });
       if (layer.style) Object.assign(el.style, layer.style);
+      // NOTE: span STRUCTURE (node.spans) is decided ONCE here, at mount, by scanning
+      // allInsts (own presets + fx targeting this layer) for any preset with `.split`.
+      // It is NOT recomputed on a live param edit (liveEdit -> liveSeek). Therefore any
+      // flow that TOGGLES a layer between split and non-split fx (add/remove a split fx)
+      // MUST route through structuralEdit -> mountPreview so this remounts and rebuilds
+      // spans. Routing a split-fx add/remove through liveEdit instead would leave stale
+      // spans (split DOM with no driving preset, or whole-text with no spans to reveal).
       const splitPreset = allInsts.map((p) => getPreset(p.id)).find((p) => p?.split);
       if (splitPreset?.split) {
         const inner = document.createElement('div');
@@ -302,15 +382,11 @@ function buildLayer(layer: Layer, sceneDur: number, fxLayers: any[] = []): Layer
       break;
     }
     case 'overlay': {
-      // adjustment layer: affects everything painted beneath it via backdrop-filter
+      // adjustment layer: affects everything painted beneath it via backdrop-filter.
+      // The effect is NOT baked in here — renderLayer() re-derives it from the core
+      // overlay preset each frame so the strength can animate / be keyframed and live
+      // edits take effect without a remount. (Initial paint happens on the first seek.)
       el.style.pointerEvents = 'none';
-      const eff = layer.effect; const a = layer.params?.amount;
-      if (eff === 'vignette') el.style.boxShadow = `inset 0 0 140px ${40 * (a ?? 0.7)}px rgba(0,0,0,${0.85 * (a ?? 0.7)})`;
-      else if (eff === 'fade') el.style.background = `rgba(0,0,0,${a ?? 0.5})`;
-      else {
-        const f = OVERLAY_FILTER[eff]?.(a);
-        if (f) { el.style.backdropFilter = f; (el.style as any).webkitBackdropFilter = f; }
-      }
       break;
     }
   }
@@ -352,11 +428,16 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
       if (L.type !== 'fx') return;
       for (let j = idx - 1; j >= 0; j--) { const ty = (scene.layers[j] as any).type; if (ty !== 'fx' && ty !== 'overlay') { (fxByTarget[j] = fxByTarget[j] || []).push(L); break; } }
     });
-    const layers = scene.layers.map((l, idx) => {
-      const ln = buildLayer(l, scene.duration, fxByTarget[idx] || []);
-      sEl.appendChild(ln.el);
-      return ln;
-    });
+    // Build in source order (so fxByTarget index mapping stays valid). Overlays are
+    // kept composited on top by their high zIndex sentinel (the editor stamps overlays
+    // with zIndex 9000+i, which buildLayer applies to el.style.zIndex like every other
+    // layer). Since all layers are position:absolute siblings with explicit z-index,
+    // z-index is the load-bearing mechanism for content-vs-overlay stacking. The
+    // append-overlays-last loop below is a redundant safety net / tiebreaker only (it
+    // would matter solely if two layers shared an equal z-index).
+    const layers = scene.layers.map((l, idx) => buildLayer(l, scene.duration, fxByTarget[idx] || []));
+    for (const ln of layers) if (ln.layer.type !== 'overlay') sEl.appendChild(ln.el);
+    for (const ln of layers) if (ln.layer.type === 'overlay') sEl.appendChild(ln.el);
     sceneNodes.push({ el: sEl, scene, layers, offset: offs[i] });
   });
 }
@@ -435,7 +516,14 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
   const entries: PE[] = (layer.presets ?? []).map((inst) => ({ inst, localT: layerLocalT, dur }));
   for (const fx of (ln.fxLayers ?? [])) {
     const fs = fx.start ?? 0, fd = fx.duration ?? sceneDur;
-    if (sceneLocalT >= fs - 0.0001 && sceneLocalT < fs + fd + 0.0001) entries.push({ inst: { id: fx.effect, params: fx.params }, localT: sceneLocalT - fs, dur: fd });
+    // B-medium: feed the fx window length as the instance duration so a one-shot
+    // (non-continuous, non-split) fx stretched/trimmed on the timeline actually
+    // stretches how long its animation takes (presetProgress uses inst.duration),
+    // instead of always running at preset.defaultDuration anchored to the window
+    // start. Continuous presets ignore inst.duration in presetProgress (they use the
+    // localT/dur args), so this is a no-op for them — the clip width now honestly
+    // reflects the effect length for one-shots. Still pure in seek time -> deterministic.
+    if (sceneLocalT >= fs - 0.0001 && sceneLocalT < fs + fd + 0.0001) entries.push({ inst: { id: fx.effect, params: fx.params, duration: fd }, localT: sceneLocalT - fs, dur: fd });
   }
 
   const wholeDelta = emptyDelta();
@@ -449,9 +537,44 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
   }
   applyDelta(ln.el, wholeDelta);
 
-  // split text presets -> per span (from own + fx entries)
+  // overlay adjustment-layer: re-derive the effect each frame from the core overlay
+  // preset so the strength can ramp / be keyframed over the clip and live amount edits
+  // are honoured without a remount. Output is a pure function of the seek time
+  // (via amount keyframes/params), preserving determinism. Tracked in __vgpOverlayCss
+  // and cleared like clearStaleCss so backward scrubbing matches forward.
+  if (layer.type === 'overlay') {
+    const { css, opacity } = overlayStyle(layer, layerLocalT, dur);
+    // overlay opacity multiplies whatever applyDelta already set (e.g. an in.fade)
+    ln.el.style.opacity = String(clamp01(wholeDelta.opacity * opacity));
+    const prev: Set<string> | undefined = (ln.el as any).__vgpOverlayCss;
+    const applied = new Set<string>();
+    for (const [k, v] of Object.entries(css)) { (ln.el.style as any)[k] = v; applied.add(k); }
+    if (prev) for (const k of prev) { if (!applied.has(k)) (ln.el.style as any)[k] = ''; }
+    (ln.el as any).__vgpOverlayCss = applied;
+  }
+
+  // split text presets -> per span (from own + fx entries).
+  //
+  // Split entries are gathered INDEPENDENTLY of the fx active-window gate used for
+  // `entries` above. A split entrance fx (e.g. text.word-stagger / text.typewriter)
+  // is meant to reveal the spans FROM HIDDEN: before its window starts the preset's
+  // resting value (apply at progress 0) is the hidden state, and presetProgress()
+  // already clamps progress to 0 before start / 1 after a finite window ends. If we
+  // only included the fx while its window were active (as `entries` does), the spans
+  // would fall back to emptyDelta (opacity 1) and flash fully visible BEFORE the
+  // stagger plays and AFTER a finite window ends. Including the split fx at all times
+  // and letting presetProgress drive the clamped progress makes the fx timing window
+  // actually govern span visibility. Still a pure function of seek time -> deterministic.
   if (ln.spans) {
-    const splitEntries = entries.filter((e) => getPreset(e.inst.id)?.split && getPreset(e.inst.id)?.apply);
+    const splitEntries: PE[] = (layer.presets ?? [])
+      .filter((inst) => getPreset(inst.id)?.split && getPreset(inst.id)?.apply)
+      .map((inst) => ({ inst, localT: layerLocalT, dur }));
+    for (const fx of (ln.fxLayers ?? [])) {
+      const preset = getPreset(fx.effect);
+      if (!preset?.split || !preset.apply) continue;
+      const fs = fx.start ?? 0, fd = fx.duration ?? sceneDur;
+      splitEntries.push({ inst: { id: fx.effect, params: fx.params }, localT: sceneLocalT - fs, dur: fd });
+    }
     ln.spans.forEach((span, idx) => {
       const sd = emptyDelta();
       for (const e of splitEntries) {
@@ -514,7 +637,11 @@ function syncAudio(t: number, playing: boolean) {
 
 async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
   const playing = !!opts?.playing;
-  const dur = compositionDuration(comp);
+  // Clamp to the AUDIO-AWARE total so narration tails that extend past the last scene
+  // stay reachable/scrubbable (matches the editor's effectiveTotal playhead). Visual
+  // scene selection below still uses scene offsets, so the tail region pins to the last
+  // scene's final frame while audio continues to advance via syncAudio(t).
+  const dur = effectiveDuration(comp);
   // B19: allow reaching the true final instant (t === dur), not dur - epsilon.
   const t = Math.min(Math.max(0, time), Math.max(0, dur));
   // find active scene. The half-open ranges exclude t === dur, so when at (or past)
