@@ -5239,6 +5239,7 @@
     S.playing = !S.playing;
     setPlayIcon();
     last = performance.now();
+    VGP.seek(S.playhead, { playing: S.playing });
   }
   var last = performance.now();
   function loop(now) {
@@ -5251,7 +5252,7 @@
           togglePlay();
         }
       }
-      liveSeek();
+      VGP.seek(S.playhead, { playing: true });
       positionPlayhead();
       updateTime();
     }
@@ -5506,6 +5507,11 @@
       }
     });
     window.addEventListener("resize", fit);
+    const kick = () => {
+      if (S.playing) VGP.seek(S.playhead, { playing: true });
+      window.removeEventListener("pointerdown", kick);
+    };
+    window.addEventListener("pointerdown", kick);
     const es = new EventSource("/api/events");
     es.onmessage = (ev) => {
       let m;

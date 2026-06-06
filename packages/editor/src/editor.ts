@@ -315,10 +315,10 @@ function applyFromLibrary(entry: any) {
 function updateTime() { $('tpTime').textContent = S.playhead.toFixed(2); $('tpTotal').textContent = ' / ' + S.total.toFixed(2) + 's'; }
 function seekTo(t: number) { S.playhead = Math.max(0, Math.min(S.total, t)); liveSeek(); positionPlayhead(); updateTime(); }
 function setPlayIcon() { $('tpPlay').innerHTML = icon(S.playing ? 'pause' : 'play'); }
-function togglePlay() { S.playing = !S.playing; setPlayIcon(); last = performance.now(); }
+function togglePlay() { S.playing = !S.playing; setPlayIcon(); last = performance.now(); VGP.seek(S.playhead, { playing: S.playing }); }
 let last = performance.now();
 function loop(now: number) {
-  if (S.playing) { S.playhead += (now - last) / 1000; if (S.playhead >= S.total) { if (S.loop) S.playhead = 0; else { S.playhead = S.total; togglePlay(); } } liveSeek(); positionPlayhead(); updateTime(); }
+  if (S.playing) { S.playhead += (now - last) / 1000; if (S.playhead >= S.total) { if (S.loop) S.playhead = 0; else { S.playhead = S.total; togglePlay(); } } VGP.seek(S.playhead, { playing: true }); positionPlayhead(); updateTime(); }
   last = now; requestAnimationFrame(loop);
 }
 function autoFit() { const w = $('tlScroll').clientWidth || 900; S.pxPerSec = Math.max(40, Math.min(220, (w - LABELW - 40) / Math.max(1, S.total))); }
@@ -428,6 +428,10 @@ async function init() {
     }
   });
   window.addEventListener('resize', fit);
+
+  // browsers block audio until a user gesture — kick playback on first interaction
+  const kick = () => { if (S.playing) VGP.seek(S.playhead, { playing: true }); window.removeEventListener('pointerdown', kick); };
+  window.addEventListener('pointerdown', kick);
 
   // live SSE: doc edits (agent) + render progress
   const es = new EventSource('/api/events');

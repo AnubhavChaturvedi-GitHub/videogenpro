@@ -24,6 +24,7 @@ let comp: Composition;
 let sceneNodes: SceneNode[] = [];
 let stage: HTMLDivElement;
 let assetBase: string | undefined;
+let audioEls: { el: HTMLAudioElement; track: any }[] = [];
 
 const isAbsUrl = (s: string) => /^(https?:|data:|file:|blob:)/.test(s);
 const resolveSrc = (src: string) => (assetBase && !isAbsUrl(src) ? new URL(src, assetBase).href : src);
@@ -263,6 +264,8 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
   assetBase = opts?.assetBase;
   // dispose previous WebGL contexts before rebuilding (avoid context-limit leaks on live edit)
   for (const sn of sceneNodes) for (const ln of sn.layers) ln.three?.dispose?.();
+  for (const a of audioEls) { a.el.pause(); a.el.remove(); }
+  audioEls = [];
   stage = document.getElementById('stage') as HTMLDivElement;
   stage.style.width = px(c.width);
   stage.style.height = px(c.height);
@@ -286,6 +289,16 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
       return ln;
     });
     sceneNodes.push({ el: sEl, scene, layers, offset: offs[i] });
+  });
+
+  // audio tracks (voiceover / music) — hidden <audio> elements outside the stage
+  audioEls = ((c as any).audio ?? []).map((track: any) => {
+    const el = document.createElement('audio');
+    el.src = resolveSrc(track.src);
+    el.preload = 'auto';
+    el.volume = track.volume ?? 1;
+    document.body.appendChild(el);
+    return { el, track };
   });
 }
 
@@ -351,7 +364,29 @@ async function seekVideo(v: HTMLVideoElement, time: number): Promise<void> {
   });
 }
 
-async function seek(time: number): Promise<void> {
+// Audio tracks: during playback they play naturally (no per-frame reseek);
+// while scrubbing/rendering they're paused and positioned to the playhead.
+function syncAudio(t: number, playing: boolean) {
+  for (const { el, track } of audioEls) {
+    const start = track.start ?? 0;
+    const dur = track.duration ?? (isFinite(el.duration) ? el.duration : 1e9);
+    const local = t - start;
+    const active = local >= -0.03 && local < dur;
+    const target = (track.trimStart ?? 0) + Math.max(0, local);
+    if (!active) { if (!el.paused) el.pause(); continue; }
+    el.volume = track.volume ?? 1;
+    if (playing) {
+      if (el.paused) { try { el.currentTime = target; } catch {} el.play().catch(() => {}); }
+      else if (Math.abs(el.currentTime - target) > 0.34) { try { el.currentTime = target; } catch {} }
+    } else {
+      if (!el.paused) el.pause();
+      if (Math.abs(el.currentTime - target) > 0.05) { try { el.currentTime = target; } catch {} }
+    }
+  }
+}
+
+async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
+  const playing = !!opts?.playing;
   const dur = compositionDuration(comp);
   const t = Math.min(Math.max(0, time), Math.max(0, dur - 0.0001));
   // find active scene
@@ -394,15 +429,26 @@ async function seek(time: number): Promise<void> {
   // render current scene layers
   cur.layers.forEach((ln) => renderLayer(ln, sceneLocalT, cur.scene.duration));
 
-  // sync any visible videos
+  // pause videos belonging to other (hidden) scenes
+  sceneNodes.forEach((n, k) => { if (k !== i) n.layers.forEach((l) => { if (l.video && !l.video.paused) l.video.pause(); }); });
+
+  // media sync — play naturally while playing, frame-seek while scrubbing/rendering
   const pending: Promise<void>[] = [];
   for (const ln of cur.layers) {
-    if (ln.video && ln.el.style.display !== 'none') {
-      const vstart = ln.layer.start ?? 0;
-      const vt = (ln.layer.type === 'video' ? (ln.layer.trimStart ?? 0) : 0) + (sceneLocalT - vstart);
-      pending.push(seekVideo(ln.video, Math.max(0, vt)));
+    if (!ln.video) continue;
+    const v = ln.video;
+    if (ln.el.style.display === 'none') { if (!v.paused) v.pause(); continue; }
+    const vstart = ln.layer.start ?? 0;
+    const target = Math.max(0, (ln.layer.type === 'video' ? (ln.layer.trimStart ?? 0) : 0) + (sceneLocalT - vstart));
+    if (playing) {
+      if (v.paused) { try { v.currentTime = target; } catch {} v.play().catch(() => {}); }
+      else if (Math.abs(v.currentTime - target) > 0.34) { try { v.currentTime = target; } catch {} }
+    } else {
+      if (!v.paused) v.pause();
+      pending.push(seekVideo(v, target));
     }
   }
+  syncAudio(t, playing);
   await Promise.all(pending);
 }
 

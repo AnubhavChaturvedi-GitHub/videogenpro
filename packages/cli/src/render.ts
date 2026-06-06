@@ -53,12 +53,25 @@ async function main() {
   await page.evaluate(() => (window as any).VGP.ready());
 
   // ffmpeg reads raw PNGs from stdin -> mp4
-  const ff = spawn('ffmpeg', [
-    '-y', '-f', 'image2pipe', '-framerate', String(comp.fps), '-i', '-',
-    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'slow', '-crf', '15',
-    '-profile:v', 'high', '-level', '4.2', '-movflags', '+faststart',
-    absOut,
-  ], { stdio: ['pipe', 'inherit', 'inherit'] });
+  // audio tracks (voiceover, music) — mixed in with per-track delay + volume
+  const tracks = (comp.audio ?? []) as Array<{ src: string; start?: number; volume?: number; trimStart?: number }>;
+  const audioArgs: string[] = []; const filters: string[] = [];
+  tracks.forEach((a, i) => {
+    const ap = /^https?:|^file:/.test(a.src) ? a.src : resolve(dirname(absComp), a.src);
+    audioArgs.push('-i', ap);
+    const ms = Math.round((a.start ?? 0) * 1000); const vol = a.volume ?? 1;
+    const trim = a.trimStart ? `atrim=start=${a.trimStart},asetpts=PTS-STARTPTS,` : '';
+    filters.push(`[${i + 1}:a]${trim}adelay=${ms}|${ms},volume=${vol}[a${i}]`);
+  });
+  const hasAudio = tracks.length > 0;
+  if (hasAudio) filters.push(`${tracks.map((_, i) => `[a${i}]`).join('')}amix=inputs=${tracks.length}:normalize=0[aout]`);
+
+  const ffArgs = ['-y', '-f', 'image2pipe', '-framerate', String(comp.fps), '-i', '-', ...audioArgs];
+  if (hasAudio) ffArgs.push('-filter_complex', filters.join(';'), '-map', '0:v', '-map', '[aout]');
+  ffArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'slow', '-crf', '15', '-profile:v', 'high', '-level', '4.2', '-movflags', '+faststart');
+  if (hasAudio) ffArgs.push('-c:a', 'aac', '-b:a', '192k', '-t', String(totalDur));
+  ffArgs.push(absOut);
+  const ff = spawn('ffmpeg', ffArgs, { stdio: ['pipe', 'inherit', 'inherit'] });
 
   const stage = await page.$('#stage');
   if (!stage) throw new Error('#stage not found');
