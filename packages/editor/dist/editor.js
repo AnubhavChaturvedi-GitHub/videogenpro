@@ -5796,9 +5796,11 @@
           if (e.target === handle || e.button !== 0) return;
           e.preventDefault();
           const rectLeft = $("tlInner").getBoundingClientRect().left;
-          const sx = e.clientX, os = layer2.start ?? 0;
-          let moved = false;
+          const sx = e.clientX, sy = e.clientY, os = layer2.start ?? 0;
           let cand = os;
+          let dyFinal = 0;
+          let gesture = "";
+          const trackH = clip.closest(".track")?.getBoundingClientRect().height || clip.getBoundingClientRect().height || 28;
           const isFullScene = layer2.duration == null && layer2.type !== "fx";
           let maxStart = isFullScene ? Math.max(0, scene2.duration - 0.2) : Math.max(scene2.duration, S.total) || scene2.duration;
           if (layer2.type === "fx") {
@@ -5808,22 +5810,33 @@
           }
           const sceneOff = S.offsets[si] ?? 0;
           const mv = (ev) => {
-            const dx = ev.clientX - sx;
-            if (Math.abs(dx) > 3) moved = true;
-            const rawAbs = sceneOff + os + dx / S.pxPerSec;
-            const snappedAbs = snapTime(rawAbs, sceneSnapTargets(si, scene2, li), ev.altKey);
-            cand = clampStart(snappedAbs - sceneOff, maxStart);
-            clip.style.left = LABELW + (sceneOff + cand) * S.pxPerSec + "px";
+            const dx = ev.clientX - sx, dy = ev.clientY - sy;
+            if (!gesture && (Math.abs(dx) > 4 || Math.abs(dy) > 6)) gesture = Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6 ? "reorder" : "time";
+            if (gesture === "time") {
+              const rawAbs = sceneOff + os + dx / S.pxPerSec;
+              const snappedAbs = snapTime(rawAbs, sceneSnapTargets(si, scene2, li), ev.altKey);
+              cand = clampStart(snappedAbs - sceneOff, maxStart);
+              clip.style.left = LABELW + (sceneOff + cand) * S.pxPerSec + "px";
+            } else if (gesture === "reorder") {
+              dyFinal = dy;
+              clip.style.transform = `translateY(${dy}px)`;
+              clip.style.zIndex = "60";
+              clip.style.opacity = ".85";
+            }
           };
-          const up = (ev) => {
+          const up = () => {
             window.removeEventListener("mousemove", mv);
             window.removeEventListener("mouseup", up);
-            if (moved) {
+            if (gesture === "time") {
               layer2.start = clampStart(cand, maxStart);
               timingEdit();
-            } else if (ev.shiftKey || ev.metaKey || ev.ctrlKey) {
+            } else if (gesture === "reorder") {
               select(si, li);
+              const steps = Math.round(Math.abs(dyFinal) / trackH);
+              const mode = dyFinal < 0 ? "up" : "down";
+              for (let k = 0; k < steps; k++) arrangeLayer(mode);
             } else {
+              select(si, li);
               seekTo(timeAtClientX(sx, rectLeft));
             }
           };

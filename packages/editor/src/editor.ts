@@ -549,53 +549,66 @@ function buildTimeline() {
       clip.onmousedown = (e: MouseEvent) => {
         if (e.target === handle || e.button !== 0) return; e.preventDefault();
         const rectLeft = $('tlInner').getBoundingClientRect().left; // cache before any rebuild (B-clip-click)
-        const sx = e.clientX, os = layer.start ?? 0; let moved = false; let cand = os;
+        const sx = e.clientX, sy = e.clientY, os = layer.start ?? 0; let cand = os; let dyFinal = 0;
+        // The gesture is decided on the first significant movement, then locked:
+        //  - mostly-HORIZONTAL drag  -> MOVE the clip in time (start).
+        //  - mostly-VERTICAL drag    -> REORDER the layer's z (up = toward front /
+        //    top of the reversed timeline, down = toward back). Reuses arrangeLayer
+        //    so fx units travel with their content and overlays stay above content.
+        //  - plain CLICK (no drag)   -> SELECT the clip AND move the playhead to the
+        //    click (revised B-clip-click: clicking a clip now selects it again).
+        let gesture: '' | 'time' | 'reorder' = '';
+        const trackH = (clip.closest('.track') as HTMLElement)?.getBoundingClientRect().height || clip.getBoundingClientRect().height || 28;
         // move clamps consistently with trim's auto-extend model: allow dragging
         // right up to the composition length; derive() extends the scene on commit.
-        // BUT a no-duration (full-scene) layer never extends the scene (derive()
-        // only extends for explicit-duration non-fx layers), so dragging its start
-        // past scene.duration would push it out of the runtime's per-scene render
-        // window and it would silently vanish. Clamp such layers within the scene
-        // (start <= scene.duration - epsilon) so timeline state == render window (B-fullscene).
+        // A no-duration (full-scene) layer never extends the scene, so clamp it within
+        // the scene so timeline state == render window (B-fullscene).
         const isFullScene = (layer.duration == null && layer.type !== 'fx');
-        // B-fx-window: fx is gated by its target's active window at runtime, so its
-        // start can't usefully exceed (target window end - epsilon). Clamp the
-        // start to the same winMax the props panel uses (editor.ts fx timing).
+        // B-fx-window: fx is gated by its target's active window at runtime, so clamp
+        // its start to the same winMax the props panel uses (editor.ts fx timing).
         let maxStart = isFullScene ? Math.max(0, scene.duration - 0.2) : (Math.max(scene.duration, S.total) || scene.duration);
         if (layer.type === 'fx') { const tgt = resolveFxTarget(scene, li); const winMax = (tgt?.layer.start ?? 0) + (tgt?.layer.duration ?? scene.duration); maxStart = Math.max(0, winMax - 0.1); }
         const sceneOff = S.offsets[si] ?? 0;
         const mv = (ev: MouseEvent) => {
-          const dx = ev.clientX - sx; if (Math.abs(dx) > 3) moved = true;
-          // B-snap: snap the clip's absolute START to nearby significant times
-          // (playhead/scene seams/0/neighbour edges); Alt bypasses. Convert the
-          // snapped absolute time back to a scene-local start, then clamp.
-          const rawAbs = sceneOff + os + dx / S.pxPerSec;
-          const snappedAbs = snapTime(rawAbs, sceneSnapTargets(si, scene, li), ev.altKey);
-          cand = clampStart(snappedAbs - sceneOff, maxStart);
-          clip.style.left = (LABELW + (sceneOff + cand) * S.pxPerSec) + 'px'; // visual only until commit
+          const dx = ev.clientX - sx, dy = ev.clientY - sy;
+          if (!gesture && (Math.abs(dx) > 4 || Math.abs(dy) > 6)) gesture = (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6) ? 'reorder' : 'time';
+          if (gesture === 'time') {
+            // B-snap: snap the clip's absolute START to nearby significant times
+            // (playhead/scene seams/0/neighbour edges); Alt bypasses.
+            const rawAbs = sceneOff + os + dx / S.pxPerSec;
+            const snappedAbs = snapTime(rawAbs, sceneSnapTargets(si, scene, li), ev.altKey);
+            cand = clampStart(snappedAbs - sceneOff, maxStart);
+            clip.style.left = (LABELW + (sceneOff + cand) * S.pxPerSec) + 'px'; // visual only until commit
+          } else if (gesture === 'reorder') {
+            dyFinal = dy;
+            clip.style.transform = `translateY(${dy}px)`; clip.style.zIndex = '60'; clip.style.opacity = '.85'; // drag feedback
+          }
         };
-        const up = (ev: MouseEvent) => {
+        const up = () => {
           window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up);
-          // B-clip-click / dimension: a plain click anywhere on the timeline (incl.
-          // over a clip) only MOVES the playhead — it must NOT select. Selection is a
-          // deliberate gesture: shift/meta-click or double-click on the clip.
-          // sub-threshold = click: never mutate layer.start (no silent drift).
-          if (moved) {
+          if (gesture === 'time') {
             // B-commit-reclamp: re-clamp against freshly-derived bounds so a stale
             // gesture basis can never commit an out-of-range start.
             layer.start = clampStart(cand, maxStart); timingEdit();
-          } else if (ev.shiftKey || ev.metaKey || ev.ctrlKey) {
+          } else if (gesture === 'reorder') {
+            // reorder by the number of track-rows dragged (drag up = Forward/front,
+            // down = Backward/back). select() first so arrangeLayer targets this layer;
+            // arrangeLayer keeps fx units + overlay banding correct and re-follows the
+            // moved layer in S.selected. buildTimeline() (via structuralEdit) replaces
+            // this element, clearing the inline drag feedback.
             select(si, li);
+            const steps = Math.round(Math.abs(dyFinal) / trackH);
+            const mode: 'up' | 'down' = dyFinal < 0 ? 'up' : 'down';
+            for (let k = 0; k < steps; k++) arrangeLayer(mode);
           } else {
-            // seek using the cached mousedown rect so the seek lands under the cursor
-            // regardless of any relayout (B-clip-click). No selection change.
-            seekTo(timeAtClientX(sx, rectLeft));
+            // plain click: select the clip AND move the playhead to the click point
+            // (cached mousedown rect so the seek lands under the cursor across relayout).
+            select(si, li); seekTo(timeAtClientX(sx, rectLeft));
           }
         };
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
       };
-      // double-click selects the clip (deliberate selection gesture, since a plain
-      // click only seeks now — B-clip-click).
+      // double-click also selects (kept for muscle memory; a plain click selects too now).
       clip.ondblclick = (e: MouseEvent) => { e.stopPropagation(); select(si, li); };
       handle.onmousedown = (e: MouseEvent) => {
         if (e.button !== 0) return; e.preventDefault(); e.stopPropagation(); const sx = e.clientX, od = layer.duration ?? scene.duration;
