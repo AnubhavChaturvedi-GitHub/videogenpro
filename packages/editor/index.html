@@ -41,6 +41,16 @@
     .btn:hover { background:var(--glass-3); border-color:var(--border-2); transform:translateY(-1px); }
     .btn.primary { background:var(--accent-grad); border-color:transparent; box-shadow:0 6px 20px rgba(110,168,254,.4),var(--hi); color:#0b1020; font-weight:700; }
     .btn.primary:hover { box-shadow:0 9px 28px rgba(110,168,254,.55),var(--hi); }
+    .btn.icon-only { padding:8px; }
+    .clip-tools { display:flex; gap:7px; margin-left:14px; }
+    .tp-btn.sm { width:32px; height:32px; }
+    /* on-canvas selection box + resize handles (in comp-space inside #scaler) */
+    #selbox { position:absolute; display:none; border:2px solid var(--accent); box-shadow:0 0 0 1px rgba(0,0,0,.4); pointer-events:none; z-index:30; }
+    #selbox .sh { position:absolute; width:18px; height:18px; background:var(--accent); border:2px solid #fff; border-radius:4px; pointer-events:auto; }
+    #selbox .sh[data-h=nw]{ left:-10px; top:-10px; cursor:nwse-resize; }
+    #selbox .sh[data-h=ne]{ right:-10px; top:-10px; cursor:nesw-resize; }
+    #selbox .sh[data-h=sw]{ left:-10px; bottom:-10px; cursor:nesw-resize; }
+    #selbox .sh[data-h=se]{ right:-10px; bottom:-10px; cursor:nwse-resize; }
 
     .topbar { display:flex; align-items:center; gap:13px; padding:0 18px; background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-bottom:1px solid var(--border); position:relative; z-index:50; box-shadow:var(--hi); }
     .brand { font-weight:800; letter-spacing:.3px; display:flex; align-items:center; gap:9px; font-size:16px; }
@@ -172,6 +182,8 @@
         <button class="btn" id="fileBtn"><span id="fileIcon"></span>File</button>
         <div class="menu" id="fileMenu"></div>
       </div>
+      <button class="btn icon-only" id="undoBtn" title="Undo (⌘Z)"><span id="i-undo"></span></button>
+      <button class="btn icon-only" id="redoBtn" title="Redo (⌘⇧Z)"><span id="i-redo"></span></button>
       <div class="spacer"></div>
       <span class="status"><span class="dot saved" id="syncDot"></span><span id="syncText">synced</span></span>
       <button class="btn primary" id="export"><span id="expIcon"></span>Export</button>
@@ -192,7 +204,12 @@
         <div class="asset-grid" id="assetGrid"></div>
       </div>
 
-      <div class="stagewrap"><div id="scaler"><div id="stage"></div></div></div>
+      <div class="stagewrap"><div id="scaler"><div id="stage"></div>
+        <div id="selbox">
+          <div class="sh" data-h="nw"></div><div class="sh" data-h="ne"></div>
+          <div class="sh" data-h="sw"></div><div class="sh" data-h="se"></div>
+        </div>
+      </div></div>
 
       <div class="right">
         <div class="tabs">
@@ -206,6 +223,11 @@
     <div class="timeline">
       <div class="transport">
         <div class="tp-time"><span id="tpTime">0.00</span><span class="tot" id="tpTotal"> / 0.00s</span></div>
+        <div class="clip-tools">
+          <button class="tp-btn sm" id="btnSplit" title="Split clip (S)"><span id="i-split"></span></button>
+          <button class="tp-btn sm" id="btnDup" title="Duplicate (⌘D)"><span id="i-dup"></span></button>
+          <button class="tp-btn sm" id="btnDel" title="Delete (Del)"><span id="i-del"></span></button>
+        </div>
         <div class="spacer"></div>
         <div class="tp-center">
           <button class="tp-btn" id="tpStart" title="Start"></button>

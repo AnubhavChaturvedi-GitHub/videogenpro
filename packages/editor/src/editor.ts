@@ -21,6 +21,9 @@ const I: Record<string, string> = {
   shape: '<rect x="4" y="4" width="16" height="16" rx="2"/>',
   line: '<line x1="4" y1="12" x2="20" y2="12"/>',
   undo: '<path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7L3 9"/>',
+  redo: '<path d="M21 7v6h-6"/><path d="M21 13a9 9 0 1 1-3-7l3 3"/>',
+  split: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   cube: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><line x1="12" y1="13" x2="12" y2="21"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
@@ -200,7 +203,43 @@ function buildTimeline() {
 
   const ph = el('div', 'playhead'); ph.id = 'playhead'; inner.appendChild(ph); positionPlayhead();
 }
-function positionPlayhead() { const ph = document.getElementById('playhead'); if (!ph) return; ph.style.left = (LABELW + S.playhead * S.pxPerSec) + 'px'; ph.style.height = $('tlInner').scrollHeight + 'px'; }
+function positionPlayhead() { const ph = document.getElementById('playhead'); if (ph) { ph.style.left = (LABELW + S.playhead * S.pxPerSec) + 'px'; ph.style.height = $('tlInner').scrollHeight + 'px'; } updateSelBox(); }
+// on-canvas selection box (lives in #scaler comp-space, survives stage re-mounts)
+function updateSelBox() {
+  const box = document.getElementById('selbox'); if (!box) return;
+  const sel = S.selected; const layer = sel ? S.ir.scenes[sel.s]?.layers?.[sel.l] : null;
+  if (!sel || !layer) { box.style.display = 'none'; return; }
+  const off = S.offsets[sel.s] ?? 0; const st = off + (layer.start ?? 0); const dur = layer.duration ?? S.ir.scenes[sel.s].duration;
+  if (S.playhead < st - 0.01 || S.playhead > st + dur + 0.01) { box.style.display = 'none'; return; }
+  const r = layer.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
+  const tf = layer.transform ?? {};
+  box.style.display = 'block';
+  box.style.left = (r.x + (tf.x ?? 0)) + 'px'; box.style.top = (r.y + (tf.y ?? 0)) + 'px';
+  box.style.width = r.w + 'px'; box.style.height = r.h + 'px';
+  const inv = Math.min(2.4, 1 / (S.scale || 1));
+  box.querySelectorAll('.sh').forEach((h) => { (h as HTMLElement).style.transform = `scale(${inv})`; });
+}
+function initSelHandles() {
+  document.querySelectorAll('#selbox .sh').forEach((h) => {
+    (h as HTMLElement).addEventListener('mousedown', (e: any) => {
+      if (!S.selected) return; e.preventDefault(); e.stopPropagation();
+      const layer = S.ir.scenes[S.selected.s].layers[S.selected.l];
+      if (!layer.rect) layer.rect = { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
+      const corner = h.getAttribute('data-h'); const sx = e.clientX, sy = e.clientY; const r0 = { ...layer.rect }; const sc = S.scale || 1;
+      const mv = (ev: MouseEvent) => {
+        const dx = (ev.clientX - sx) / sc, dy = (ev.clientY - sy) / sc; let x = r0.x, y = r0.y, w = r0.w, hh = r0.h;
+        if (corner === 'se') { w = Math.max(20, r0.w + dx); hh = Math.max(20, r0.h + dy); }
+        if (corner === 'sw') { w = Math.max(20, r0.w - dx); hh = Math.max(20, r0.h + dy); x = r0.x + (r0.w - w); }
+        if (corner === 'ne') { w = Math.max(20, r0.w + dx); hh = Math.max(20, r0.h - dy); y = r0.y + (r0.h - hh); }
+        if (corner === 'nw') { w = Math.max(20, r0.w - dx); hh = Math.max(20, r0.h - dy); x = r0.x + (r0.w - w); y = r0.y + (r0.h - hh); }
+        layer.rect = { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(hh) };
+        liveSeek(); updateSelBox();
+      };
+      const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); scheduleSave(); buildProps(); };
+      window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+    });
+  });
+}
 
 // ---------- right panel ----------
 function setTab(t: 'props' | 'anim') { S.panel = t; $('tabProps').classList.toggle('on', t === 'props'); $('tabAnim').classList.toggle('on', t === 'anim'); renderRight(); }
@@ -374,6 +413,7 @@ async function init() {
   $('logoIcon').innerHTML = icon('spark'); $('fileIcon').innerHTML = icon('file'); $('expIcon').innerHTML = icon('download');
   $('i-text').innerHTML = icon('text'); $('i-shape').innerHTML = icon('shape'); $('i-3d').innerHTML = icon('cube'); $('i-up').innerHTML = icon('upload');
   $('i-props').innerHTML = icon('sliders'); $('i-anim').innerHTML = icon('spark'); $('i-line').innerHTML = icon('line');
+  $('i-undo').innerHTML = icon('undo'); $('i-redo').innerHTML = icon('redo'); $('i-split').innerHTML = icon('split'); $('i-dup').innerHTML = icon('copy'); $('i-del').innerHTML = icon('trash');
   $('tpStart').innerHTML = icon('start'); $('tpBack').innerHTML = icon('back'); $('tpFwd').innerHTML = icon('fwd'); $('tpLoop').innerHTML = icon('loop'); setPlayIcon();
   buildFileMenu();
 
@@ -390,6 +430,12 @@ async function init() {
 
   // tabs
   $('tabProps').onclick = () => setTab('props'); $('tabAnim').onclick = () => setTab('anim');
+
+  // standard toolbar: undo/redo + clip actions
+  $('undoBtn').onclick = undo; $('redoBtn').onclick = redo;
+  $('btnSplit').onclick = splitSelected; $('btnDup').onclick = duplicateSelected;
+  $('btnDel').onclick = () => { if (S.selected) { const { s, l } = S.selected; S.ir.scenes[s].layers.splice(l, 1); S.selected = null; structuralEdit(); } };
+  initSelHandles();
 
   // file menu toggle + outside click
   $('fileBtn').onclick = (e) => { e.stopPropagation(); menuOpen = !menuOpen; $('fileMenu').classList.toggle('open', menuOpen); };
