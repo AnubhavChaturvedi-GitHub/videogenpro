@@ -33,6 +33,7 @@ const I: Record<string, string> = {
   arrUp: '<polyline points="18 15 12 9 6 15"/>',
   arrDown: '<polyline points="6 9 12 15 18 9"/>',
   arrBot: '<polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/>',
+  full: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
   cube: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><line x1="12" y1="13" x2="12" y2="21"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
@@ -47,6 +48,8 @@ const I: Record<string, string> = {
 const icon = (n: string) => `<svg viewBox="0 0 24 24">${I[n] ?? ''}</svg>`;
 const typeIco: Record<string, string> = { text: 'text', image: 'image', video: 'video', shape: 'shape', three: 'cube', html: 'text' };
 const clipColor: Record<string, string> = { text: 'var(--clip-text)', image: 'var(--clip-image)', three: 'var(--clip-three)', shape: 'var(--clip-shape)', html: 'var(--clip-html)', video: 'var(--clip-video)' };
+const typeTint: Record<string, string> = { text: 'var(--t-text)', image: 'var(--t-image)', video: 'var(--t-video)', three: 'var(--t-three)', shape: 'var(--t-shape)', html: 'var(--t-html)', audio: 'var(--t-audio)' };
+const tintIcon = (n: string, type: string) => `<span style="color:${typeTint[type] || '#fff'}">${icon(n)}</span>`;
 
 // library category tabs → preset categories
 const CATS = [
@@ -108,7 +111,9 @@ function sceneAt(t: number) { let si = 0; for (let i = S.offsets.length - 1; i >
 function fit() {
   // B24: query .stagewrap directly instead of brittle parentElement chains.
   const wrap = (document.querySelector('.stagewrap') ?? $('scaler').parentElement) as HTMLElement;
-  const s = Math.min((wrap.clientWidth - 40) / S.ir.width, (wrap.clientHeight - 40) / S.ir.height, 1);
+  const cap = document.fullscreenElement ? 8 : 1; // allow scaling up in fullscreen
+  const pad = document.fullscreenElement ? 0 : 40;
+  const s = Math.min((wrap.clientWidth - pad) / S.ir.width, (wrap.clientHeight - pad) / S.ir.height, cap);
   S.scale = s;
   const sc = $('scaler'); sc.style.width = S.ir.width + 'px'; sc.style.height = S.ir.height + 'px'; sc.style.transform = `scale(${s})`;
 }
@@ -209,7 +214,7 @@ function buildTimeline() {
     inner.appendChild(sr);
     scene.layers.forEach((layer: any, li: number) => {
       const track = el('div', 'track');
-      const label = el('div', 'track-label'); label.innerHTML = icon(typeIco[layer.type] ?? 'shape') + `<span>${layer.type === 'text' ? String(layer.text).slice(0, 8) : layer.type}</span>`; track.appendChild(label);
+      const label = el('div', 'track-label'); label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${layer.type === 'text' ? String(layer.text).slice(0, 8) : layer.type}</span>`; track.appendChild(label);
       const offset = S.offsets[si] + (layer.start ?? 0); const dur = layer.duration ?? scene.duration;
       const clip = el('div', 'clip');
       clip.style.left = (LABELW + offset * S.pxPerSec) + 'px'; clip.style.width = Math.max(24, dur * S.pxPerSec) + 'px'; clip.style.background = clipColor[layer.type] ?? '#555';
@@ -240,11 +245,11 @@ function buildTimeline() {
   const audio = S.ir.audio ?? [];
   if (audio.length) {
     const info = (typeof VGP.audioInfo === 'function' ? VGP.audioInfo() : []) as any[];
-    const sr = el('div', 'scene-row'); const tag = el('div', 'scene-tag'); tag.innerHTML = icon('audio') + 'Audio'; sr.appendChild(tag); inner.appendChild(sr);
+    const sr = el('div', 'scene-row'); const tag = el('div', 'scene-tag'); tag.innerHTML = tintIcon('audio', 'audio') + 'Audio'; sr.appendChild(tag); inner.appendChild(sr);
     audio.forEach((a: any, ai: number) => {
       const track = el('div', 'track');
       const name = String(a.src).split('/').pop() || 'audio';
-      const label = el('div', 'track-label'); label.innerHTML = icon('audio') + `<span>${name.slice(0, 9)}</span>`; track.appendChild(label);
+      const label = el('div', 'track-label'); label.innerHTML = tintIcon('audio', 'audio') + `<span>${name.slice(0, 9)}</span>`; track.appendChild(label);
       const start = a.start ?? 0;
       const dur = a.duration ?? info[ai]?.duration ?? Math.max(2, S.total - start);
       const clip = el('div', 'clip audio-clip');
@@ -270,6 +275,20 @@ function buildTimeline() {
   }
 
   const ph = el('div', 'playhead'); ph.id = 'playhead'; inner.appendChild(ph); positionPlayhead();
+
+  // transition seams: a diamond at each scene boundary — drop a transition card here
+  for (let i = 1; i < S.ir.scenes.length; i++) {
+    const has = !!S.ir.scenes[i].transitionIn;
+    const seam = el('div', 'seam' + (has ? '' : ' empty'));
+    seam.style.left = (LABELW + S.offsets[i] * S.pxPerSec - 7) + 'px'; seam.style.height = '46px';
+    seam.title = has ? `transition: ${S.ir.scenes[i].transitionIn.id} (click to remove)` : 'drop a transition here';
+    const dot = el('div', 'dot'); seam.appendChild(dot);
+    seam.addEventListener('dragover', (e: DragEvent) => { if (e.dataTransfer?.types.includes('application/x-vgp-transition')) { e.preventDefault(); seam.classList.add('droptgt'); } });
+    seam.addEventListener('dragleave', () => seam.classList.remove('droptgt'));
+    seam.addEventListener('drop', (e: DragEvent) => { e.preventDefault(); seam.classList.remove('droptgt'); const id = e.dataTransfer?.getData('application/x-vgp-transition'); if (id) { S.ir.scenes[i].transitionIn = { id }; S.playhead = Math.max(0, S.offsets[i] - 0.25); structuralEdit(); showToast('Transition added: ' + id.split('.')[1]); } });
+    seam.addEventListener('click', () => { if (S.ir.scenes[i].transitionIn) { delete S.ir.scenes[i].transitionIn; structuralEdit(); showToast('Transition removed'); } });
+    inner.appendChild(seam);
+  }
 }
 function selectAudio(ai: number) { S.selAudio = ai; S.selected = null; setTab('props'); buildTimeline(); }
 function positionPlayhead() { const ph = document.getElementById('playhead'); if (ph) { ph.style.left = (LABELW + S.playhead * S.pxPerSec) + 'px'; ph.style.height = $('tlInner').scrollHeight + 'px'; } updateSelBox(); const cs = document.getElementById('curScene'); if (cs && S.ir) cs.innerHTML = icon('layers') + `Scene ${sceneAt(S.playhead) + 1} / ${S.ir.scenes.length}`; }
@@ -513,8 +532,9 @@ function buildLibrary() {
   MANIFEST.filter((e) => e.category === S.cat).forEach((e) => {
     const card = el('div', 'anim-card');
     const nm = el('div', 'nm'); nm.innerHTML = icon('spark') + e.id.split('.')[1]; card.appendChild(nm);
-    const ds = el('div', 'ds'); ds.textContent = e.description; card.appendChild(ds);
+    const ds = el('div', 'ds'); ds.textContent = e.description + (e.category === 'transition' ? ' · drag onto a scene seam ◆' : ''); card.appendChild(ds);
     card.onclick = () => applyFromLibrary(e);
+    if (e.category === 'transition') { card.draggable = true; card.ondragstart = (ev: any) => ev.dataTransfer.setData('application/x-vgp-transition', e.id); }
     grid.appendChild(card);
   });
   p.appendChild(grid);
@@ -609,6 +629,12 @@ async function init() {
   $('undoBtn').onclick = undo; $('redoBtn').onclick = redo;
   $('btnSplit').onclick = splitSelected; $('btnDup').onclick = duplicateSelected;
   $('btnFit').onclick = fitTimeline; $('btnZoomIn').onclick = () => zoomBy(1.3); $('btnZoomOut').onclick = () => zoomBy(1 / 1.3);
+  // colourful type tints on the add-layer icons
+  $('i-text').style.color = 'var(--t-text)'; $('i-shape').style.color = 'var(--t-shape)'; $('i-line').style.color = 'var(--t-video)'; $('i-3d').style.color = 'var(--t-three)';
+  // fullscreen preview
+  $('i-full').innerHTML = icon('full');
+  $('btnFull').onclick = () => { const w = document.querySelector('.stagewrap') as any; if (!document.fullscreenElement) w.requestFullscreen?.(); else document.exitFullscreen?.(); };
+  document.addEventListener('fullscreenchange', () => setTimeout(fit, 80));
 
   // top-right project views: Compositions / Assets / Code
   $('i-comp').innerHTML = icon('layers'); $('i-assets').innerHTML = icon('grid'); $('i-code').innerHTML = icon('code');

@@ -5027,6 +5027,7 @@
     arrUp: '<polyline points="18 15 12 9 6 15"/>',
     arrDown: '<polyline points="6 9 12 15 18 9"/>',
     arrBot: '<polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/>',
+    full: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
     cube: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><line x1="12" y1="13" x2="12" y2="21"/>',
     trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
     plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
@@ -5041,6 +5042,8 @@
   var icon = (n) => `<svg viewBox="0 0 24 24">${I[n] ?? ""}</svg>`;
   var typeIco = { text: "text", image: "image", video: "video", shape: "shape", three: "cube", html: "text" };
   var clipColor = { text: "var(--clip-text)", image: "var(--clip-image)", three: "var(--clip-three)", shape: "var(--clip-shape)", html: "var(--clip-html)", video: "var(--clip-video)" };
+  var typeTint = { text: "var(--t-text)", image: "var(--t-image)", video: "var(--t-video)", three: "var(--t-three)", shape: "var(--t-shape)", html: "var(--t-html)", audio: "var(--t-audio)" };
+  var tintIcon = (n, type) => `<span style="color:${typeTint[type] || "#fff"}">${icon(n)}</span>`;
   var CATS = [
     { key: "text", label: "Text", icon: "text" },
     { key: "image", label: "Video / Image", icon: "video" },
@@ -5115,7 +5118,9 @@
   }
   function fit() {
     const wrap = document.querySelector(".stagewrap") ?? $("scaler").parentElement;
-    const s = Math.min((wrap.clientWidth - 40) / S.ir.width, (wrap.clientHeight - 40) / S.ir.height, 1);
+    const cap = document.fullscreenElement ? 8 : 1;
+    const pad = document.fullscreenElement ? 0 : 40;
+    const s = Math.min((wrap.clientWidth - pad) / S.ir.width, (wrap.clientHeight - pad) / S.ir.height, cap);
     S.scale = s;
     const sc = $("scaler");
     sc.style.width = S.ir.width + "px";
@@ -5328,7 +5333,7 @@
       scene2.layers.forEach((layer2, li) => {
         const track = el("div", "track");
         const label = el("div", "track-label");
-        label.innerHTML = icon(typeIco[layer2.type] ?? "shape") + `<span>${layer2.type === "text" ? String(layer2.text).slice(0, 8) : layer2.type}</span>`;
+        label.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${layer2.type === "text" ? String(layer2.text).slice(0, 8) : layer2.type}</span>`;
         track.appendChild(label);
         const offset = S.offsets[si] + (layer2.start ?? 0);
         const dur = layer2.duration ?? scene2.duration;
@@ -5389,14 +5394,14 @@
       const info = typeof VGP.audioInfo === "function" ? VGP.audioInfo() : [];
       const sr = el("div", "scene-row");
       const tag = el("div", "scene-tag");
-      tag.innerHTML = icon("audio") + "Audio";
+      tag.innerHTML = tintIcon("audio", "audio") + "Audio";
       sr.appendChild(tag);
       inner.appendChild(sr);
       audio.forEach((a, ai) => {
         const track = el("div", "track");
         const name = String(a.src).split("/").pop() || "audio";
         const label = el("div", "track-label");
-        label.innerHTML = icon("audio") + `<span>${name.slice(0, 9)}</span>`;
+        label.innerHTML = tintIcon("audio", "audio") + `<span>${name.slice(0, 9)}</span>`;
         track.appendChild(label);
         const start = a.start ?? 0;
         const dur = a.duration ?? info[ai]?.duration ?? Math.max(2, S.total - start);
@@ -5454,6 +5459,41 @@
     ph.id = "playhead";
     inner.appendChild(ph);
     positionPlayhead();
+    for (let i = 1; i < S.ir.scenes.length; i++) {
+      const has = !!S.ir.scenes[i].transitionIn;
+      const seam = el("div", "seam" + (has ? "" : " empty"));
+      seam.style.left = LABELW + S.offsets[i] * S.pxPerSec - 7 + "px";
+      seam.style.height = "46px";
+      seam.title = has ? `transition: ${S.ir.scenes[i].transitionIn.id} (click to remove)` : "drop a transition here";
+      const dot = el("div", "dot");
+      seam.appendChild(dot);
+      seam.addEventListener("dragover", (e) => {
+        if (e.dataTransfer?.types.includes("application/x-vgp-transition")) {
+          e.preventDefault();
+          seam.classList.add("droptgt");
+        }
+      });
+      seam.addEventListener("dragleave", () => seam.classList.remove("droptgt"));
+      seam.addEventListener("drop", (e) => {
+        e.preventDefault();
+        seam.classList.remove("droptgt");
+        const id = e.dataTransfer?.getData("application/x-vgp-transition");
+        if (id) {
+          S.ir.scenes[i].transitionIn = { id };
+          S.playhead = Math.max(0, S.offsets[i] - 0.25);
+          structuralEdit();
+          showToast("Transition added: " + id.split(".")[1]);
+        }
+      });
+      seam.addEventListener("click", () => {
+        if (S.ir.scenes[i].transitionIn) {
+          delete S.ir.scenes[i].transitionIn;
+          structuralEdit();
+          showToast("Transition removed");
+        }
+      });
+      inner.appendChild(seam);
+    }
   }
   function selectAudio(ai) {
     S.selAudio = ai;
@@ -6009,9 +6049,13 @@
       nm.innerHTML = icon("spark") + e.id.split(".")[1];
       card.appendChild(nm);
       const ds = el("div", "ds");
-      ds.textContent = e.description;
+      ds.textContent = e.description + (e.category === "transition" ? " \xB7 drag onto a scene seam \u25C6" : "");
       card.appendChild(ds);
       card.onclick = () => applyFromLibrary(e);
+      if (e.category === "transition") {
+        card.draggable = true;
+        card.ondragstart = (ev) => ev.dataTransfer.setData("application/x-vgp-transition", e.id);
+      }
       grid.appendChild(card);
     });
     p.appendChild(grid);
@@ -6218,6 +6262,17 @@
     $("btnFit").onclick = fitTimeline;
     $("btnZoomIn").onclick = () => zoomBy(1.3);
     $("btnZoomOut").onclick = () => zoomBy(1 / 1.3);
+    $("i-text").style.color = "var(--t-text)";
+    $("i-shape").style.color = "var(--t-shape)";
+    $("i-line").style.color = "var(--t-video)";
+    $("i-3d").style.color = "var(--t-three)";
+    $("i-full").innerHTML = icon("full");
+    $("btnFull").onclick = () => {
+      const w = document.querySelector(".stagewrap");
+      if (!document.fullscreenElement) w.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    };
+    document.addEventListener("fullscreenchange", () => setTimeout(fit, 80));
     $("i-comp").innerHTML = icon("layers");
     $("i-assets").innerHTML = icon("grid");
     $("i-code").innerHTML = icon("code");

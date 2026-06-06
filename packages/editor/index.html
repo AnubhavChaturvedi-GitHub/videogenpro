@@ -11,15 +11,18 @@
       --text:#ffffff; --dim:rgba(255,255,255,.55); --dim2:rgba(255,255,255,.36);
       --glass:rgba(255,255,255,.05); --glass-2:rgba(255,255,255,.1); --glass-3:rgba(255,255,255,.17);
       --border:rgba(255,255,255,.16); --border-2:rgba(255,255,255,.3);
-      --accent:#ffffff; --accent-2:#c8c8c8;
-      --accent-grad:linear-gradient(135deg,#ffffff,#c2c2c2);
+      --accent:#ffffff; --accent-2:#ffffff;
+      --accent-grad:#ffffff;  /* sharp solid white accent */
       --ok:#ffffff; --warn:rgba(255,255,255,.55); --bad:#ffffff;
       --hi:inset 0 1px 0 rgba(255,255,255,.2); --glow:0 8px 32px rgba(0,0,0,.55);
       --blur:saturate(110%) blur(20px);
       --r:14px;
       --font:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
-      --clip-text:rgba(255,255,255,.34); --clip-image:rgba(255,255,255,.24); --clip-three:rgba(255,255,255,.16);
-      --clip-shape:rgba(255,255,255,.29); --clip-html:rgba(255,255,255,.20); --clip-video:rgba(255,255,255,.13);
+      /* clips stay colourful for quick layer-type identification (chrome is B&W) */
+      --clip-text:rgba(139,92,246,.55); --clip-image:rgba(14,165,233,.5); --clip-three:rgba(34,197,94,.5);
+      --clip-shape:rgba(245,158,11,.5); --clip-html:rgba(236,72,153,.5); --clip-video:rgba(6,182,212,.5);
+      /* solid type tints for icons */
+      --t-text:#a78bfa; --t-image:#38bdf8; --t-video:#22d3ee; --t-three:#4ade80; --t-shape:#fbbf24; --t-html:#f472b6; --t-audio:#34d399;
     }
     * { margin:0; padding:0; box-sizing:border-box; }
     html,body { height:100%; color:var(--text); font-family:var(--font); font-size:13px; overflow:hidden; -webkit-font-smoothing:antialiased; letter-spacing:-0.005em;
@@ -152,10 +155,10 @@
     .clip svg { width:12px; height:12px; opacity:.92; }
     .clip.sel { box-shadow:0 0 0 2px var(--accent),0 6px 18px rgba(255,255,255,.5); border-color:transparent; }
     .clip .handle { position:absolute; right:0; top:0; width:9px; height:100%; cursor:ew-resize; background:rgba(255,255,255,.25); }
-    .clip.audio-clip { background:linear-gradient(rgba(255,255,255,.4),rgba(255,255,255,.22)); color:#ffffff;
-      background-image:linear-gradient(rgba(255,255,255,.32),rgba(255,255,255,.18)),repeating-linear-gradient(90deg,rgba(255,255,255,.35) 0 1px,transparent 1px 4px);
+    .clip.audio-clip { background:linear-gradient(rgba(52,211,153,.42),rgba(52,211,153,.24)); color:#eafff5;
+      background-image:linear-gradient(rgba(52,211,153,.34),rgba(52,211,153,.18)),repeating-linear-gradient(90deg,rgba(255,255,255,.4) 0 1px,transparent 1px 4px);
       background-blend-mode:overlay; }
-    .clip.audio-clip svg { color:#ffffff; }
+    .clip.audio-clip svg { color:#34d399; }
     .playhead { position:absolute; top:0; width:2px; background:#ffffff; z-index:6; pointer-events:none; box-shadow:0 0 10px rgba(255,255,255,.8); }
     .playhead::before { content:''; position:absolute; top:0; left:-5px; border:6px solid transparent; border-top-color:#ffffff; }
     .tl-scroll.over { box-shadow:inset 0 0 0 2px var(--accent); }
@@ -220,6 +223,14 @@
     .pa .lbl { position:absolute; bottom:0; left:0; right:0; font-size:9px; padding:3px 5px; background:rgba(0,0,0,.78); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .pa .badge { position:absolute; top:4px; left:4px; font-size:8px; font-weight:800; text-transform:uppercase; padding:1px 6px; border-radius:100px; background:var(--accent); color:#000; }
     #projBody pre { font-family:ui-monospace,Menlo,monospace; font-size:11px; line-height:1.5; color:var(--text); background:rgba(0,0,0,.4); border:1px solid var(--border); border-radius:10px; padding:14px; white-space:pre-wrap; word-break:break-word; }
+    /* fullscreen preview fills the screen */
+    .stagewrap:fullscreen { background:#000; } .stagewrap:-webkit-full-screen { background:#000; }
+    /* transition drop targets on scene seams */
+    .scene-row.droptgt { box-shadow:inset 0 0 0 2px var(--accent); }
+    .seam { position:absolute; top:0; width:14px; z-index:7; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+    .seam .dot { width:11px; height:11px; border-radius:3px; transform:rotate(45deg); background:var(--accent); border:1px solid #000; opacity:.9; }
+    .seam.empty .dot { background:transparent; border:1.5px dashed var(--border-2); }
+    .seam.droptgt .dot { background:var(--t-three); transform:rotate(45deg) scale(1.4); }
   </style>
 </head>
 <body>
@@ -292,6 +303,7 @@
           <button class="tp-btn on" id="tpLoop" title="Loop"></button>
         </div>
         <div class="spacer"></div>
+        <button class="tp-btn sm" id="btnFull" title="Fullscreen preview"><span id="i-full"></span></button>
         <button class="tp-btn sm" id="btnZoomOut" title="Zoom out">−</button>
         <button class="tp-btn sm" id="btnFit" title="Fit timeline to window"><span id="i-fit"></span></button>
         <button class="tp-btn sm" id="btnZoomIn" title="Zoom in">+</button>
