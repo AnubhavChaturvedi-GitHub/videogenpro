@@ -329,7 +329,9 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
         const p = presetProgress(inst, layerLocalT, dur, !!preset.continuous);
         combine(sd, preset.apply!(p, resolveParams(preset, inst.params), { index: idx, count: ln.spans!.length, time: layerLocalT, dur }));
       }
-      applyDelta(span, sd);
+      // spans are inline-block in normal flow — use the non-centering transform
+      // (applyDelta's translate(-50%,-50%) would shift each span by half its width)
+      applySceneDelta(span, sd);
     });
   }
 
