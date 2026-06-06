@@ -58,4 +58,27 @@ export const exitPresets: Preset[] = [
     tags: ['exit', 'snappy'], params: {}, defaultDuration: 0.4, fromEnd: true,
     apply: (p) => { const e = ease('easeIn', p); return { scale: 1 + 0.25 * Math.sin(e * Math.PI), opacity: 1 - e }; },
   },
+  {
+    id: 'out.zoom-in', category: 'out', description: 'Recedes into the distance, shrinking away as it fades out.',
+    tags: ['exit', 'punchy', 'recede'], params: { to: { default: 0.4, min: 0, max: 1, desc: 'end scale (smaller = further away)' } },
+    defaultDuration: 0.5, fromEnd: true, apply: (p, prm) => { const e = ease('easeInCubic', p); return { scale: 1 - (1 - prm.to) * e, opacity: 1 - e }; },
+  },
+  {
+    id: 'out.glitch-out', category: 'out', description: 'Tears apart with an RGB-split glitch and horizontal jitter as it fades — a digital crash exit.',
+    tags: ['exit', 'glitch', 'tech'], params: { amount: { default: 10, min: 0, max: 40, unit: 'px' } }, defaultDuration: 0.5, fromEnd: true,
+    apply: (p, prm, ctx) => {
+      const e = ease('easeIn', p); const j = Math.sin(ctx.time * 70) * prm.amount * e;
+      return { x: j, opacity: 1 - e, css: { filter: 'url(#vgp-rgb-split)' } };
+    },
+  },
+  {
+    id: 'out.dissolve', category: 'out', description: 'Softly blurs and brightens as it dissolves away into light.',
+    tags: ['exit', 'soft', 'dreamy'], params: { blur: { default: 14, min: 0, max: 50, unit: 'px' } }, defaultDuration: 0.7, fromEnd: true,
+    apply: (p, prm) => { const e = ease('easeInOutCubic', p); return { blur: e * prm.blur, brightness: 1 + e * 0.4, opacity: 1 - e }; },
+  },
+  {
+    id: 'out.fall', category: 'out', description: 'Topples over with a tilt and drops down off-screen, accelerating as it falls away.',
+    tags: ['exit', 'gravity', 'playful'], params: { distance: { default: 200, min: 0, max: 800, unit: 'px' }, angle: { default: 25, min: 0, max: 90, unit: 'deg' } },
+    defaultDuration: 0.7, fromEnd: true, apply: (p, prm) => { const e = ease('easeInCubic', p); return { y: e * prm.distance, rotate: e * prm.angle, opacity: 1 - ease('easeIn', p) }; },
+  },
 ];

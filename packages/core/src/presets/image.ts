@@ -148,4 +148,120 @@ export const imagePresets: Preset[] = [
     params: { hue: { default: 200, min: 0, max: 360, unit: 'deg' } },
     defaultDuration: 4, apply: (_p, prm) => ({ css: { filter: `grayscale(1) contrast(1.1) sepia(.5) hue-rotate(${prm.hue}deg) saturate(2.2)` } }),
   },
+  {
+    id: 'image.parallax', category: 'image',
+    description: 'Slow horizontal drift across a slight zoom — a parallax layer slide that gives depth behind foreground content.',
+    tags: ['ambient', 'parallax', 'depth', 'crop'], continuous: true,
+    params: {
+      shift: { default: 0.12, min: -0.5, max: 0.5, desc: 'horizontal drift (fraction of frame)' },
+      zoom: { default: 0.12, min: 0, max: 0.6, desc: 'extra scale held to hide edges' },
+    },
+    defaultDuration: 6, apply: (p, prm) => {
+      const e = ease('easeInOut', p);
+      return { scale: 1 + prm.zoom, x: prm.shift * 200 * (e - 0.5) };
+    },
+  },
+  {
+    id: 'image.light-leak', category: 'image',
+    description: 'A warm light-leak bloom washes over the image and fades, as if film were briefly exposed to light — brightens and pushes color toward warm orange at the peak (applied as a color filter so it shows over the photo).',
+    tags: ['ambient', 'film', 'warm', 'leak'], continuous: true,
+    params: { intensity: { default: 0.6, min: 0, max: 1, desc: 'leak strength at peak' } },
+    defaultDuration: 5, apply: (p, prm) => {
+      // Peak around the middle of the layer, fading at both ends (deterministic in p).
+      const env = Math.sin(p * Math.PI) * prm.intensity;
+      return { css: {
+        filter: `brightness(${1 + env * 0.35}) saturate(${1 + env * 0.5}) sepia(${env * 0.45}) contrast(${1 + env * 0.05})`,
+      } };
+    },
+  },
+  {
+    id: 'image.film-grain', category: 'image',
+    description: 'Overlays animated-looking static film grain (deterministic SVG noise) plus a subtle desaturation for an analog, celluloid texture.',
+    tags: ['stylize', 'film', 'grain', 'analog'], continuous: true,
+    params: { amount: { default: 1, min: 0, max: 1, desc: '0=light grain, 1=heavy grain' } },
+    defaultDuration: 5, apply: (_p, prm) => ({ css: {
+      filter: `url(#${prm.amount >= 0.5 ? 'vgp-grain-heavy' : 'vgp-grain'}) contrast(1.05) saturate(0.9)`,
+    } }),
+  },
+  {
+    id: 'image.glitch', category: 'image',
+    description: 'Digital glitch: RGB channel split (chromatic tear) with intermittent horizontal jitter and hue shifts, pulsing on a deterministic cadence.',
+    tags: ['stylize', 'glitch', 'tech', 'rgb-split'], continuous: true,
+    params: {
+      amount: { default: 6, min: 0, max: 24, unit: 'px', desc: 'horizontal tear magnitude' },
+      rate: { default: 8, min: 1, max: 30, desc: 'glitch bursts per second' },
+    },
+    defaultDuration: 5, apply: (_p, prm, ctx) => {
+      const phase = ctx.time * prm.rate;
+      const cell = Math.floor(phase);
+      // Deterministic per-burst gate: only ~40% of bursts fire, sizes vary by cell.
+      const r = Math.abs(Math.sin(cell * 91.7) * 1000) % 1;
+      const fire = r > 0.6 ? 1 : 0;
+      const jitter = (((Math.sin(cell * 33.3) * 1000) % 1) * 2 - 1) * prm.amount * fire;
+      const hue = fire ? (r - 0.5) * 40 : 0;
+      return { x: jitter, css: { filter: `url(#vgp-rgb-split) hue-rotate(${hue}deg)` } };
+    },
+  },
+  {
+    id: 'image.color-grade', category: 'image',
+    description: 'Cinematic teal-and-orange color grade: warms highlights toward orange and pushes shadows toward teal. `temp` shifts warm/cool, `tint` shifts green/magenta.',
+    tags: ['stylize', 'grade', 'cinematic', 'teal-orange'], continuous: true,
+    params: {
+      temp: { default: 18, min: -60, max: 60, desc: 'warm(+)/cool(-) hue shift in deg' },
+      tint: { default: 1.25, min: 0.5, max: 2, desc: 'saturation/tint strength' },
+    },
+    defaultDuration: 5, apply: (_p, prm) => ({ css: {
+      filter: `saturate(${prm.tint}) contrast(1.12) sepia(0.18) hue-rotate(${prm.temp - 18}deg) brightness(1.02)`,
+    } }),
+  },
+  {
+    id: 'image.vhs', category: 'image',
+    description: 'Retro VHS look: chromatic RGB-split, slight blur and boosted saturation with a slow vertical tracking wobble, for a worn 80s videotape vibe. (Pair with the overlay.scanlines preset for scanlines on top.)',
+    tags: ['stylize', 'retro', 'vhs', 'rgb-split'], continuous: true,
+    params: { wobble: { default: 1.5, min: 0, max: 6, unit: 'px', desc: 'tracking wobble amplitude' } },
+    defaultDuration: 5, apply: (_p, prm, ctx) => {
+      // Slow vertical tracking wobble (deterministic from time).
+      const y = Math.sin(ctx.time * 2.3) * prm.wobble;
+      return { y, css: { filter: 'url(#vgp-rgb-split) saturate(1.4) contrast(1.08) blur(0.4px)' } };
+    },
+  },
+  {
+    id: 'image.spotlight', category: 'image',
+    description: 'A heavy inset vignette darkens the edges to spotlight the center of the image and draw the eye inward; `amount` controls how dark the surround gets.',
+    tags: ['cinematic', 'spotlight', 'focus', 'vignette'], continuous: true,
+    params: { amount: { default: 0.7, min: 0, max: 1, desc: 'darkness of the surround' } },
+    defaultDuration: 5, apply: (_p, prm) => ({ css: {
+      // inset box-shadow paints over the child <img>, unlike background-image.
+      boxShadow: `inset 0 0 ${160 + 120 * prm.amount}px ${50 * prm.amount}px rgba(0,0,0,${0.9 * prm.amount})`,
+    } }),
+  },
+  {
+    id: 'image.zoom-pan', category: 'image',
+    description: 'A configurable Ken-Burns variant: linear push-in with an independent diagonal pan — pick start scale and pan direction for a custom slow move.',
+    tags: ['ambient', 'cinematic', 'ken-burns', 'crop'], continuous: true,
+    params: {
+      from: { default: 1.0, min: 1, max: 2, desc: 'start scale (pushes toward 1+zoom)' },
+      zoom: { default: 0.25, min: 0, max: 1, desc: 'extra scale gained over the layer' },
+      panX: { default: 0.08, min: -0.5, max: 0.5, desc: 'horizontal drift (fraction)' },
+      panY: { default: 0.05, min: -0.5, max: 0.5, desc: 'vertical drift (fraction)' },
+    },
+    defaultDuration: 6, apply: (p, prm) => {
+      const e = ease('easeInOut', p);
+      return { scale: prm.from + prm.zoom * e, x: prm.panX * 200 * e, y: prm.panY * 200 * e };
+    },
+  },
+  {
+    id: 'image.pulse', category: 'image',
+    description: 'A gentle continuous brightness-and-scale pulse, as if the image is glowing in and out — subtle attention without bouncing.',
+    tags: ['ambient', 'loop', 'pulse', 'glow'], continuous: true,
+    params: {
+      scale: { default: 0.03, min: 0, max: 0.2, desc: 'scale pulse amount' },
+      glow: { default: 0.12, min: 0, max: 0.6, desc: 'brightness pulse amount' },
+      speed: { default: 1.4, min: 0.2, max: 5 },
+    },
+    defaultDuration: 5, apply: (_p, prm, ctx) => {
+      const s = Math.sin(ctx.time * prm.speed);
+      return { scale: 1 + s * prm.scale, brightness: 1 + s * prm.glow };
+    },
+  },
 ];

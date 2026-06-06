@@ -159,6 +159,25 @@ function ensureSvgFilters() {
     <feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0"/>
     <feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -1 0 -1 4 -1 0 -1 0"/>
     <feComponentTransfer><feFuncR type="table" tableValues="1 0"/><feFuncG type="table" tableValues="1 0"/><feFuncB type="table" tableValues="1 0"/></feComponentTransfer>
+  </filter>
+  <filter id="vgp-grain" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" stitchTiles="stitch" result="noise"/>
+    <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.18 0" result="grainAlpha"/>
+    <feComposite in="grainAlpha" in2="SourceGraphic" operator="over"/>
+  </filter>
+  <filter id="vgp-grain-heavy" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="3" seed="19" stitchTiles="stitch" result="noise"/>
+    <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.38 0" result="grainAlpha"/>
+    <feComposite in="grainAlpha" in2="SourceGraphic" operator="over"/>
+  </filter>
+  <filter id="vgp-rgb-split" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+    <feOffset in="SourceGraphic" dx="4" dy="0" result="r"/>
+    <feColorMatrix in="r" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="rOnly"/>
+    <feOffset in="SourceGraphic" dx="-4" dy="0" result="b"/>
+    <feColorMatrix in="b" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="bOnly"/>
+    <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="gOnly"/>
+    <feBlend in="rOnly" in2="gOnly" mode="screen" result="rg"/>
+    <feBlend in="rg" in2="bOnly" mode="screen"/>
   </filter></defs>`;
   document.body.appendChild(svg);
 }

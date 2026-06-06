@@ -37,4 +37,34 @@ export const audioPresets: Preset[] = [
       return { x: Math.sin(ctx.time * 80) * b * prm.amount, rotate: Math.sin(ctx.time * 60) * b * 2 };
     },
   },
+  {
+    id: 'audio.strobe', category: 'audio', description: 'Opacity flashes bright on every beat then dims between — a rhythmic strobe pulse.',
+    tags: ['reactive', 'beat', 'strobe', 'flash'], continuous: true,
+    params: { bpm: { default: 120, min: 40, max: 220, desc: 'beats per minute' }, floor: { default: 0.35, min: 0, max: 1, desc: 'dimmest opacity between beats' } },
+    defaultDuration: 5, apply: (_p, prm, ctx) => {
+      const b = beat(ctx.time, prm.bpm);
+      return { opacity: prm.floor + (1 - prm.floor) * b };
+    },
+  },
+  {
+    id: 'audio.kick-flash', category: 'audio', description: 'A white brightness flash slams on each kick (beat) and decays — punchy bass-drop strobe of light.',
+    tags: ['reactive', 'beat', 'kick', 'flash', 'glow'], continuous: true,
+    params: { bpm: { default: 120, min: 40, max: 220 }, amount: { default: 0.8, min: 0, max: 2, desc: 'flash brightness punch' } },
+    defaultDuration: 5, apply: (_p, prm, ctx) => {
+      const b = beat(ctx.time, prm.bpm);
+      // brightness flash + a faint scale tick for impact.
+      return { brightness: 1 + b * prm.amount, scale: 1 + b * 0.02 };
+    },
+  },
+  {
+    id: 'audio.wobble', category: 'audio', description: 'Rotates and skews back and forth on the beat — a rubbery, dubstep-style wobble.',
+    tags: ['reactive', 'beat', 'wobble', 'dynamic'], continuous: true,
+    params: { bpm: { default: 120, min: 40, max: 220 }, amount: { default: 6, min: 0, max: 25, unit: 'deg', desc: 'rotation/skew magnitude' } },
+    defaultDuration: 5, apply: (_p, prm, ctx) => {
+      const b = beat(ctx.time, prm.bpm);
+      const dir = Math.sin(ctx.time * 11); // alternating wobble direction, deterministic
+      const sk = dir * b * prm.amount;
+      return { rotate: sk * 0.5, css: { transform: `skewX(${sk}deg)` } };
+    },
+  },
 ];

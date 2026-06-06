@@ -63,4 +63,34 @@ export const enterPresets: Preset[] = [
     tags: ['enter', 'energetic'], params: { skew: { default: 20, min: 0, max: 60, unit: 'deg' }, distance: { default: 80, min: 0, max: 400, unit: 'px' } },
     defaultDuration: 0.55, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { x: (1 - e) * prm.distance, opacity: ease('easeOut', p), css: { transform: `skewX(${(1 - e) * -prm.skew}deg)` } }; },
   },
+  {
+    id: 'in.slide-down', category: 'in', description: 'Descends from above into place while fading in.',
+    tags: ['enter', 'vertical', 'directional'], params: { distance: { default: 80, min: 0, max: 600, unit: 'px' } },
+    defaultDuration: 0.6, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { y: -(1 - e) * prm.distance, opacity: e }; },
+  },
+  {
+    id: 'in.fade-down', category: 'in', description: 'Gently fades in while drifting down a short distance — soft top-down entrance.',
+    tags: ['enter', 'vertical', 'subtle'], params: { distance: { default: 40, min: 0, max: 300, unit: 'px' } },
+    defaultDuration: 0.6, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { y: -(1 - e) * prm.distance, opacity: e }; },
+  },
+  {
+    id: 'in.bounce', category: 'in', description: 'Drops in from above and settles with a springy overshoot bounce.',
+    tags: ['enter', 'vertical', 'bouncy', 'playful'], params: { distance: { default: 140, min: 0, max: 600, unit: 'px' } },
+    defaultDuration: 0.8, apply: (p, prm) => { const e = ease('easeOutBack', p); return { y: -(1 - e) * prm.distance, scale: 0.9 + 0.1 * ease('easeOutBack', p), opacity: ease('easeOut', p) }; },
+  },
+  {
+    id: 'in.unfold', category: 'in', description: 'Unfolds open around the horizontal axis from a closed flap (3D rotateX) while fading in.',
+    tags: ['enter', '3d', 'unfold'], params: { angle: { default: 90, min: 0, max: 90, unit: 'deg', desc: 'start fold angle' } },
+    defaultDuration: 0.7, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { opacity: ease('easeOut', p), css: { transform: `perspective(1200px) rotateX(${-(1 - e) * prm.angle}deg)`, transformOrigin: 'top center' } }; },
+  },
+  {
+    id: 'in.zoom-blur-in', category: 'in', description: 'Rushes in from oversized with heavy motion blur that snaps into focus — high-impact arrival.',
+    tags: ['enter', 'punchy', 'impact', 'blur'], params: { from: { default: 1.6, min: 1, max: 3, desc: 'start scale' }, blur: { default: 20, min: 0, max: 60, unit: 'px' } },
+    defaultDuration: 0.55, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { scale: prm.from - (prm.from - 1) * e, blur: (1 - e) * prm.blur, opacity: ease('easeOut', p) }; },
+  },
+  {
+    id: 'in.rise-rotate', category: 'in', description: 'Rises up while un-tilting from a slight rotation — an elegant, slightly off-kilter entrance.',
+    tags: ['enter', 'elegant', 'rotate'], params: { distance: { default: 70, min: 0, max: 400, unit: 'px' }, angle: { default: 8, min: 0, max: 30, unit: 'deg' } },
+    defaultDuration: 0.7, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { y: (1 - e) * prm.distance, rotate: (1 - e) * prm.angle, opacity: e }; },
+  },
 ];

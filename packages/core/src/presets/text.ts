@@ -141,4 +141,126 @@ export const textPresets: Preset[] = [
       return { css: { backgroundImage: 'linear-gradient(transparent 58%, rgba(167,139,250,.55) 58%)', backgroundRepeat: 'no-repeat', backgroundSize: `${e * 100}% 100%` } };
     },
   },
+  {
+    id: 'text.shimmer', category: 'text',
+    description: 'A bright specular highlight sweeps across the letters once, like light glinting off metal — emphasis without movement.',
+    tags: ['emphasis', 'shine', 'metallic'],
+    params: { width: { default: 22, min: 5, max: 60, unit: '%', desc: 'width of the moving highlight band' } },
+    defaultDuration: 1.4, apply: (p, prm) => {
+      // Sweep a light band across the text via a moving gradient clipped to glyphs.
+      // pos runs from before the left edge (-width) to past the right edge.
+      const pos = -prm.width + p * (100 + prm.width * 2);
+      const a = pos - prm.width, b = pos, c = pos + prm.width;
+      return { css: {
+        backgroundImage: `linear-gradient(110deg, currentColor ${a}%, #ffffff ${b}%, currentColor ${c}%)`,
+        backgroundClip: 'text', webkitBackgroundClip: 'text', color: 'transparent',
+      } };
+    },
+  },
+  {
+    id: 'text.typewriter-cursor', category: 'text', split: 'char',
+    description: 'Characters reveal left to right like typing, with a blinking block cursor trailing the last visible character.',
+    tags: ['enter', 'char', 'retro', 'terminal'],
+    params: {
+      stagger: { default: 0.05, min: 0.005, max: 0.3, desc: 'delay fraction per char' },
+      blink: { default: 6, min: 0, max: 20, desc: 'cursor blinks per second' },
+    },
+    defaultDuration: 1.6, apply: (p, prm, ctx) => {
+      const pe = staggered(p, ctx, prm.stagger);
+      const visible = pe > 0;
+      // The "active" char is the first one partway through revealing; show a caret on it.
+      const onCaret = pe > 0 && pe < 1;
+      const blinkOn = prm.blink <= 0 ? 1 : (Math.floor(ctx.time * prm.blink * 2) % 2 === 0 ? 1 : 0);
+      // Always emit borderRight (transparent when off) so no stale style is left behind.
+      const caret = onCaret && blinkOn ? '0.12em solid currentColor' : '0.12em solid transparent';
+      return { opacity: visible ? 1 : 0, css: { borderRight: caret } };
+    },
+  },
+  {
+    id: 'text.bounce-in', category: 'text', split: 'word',
+    description: 'Words drop in one by one, each landing with a springy squash-and-settle bounce.',
+    tags: ['enter', 'stagger', 'bouncy', 'playful'],
+    params: {
+      distance: { default: 60, min: 0, max: 300, unit: 'px' },
+      stagger: { default: 0.16, min: 0, max: 0.5, desc: 'delay fraction per word' },
+    },
+    defaultDuration: 1.4, apply: (p, prm, ctx) => {
+      const pe = staggered(p, ctx, prm.stagger);
+      const e = ease('easeOutBack', pe);
+      return { y: -(1 - e) * prm.distance, scale: 0.7 + 0.3 * ease('easeOutBack', pe), opacity: ease('easeOut', pe) };
+    },
+  },
+  {
+    id: 'text.scramble', category: 'text', split: 'char',
+    description: 'Each character jitters and rotates from a seeded offset and snaps cleanly into place — a decoding / data-scramble settle (positions are seeded per character so it is deterministic; the glyphs themselves do not change).',
+    tags: ['enter', 'char', 'tech', 'decode', 'glitch'],
+    params: {
+      amount: { default: 18, min: 0, max: 60, unit: 'px', desc: 'initial jitter magnitude' },
+      stagger: { default: 0.03, min: 0, max: 0.3, desc: 'delay fraction per char' },
+    },
+    defaultDuration: 1.2, apply: (p, prm, ctx) => {
+      const pe = staggered(p, ctx, prm.stagger);
+      const e = ease('easeOutCubic', pe);
+      // Deterministic per-char pseudo-random in [-1,1] from the index (no Math.random).
+      const seed = Math.sin(ctx.index * 12.9898 + 4.1414) * 43758.5453;
+      const rx = ((seed - Math.floor(seed)) * 2 - 1);
+      const ry = ((Math.sin(ctx.index * 78.233 + 1.7) * 1271.137) % 1) * 2 - 1;
+      const k = 1 - e;
+      return { x: rx * prm.amount * k, y: ry * prm.amount * k, rotate: rx * 35 * k, opacity: ease('easeOut', pe) };
+    },
+  },
+  {
+    id: 'text.underline-draw', category: 'text',
+    description: 'An underline draws itself in from left to right beneath the text as it sits (best on a fitted box).',
+    tags: ['emphasis', 'underline', 'draw'],
+    params: { thickness: { default: 6, min: 1, max: 24, unit: 'px' } },
+    defaultDuration: 0.8, apply: (p, prm) => {
+      const e = ease('easeInOutCubic', p);
+      const t = prm.thickness;
+      return { css: {
+        backgroundImage: 'linear-gradient(currentColor, currentColor)',
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: '0 100%',
+        backgroundSize: `${e * 100}% ${t}px`,
+        paddingBottom: `${t + 2}px`,
+      } };
+    },
+  },
+  {
+    id: 'text.fade-down', category: 'text',
+    description: 'Text descends from above while fading in, with a soft ease-out (mirror of fade-up).',
+    tags: ['enter', 'subtle', 'vertical'],
+    params: { distance: { default: 40, min: 0, max: 300, unit: 'px' } },
+    defaultDuration: 0.6, apply: (p, prm) => {
+      const e = ease('easeOutCubic', p);
+      return { y: -(1 - e) * prm.distance, opacity: e };
+    },
+  },
+  {
+    id: 'text.wave', category: 'text', split: 'char',
+    description: 'Characters rise into place in a left-to-right cresting wave, each cresting and settling — a lively staggered entrance.',
+    tags: ['enter', 'stagger', 'playful', 'wave'],
+    params: {
+      amplitude: { default: 40, min: 0, max: 160, unit: 'px' },
+      stagger: { default: 0.05, min: 0, max: 0.3, desc: 'delay fraction per char' },
+    },
+    defaultDuration: 1.3, apply: (p, prm, ctx) => {
+      const pe = staggered(p, ctx, prm.stagger);
+      // Single crest: up then settle, using a half-sine envelope on top of the rise.
+      const crest = Math.sin(ease('easeInOutCubic', pe) * Math.PI) * (1 - pe);
+      return { y: -crest * prm.amplitude, opacity: ease('easeOut', pe) };
+    },
+  },
+  {
+    id: 'text.rainbow-sweep', category: 'text',
+    description: 'A continuously cycling rainbow gradient flows across the letters — vibrant, looping color motion.',
+    tags: ['ambient', 'loop', 'vibrant', 'rainbow'], continuous: true,
+    params: { speed: { default: 0.5, min: 0.1, max: 3 } },
+    defaultDuration: 5, apply: (_p, prm, ctx) => ({ css: {
+      backgroundImage: 'linear-gradient(90deg,#ff4d4d,#ffb84d,#fff24d,#4dff88,#4dd2ff,#9b4dff,#ff4dd2,#ff4d4d)',
+      backgroundSize: '400% 100%', backgroundRepeat: 'no-repeat',
+      backgroundPosition: `${(-(ctx.time * prm.speed) % 1) * 400}% 0`,
+      backgroundClip: 'text', webkitBackgroundClip: 'text', color: 'transparent',
+    } }),
+  },
 ];
