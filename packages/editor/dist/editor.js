@@ -5162,7 +5162,9 @@
     save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
     download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
     spark: '<path d="M12 3l1.9 5.8L20 10.7l-5.1 1.9L12 18l-1.9-5.4L5 10.7l6.1-1.9z"/>',
-    sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>'
+    sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+    speaker: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>',
+    mute: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>'
   };
   var icon = (n) => `<svg viewBox="0 0 24 24">${I[n] ?? ""}</svg>`;
   var typeIco = { text: "text", image: "image", video: "video", shape: "shape", three: "cube", html: "text", overlay: "sliders", fx: "spark" };
@@ -5430,8 +5432,8 @@
   }
   function fit() {
     const wrap = document.querySelector(".stagewrap") ?? $("scaler").parentElement;
-    const cap = document.fullscreenElement ? 8 : 1;
-    const pad = document.fullscreenElement ? 0 : 40;
+    const cap = document.fullscreenElement ? 8 : 1.5;
+    const pad = document.fullscreenElement ? 0 : 20;
     const s = Math.min((wrap.clientWidth - pad) / S.ir.width, (wrap.clientHeight - pad) / S.ir.height, cap);
     S.scale = s;
     const sc = $("scaler");
@@ -5708,8 +5710,10 @@
       const effZ = (layer2, i) => layer2.zIndex ?? i;
       scene2.layers.map((layer2, li) => ({ layer: layer2, li, z: effZ(layer2, li) })).sort((a, b) => b.z - a.z).forEach(({ layer: layer2, li }) => {
         const track = el("div", "track");
+        const fullLabel = layerLabel(layer2);
         const label = el("div", "track-label");
-        label.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${layerLabel(layer2).slice(0, 9)}</span>`;
+        label.title = fullLabel;
+        label.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${fullLabel.slice(0, 9)}</span>`;
         track.appendChild(label);
         const offset = S.offsets[si] + (layer2.start ?? 0);
         const dur = layer2.duration ?? scene2.duration;
@@ -5717,7 +5721,8 @@
         clip.style.left = LABELW + offset * S.pxPerSec + "px";
         clip.style.width = Math.max(24, dur * S.pxPerSec) + "px";
         clip.style.background = clipColor[layer2.type] ?? "#555";
-        clip.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${layerLabel(layer2).slice(0, 16)}</span>`;
+        clip.title = fullLabel;
+        clip.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${fullLabel.slice(0, 16)}</span>`;
         if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add("sel");
         if (layer2.type === "fx" && !resolveFxTarget(scene2, li)) {
           clip.style.opacity = ".5";
@@ -6002,6 +6007,7 @@
         const track = el("div", "track");
         const name = String(a.src).split("/").pop() || "audio";
         const label = el("div", "track-label");
+        label.title = name;
         label.innerHTML = tintIcon("audio", "audio") + `<span>${name.slice(0, 9)}</span>`;
         track.appendChild(label);
         const start = a.start ?? 0;
@@ -6017,8 +6023,9 @@
           clip.style.backgroundImage = "repeating-linear-gradient(45deg,rgba(255,255,255,.08) 0 6px,transparent 6px 12px)";
         } else clip.style.width = Math.max(24, Math.min(dur, metaReady ? maxDur : dur) * S.pxPerSec) + "px";
         const vol = a.volume ?? 1;
-        const volBadge = vol === 0 ? "\u{1F507}" : `${Math.round(vol * 100)}%`;
-        clip.innerHTML = icon("audio") + `<span>${name}</span><span style="margin-left:auto;font-size:9px;opacity:${vol === 0 ? ".6" : ".85"}">${volBadge}</span>`;
+        const volBadge = vol === 0 ? icon("mute") : `${Math.round(vol * 100)}%`;
+        clip.title = name;
+        clip.innerHTML = icon("audio") + `<span>${name}</span><span style="margin-left:auto;font-size:9px;display:inline-flex;align-items:center;opacity:${vol === 0 ? ".6" : ".85"}">${volBadge}</span>`;
         if (S.selAudio === ai) clip.classList.add("sel");
         const lh = el("div", "handle");
         lh.style.cssText = "right:auto;left:0";
@@ -6350,6 +6357,36 @@
     };
     row.appendChild(r);
     row.appendChild(v);
+    f.appendChild(row);
+    return f;
+  }
+  function colorField(label, value, onIn) {
+    const f = el("div", "field");
+    const lab = el("label");
+    lab.textContent = label;
+    f.appendChild(lab);
+    const row = el("div", "row color-row");
+    const safe = (v) => /^#[0-9a-fA-F]{6}$/.test(v) ? v : /^#[0-9a-fA-F]{3}$/.test(v) ? "#" + v.slice(1).split("").map((c) => c + c).join("") : "#ffffff";
+    const sw = el("input", "color-swatch");
+    sw.type = "color";
+    sw.value = safe(value);
+    const hex = el("input", "color-hex");
+    hex.type = "text";
+    hex.value = value;
+    hex.spellcheck = false;
+    sw.oninput = () => {
+      hex.value = sw.value;
+      onIn(sw.value);
+    };
+    hex.oninput = () => {
+      const v = hex.value.trim();
+      if (/^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(v)) {
+        sw.value = safe(v);
+        onIn(v);
+      }
+    };
+    row.appendChild(sw);
+    row.appendChild(hex);
     f.appendChild(row);
     return f;
   }
@@ -6690,7 +6727,7 @@
       title2.style.cssText = "flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis";
       head2.appendChild(title2);
       const mute = el("button", "icon-btn");
-      mute.textContent = (a.volume ?? 1) === 0 ? "\u{1F507}" : "\u{1F50A}";
+      mute.innerHTML = icon((a.volume ?? 1) === 0 ? "mute" : "speaker");
       mute.title = "mute / unmute";
       mute.onclick = () => {
         a.volume = (a.volume ?? 1) === 0 ? 1 : 0;
@@ -6854,19 +6891,10 @@
         layer2.style.fontSize = Math.round(v) + "px";
         structuralEdit();
       }));
-      const cf = el("div", "field");
-      const cl = el("label");
-      cl.textContent = "color";
-      cf.appendChild(cl);
-      const ci = el("input");
-      ci.type = "text";
-      ci.value = layer2.style.color || "#ffffff";
-      ci.oninput = () => {
-        layer2.style.color = ci.value;
+      p.appendChild(colorField("color", layer2.style.color || "#ffffff", (v) => {
+        layer2.style.color = v;
         structuralEdit();
-      };
-      cf.appendChild(ci);
-      p.appendChild(cf);
+      }));
     }
     if (layer2.type === "image" || layer2.type === "video") {
       const cf = el("div", "field");
@@ -6889,19 +6917,10 @@
       p.appendChild(cf);
     }
     if (layer2.type === "shape") {
-      const cf = el("div", "field");
-      const cl = el("label");
-      cl.textContent = "fill color";
-      cf.appendChild(cl);
-      const ci = el("input");
-      ci.type = "text";
-      ci.value = layer2.fill || "#ffffff";
-      ci.oninput = () => {
-        layer2.fill = ci.value;
+      p.appendChild(colorField("fill color", layer2.fill || "#ffffff", (v) => {
+        layer2.fill = v;
         structuralEdit();
-      };
-      cf.appendChild(ci);
-      p.appendChild(cf);
+      }));
     }
     if (layer2.type === "overlay") {
       const cf = el("div", "field");
@@ -7077,9 +7096,24 @@
     positionPlayhead();
     showToast("Added " + entry.id.split(".")[1].replace(/-/g, " "));
   }
+  function previewBuffering() {
+    return [...document.querySelectorAll("#stage video")].some((v) => v.readyState < 2);
+  }
+  function updateSeekbar(forceLoading = false) {
+    const bar = document.getElementById("seekbar");
+    if (!bar) return;
+    const tot = effectiveTotal();
+    const frac = clamp012(tot > 0 ? S.playhead / tot : 0);
+    const fill = document.getElementById("seekFill");
+    if (fill) fill.style.width = `calc(${frac} * (100% - 36px))`;
+    const knob = document.getElementById("seekKnob");
+    if (knob) knob.style.left = `calc(18px + ${frac} * (100% - 36px))`;
+    bar.classList.toggle("loading", forceLoading || previewBuffering());
+  }
   function updateTime() {
     $("tpTime").textContent = fmtClockMs(S.playhead);
     $("tpTotal").textContent = " / " + fmtClockMs(effectiveTotal());
+    updateSeekbar();
   }
   function setZoom(px, anchorClientX, persist = true) {
     const tl = $("tlScroll");
@@ -7272,6 +7306,33 @@
       $("tpLoop").classList.toggle("on", S.loop);
       $("tpLoop").style.opacity = S.loop ? "1" : ".5";
     };
+    const seekbar = $("seekbar");
+    const seekFromX = (clientX) => {
+      const r = seekbar.getBoundingClientRect();
+      const frac = clamp012((clientX - r.left) / Math.max(1, r.width));
+      seekTo(frac * effectiveTotal());
+    };
+    seekbar.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const wasPlaying = S.playing;
+      if (wasPlaying) togglePlay();
+      seekbar.classList.add("dragging");
+      seekFromX(e.clientX);
+      const mv = (ev) => seekFromX(ev.clientX);
+      const up = () => {
+        window.removeEventListener("mousemove", mv);
+        window.removeEventListener("mouseup", up);
+        window.removeEventListener("blur", up);
+        seekbar.classList.remove("dragging");
+        if (wasPlaying) togglePlay();
+      };
+      window.addEventListener("mousemove", mv);
+      window.addEventListener("mouseup", up);
+      window.addEventListener("blur", up);
+    });
+    updateSeekbar(true);
+    VGP.ready().then(() => updateSeekbar()).catch(() => updateSeekbar());
     $("tabProps").onclick = () => setTab("props");
     $("tabAnim").onclick = () => setTab("anim");
     $("undoBtn").onclick = undo;

@@ -38,6 +38,11 @@
     ::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,.28); }
     svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; display:block; }
     button { font-family:inherit; cursor:pointer; border:0; color:var(--text); background:transparent; }
+    /* keyboard focus ring — visible on all buttons/tabs/cards (mouse focus stays clean) */
+    :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:inherit; }
+    /* clips sit tightly packed; inset the ring so it reads inside the lane */
+    .clip:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+    @media (prefers-reduced-motion: reduce) { * { animation-duration:.001ms !important; transition-duration:.001ms !important; } }
 
     .glass { background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); box-shadow:var(--glow),var(--hi); }
     .btn { background:var(--glass-2); border:1px solid var(--border); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-radius:11px; padding:8px 14px; font-weight:600; font-size:12px; display:inline-flex; align-items:center; gap:7px; box-shadow:var(--hi); transition:all .15s; }
@@ -111,6 +116,14 @@
     .field input[type=text], .field textarea, .field select { width:100%; background:rgba(0,0,0,.25); border:1px solid var(--border); color:var(--text); border-radius:9px; padding:8px 10px; font-size:12px; font-family:inherit; }
     .field input:focus, .field textarea:focus, .field select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(255,255,255,.18); }
     .field textarea { resize:vertical; min-height:46px; }
+    /* color field: native swatch (square chip) + hex text input */
+    .color-row { gap:8px; }
+    .color-row .color-swatch { width:34px; height:34px; flex:none; padding:2px; border-radius:9px; background:rgba(0,0,0,.25); border:1px solid var(--border); cursor:pointer; -webkit-appearance:none; appearance:none; }
+    .color-row .color-swatch::-webkit-color-swatch-wrapper { padding:0; }
+    .color-row .color-swatch::-webkit-color-swatch { border:none; border-radius:6px; }
+    .color-row .color-swatch::-moz-color-swatch { border:none; border-radius:6px; }
+    .color-row .color-swatch:hover { border-color:var(--border-2); }
+    .field .color-row .color-hex { flex:1; font-family:ui-monospace,Menlo,monospace; text-transform:lowercase; }
     .row { display:flex; align-items:center; gap:9px; }
     .row input[type=range] { flex:1; accent-color:var(--accent); }
     .row .val { width:50px; text-align:right; font-variant-numeric:tabular-nums; font-size:11px; color:var(--dim); }
@@ -134,6 +147,19 @@
     .empty { color:var(--dim); font-size:12px; padding:34px 14px; text-align:center; line-height:1.7; }
 
     .timeline { background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-top:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+    /* preview progress / seek bar — full width, sits above the transport controls */
+    .seekbar { position:relative; height:14px; margin:0; padding:6px 18px; cursor:pointer; display:flex; align-items:center; flex:0 0 auto; }
+    .seekbar::before { content:''; position:absolute; left:18px; right:18px; top:50%; transform:translateY(-50%); height:4px; border-radius:100px; background:rgba(255,255,255,.12); border:1px solid var(--border); box-shadow:inset 0 1px 0 rgba(0,0,0,.3); }
+    .seekbar .seek-fill { position:absolute; left:18px; top:50%; transform:translateY(-50%); height:4px; width:0%; border-radius:100px; background:var(--accent-grad); box-shadow:0 0 10px rgba(255,255,255,.5); pointer-events:none; z-index:1; }
+    .seekbar .seek-knob { position:absolute; left:18px; top:50%; width:13px; height:13px; border-radius:50%; transform:translate(-50%,-50%); background:var(--accent); border:2px solid #000; box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 1px var(--border); opacity:0; transition:opacity .12s; pointer-events:none; z-index:2; }
+    .seekbar:hover .seek-knob, .seekbar.dragging .seek-knob { opacity:1; }
+    .seekbar.dragging { cursor:grabbing; }
+    /* buffering / not-ready: animated stripe overlaid on the track region */
+    .seekbar .seek-buf { position:absolute; left:18px; right:18px; top:50%; transform:translateY(-50%); height:4px; border-radius:100px; opacity:0; pointer-events:none; z-index:0;
+      background:repeating-linear-gradient(90deg, rgba(255,255,255,.28) 0 10px, rgba(255,255,255,.06) 10px 20px); background-size:40px 100%; }
+    .seekbar.loading .seek-buf { opacity:1; animation:seekBuf 1s linear infinite; }
+    .seekbar.loading .seek-fill { opacity:.4; }
+    @keyframes seekBuf { from { background-position:0 0; } to { background-position:40px 0; } }
     .transport { display:flex; align-items:center; gap:14px; padding:9px 18px; border-bottom:1px solid var(--border); }
     .tp-time { font-variant-numeric:tabular-nums; font-size:15px; font-weight:600; min-width:140px; }
     .tp-time .tot { color:var(--dim); font-weight:400; }
@@ -290,6 +316,11 @@
     </div>
 
     <div class="timeline">
+      <div class="seekbar" id="seekbar" title="Drag to scrub">
+        <div class="seek-fill" id="seekFill"></div>
+        <div class="seek-buf"></div>
+        <div class="seek-knob" id="seekKnob"></div>
+      </div>
       <div class="transport">
         <div class="tp-time"><span id="tpTime">0.00</span><span class="tot" id="tpTotal"> / 0.00s</span></div>
         <div class="clip-tools">

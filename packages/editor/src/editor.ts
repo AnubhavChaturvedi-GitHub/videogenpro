@@ -52,6 +52,8 @@ const I: Record<string, string> = {
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   spark: '<path d="M12 3l1.9 5.8L20 10.7l-5.1 1.9L12 18l-1.9-5.4L5 10.7l6.1-1.9z"/>',
   sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+  speaker: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>',
+  mute: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
 };
 const icon = (n: string) => `<svg viewBox="0 0 24 24">${I[n] ?? ''}</svg>`;
 const typeIco: Record<string, string> = { text: 'text', image: 'image', video: 'video', shape: 'shape', three: 'cube', html: 'text', overlay: 'sliders', fx: 'spark' };
@@ -318,8 +320,14 @@ function presetAppliesTo(presetId: string, layerType: string): boolean {
 function fit() {
   // B24: query .stagewrap directly instead of brittle parentElement chains.
   const wrap = (document.querySelector('.stagewrap') ?? $('scaler').parentElement) as HTMLElement;
-  const cap = document.fullscreenElement ? 8 : 1; // allow scaling up in fullscreen
-  const pad = document.fullscreenElement ? 0 : 40;
+  // Use the available center-column space more fully: a tighter pad (less dead
+  // margin) and a modest upscale cap so small comps grow to fill the stage instead
+  // of sitting tiny. Fullscreen keeps the generous cap / zero pad. The scaling
+  // mechanism is unchanged (transform:scale on #scaler), so the on-canvas selection-
+  // box / hit-test math (which reads S.scale + the scaler transform) is unaffected —
+  // only the magnitude of that single scale factor is allowed to grow.
+  const cap = document.fullscreenElement ? 8 : 1.5; // allow scaling up in fullscreen / for small comps
+  const pad = document.fullscreenElement ? 0 : 20;
   const s = Math.min((wrap.clientWidth - pad) / S.ir.width, (wrap.clientHeight - pad) / S.ir.height, cap);
   S.scale = s;
   const sc = $('scaler'); sc.style.width = S.ir.width + 'px'; sc.style.height = S.ir.height + 'px'; sc.style.transform = `scale(${s})`;
@@ -497,11 +505,13 @@ function buildTimeline() {
       .sort((a: any, b: any) => b.z - a.z)
       .forEach(({ layer, li }: any) => {
       const track = el('div', 'track');
-      const label = el('div', 'track-label'); label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${layerLabel(layer).slice(0, 9)}</span>`; track.appendChild(label);
+      const fullLabel = layerLabel(layer);
+      const label = el('div', 'track-label'); label.title = fullLabel; label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${fullLabel.slice(0, 9)}</span>`; track.appendChild(label);
       const offset = S.offsets[si] + (layer.start ?? 0); const dur = layer.duration ?? scene.duration;
       const clip = el('div', 'clip');
       clip.style.left = (LABELW + offset * S.pxPerSec) + 'px'; clip.style.width = Math.max(24, dur * S.pxPerSec) + 'px'; clip.style.background = clipColor[layer.type] ?? '#555';
-      clip.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${layerLabel(layer).slice(0, 16)}</span>`;
+      clip.title = fullLabel;
+      clip.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${fullLabel.slice(0, 16)}</span>`;
       if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add('sel');
       // fx layers that resolve to no content target are orphaned (the runtime
       // never registers them) — flag them visually.
@@ -735,7 +745,7 @@ function buildTimeline() {
     audio.forEach((a: any, ai: number) => {
       const track = el('div', 'track');
       const name = String(a.src).split('/').pop() || 'audio';
-      const label = el('div', 'track-label'); label.innerHTML = tintIcon('audio', 'audio') + `<span>${name.slice(0, 9)}</span>`; track.appendChild(label);
+      const label = el('div', 'track-label'); label.title = name; label.innerHTML = tintIcon('audio', 'audio') + `<span>${name.slice(0, 9)}</span>`; track.appendChild(label);
       const start = a.start ?? 0;
       const fileDur: number | null = info[ai]?.duration ?? null;          // null until metadata loads
       const metaReady = fileDur != null;
@@ -753,8 +763,9 @@ function buildTimeline() {
       // a swapped asset) never renders an over-long clip until the handle is grabbed.
       else clip.style.width = Math.max(24, Math.min(dur, metaReady ? maxDur : dur) * S.pxPerSec) + 'px';
       const vol = a.volume ?? 1;
-      const volBadge = vol === 0 ? '🔇' : `${Math.round(vol * 100)}%`;
-      clip.innerHTML = icon('audio') + `<span>${name}</span><span style="margin-left:auto;font-size:9px;opacity:${vol === 0 ? '.6' : '.85'}">${volBadge}</span>`;
+      const volBadge = vol === 0 ? icon('mute') : `${Math.round(vol * 100)}%`;
+      clip.title = name;
+      clip.innerHTML = icon('audio') + `<span>${name}</span><span style="margin-left:auto;font-size:9px;display:inline-flex;align-items:center;opacity:${vol === 0 ? '.6' : '.85'}">${volBadge}</span>`;
       if (S.selAudio === ai) clip.classList.add('sel');
       // left-edge head-trim handle (adjusts trimStart + start + duration together)
       const lh = el('div', 'handle'); lh.style.cssText = 'right:auto;left:0'; clip.appendChild(lh);
@@ -1012,6 +1023,19 @@ function numField(label: string, value: number, min: number, max: number, step: 
   r.oninput = () => { const nv = parseFloat(r.value); v.textContent = nv.toFixed(2); onIn(nv); };
   row.appendChild(r); row.appendChild(v); f.appendChild(row); return f;
 }
+// color field: native swatch + hex text input, both write through the same handler.
+// Only a valid 3/6-digit hex from the text box commits (so half-typed values don't
+// thrash the IR); the swatch always emits a valid hex.
+function colorField(label: string, value: string, onIn: (v: string) => void) {
+  const f = el('div', 'field'); const lab = el('label'); lab.textContent = label; f.appendChild(lab);
+  const row = el('div', 'row color-row');
+  const safe = (v: string) => /^#[0-9a-fA-F]{6}$/.test(v) ? v : (/^#[0-9a-fA-F]{3}$/.test(v) ? '#' + v.slice(1).split('').map((c) => c + c).join('') : '#ffffff');
+  const sw = el('input', 'color-swatch') as HTMLInputElement; sw.type = 'color'; sw.value = safe(value);
+  const hex = el('input', 'color-hex') as HTMLInputElement; hex.type = 'text'; hex.value = value; hex.spellcheck = false;
+  sw.oninput = () => { hex.value = sw.value; onIn(sw.value); };
+  hex.oninput = () => { const v = hex.value.trim(); if (/^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(v)) { sw.value = safe(v); onIn(v); } };
+  row.appendChild(sw); row.appendChild(hex); f.appendChild(row); return f;
+}
 // transform field with a keyframe diamond (keys position/opacity/scale/rotate at the playhead)
 function kfField(label: string, prop: string, value: number, min: number, max: number, step: number, onIn: (v: number) => void) {
   const layer = S.selected ? S.ir.scenes[S.selected.s].layers[S.selected.l] : null;
@@ -1228,7 +1252,7 @@ function buildProps() {
     const pill = el('span', 'pill'); pill.innerHTML = icon('audio') + 'audio'; pill.style.background = '#2b2b2b'; head.appendChild(pill);
     const title = el('span'); title.textContent = String(a.src).split('/').pop() ?? 'audio'; title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
     // mute toggle + delete the selected audio track
-    const mute = el('button', 'icon-btn'); mute.textContent = (a.volume ?? 1) === 0 ? '🔇' : '🔊'; mute.title = 'mute / unmute'; mute.onclick = () => { a.volume = (a.volume ?? 1) === 0 ? 1 : 0; liveEdit(); buildTimeline(); buildProps(); }; head.appendChild(mute);
+    const mute = el('button', 'icon-btn'); mute.innerHTML = icon((a.volume ?? 1) === 0 ? 'mute' : 'speaker'); mute.title = 'mute / unmute'; mute.onclick = () => { a.volume = (a.volume ?? 1) === 0 ? 1 : 0; liveEdit(); buildTimeline(); buildProps(); }; head.appendChild(mute);
     const ai = S.selAudio; const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.title = 'delete audio track'; del.onclick = () => { S.ir.audio.splice(ai, 1); S.selAudio = null; structuralEdit(); }; head.appendChild(del);
     p.appendChild(head);
     const h3 = el('h3'); h3.textContent = 'audio'; p.appendChild(h3);
@@ -1301,12 +1325,12 @@ function buildProps() {
     const ta = el('textarea') as HTMLTextAreaElement; ta.value = layer.text; ta.oninput = () => { layer.text = ta.value; structuralEdit(); }; f.appendChild(ta); p.appendChild(f);
     layer.style = layer.style || {};
     p.appendChild(numField('font size', parseInt(layer.style.fontSize || '72'), 12, 240, 1, (v) => { layer.style.fontSize = Math.round(v) + 'px'; structuralEdit(); }));
-    const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'color'; cf.appendChild(cl); const ci = el('input') as HTMLInputElement; ci.type = 'text'; ci.value = layer.style.color || '#ffffff'; ci.oninput = () => { layer.style.color = ci.value; structuralEdit(); }; cf.appendChild(ci); p.appendChild(cf);
+    p.appendChild(colorField('color', layer.style.color || '#ffffff', (v) => { layer.style.color = v; structuralEdit(); }));
   }
   if (layer.type === 'image' || layer.type === 'video') {
     const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fit'; cf.appendChild(cl); const sel = el('select') as HTMLSelectElement; ['cover', 'contain'].forEach((o) => { const op = el('option') as HTMLOptionElement; op.value = o; op.textContent = o; if ((layer.fit ?? 'cover') === o) op.selected = true; sel.appendChild(op); }); sel.onchange = () => { layer.fit = sel.value; structuralEdit(); }; cf.appendChild(sel); p.appendChild(cf);
   }
-  if (layer.type === 'shape') { const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fill color'; cf.appendChild(cl); const ci = el('input') as HTMLInputElement; ci.type = 'text'; ci.value = layer.fill || '#ffffff'; ci.oninput = () => { layer.fill = ci.value; structuralEdit(); }; cf.appendChild(ci); p.appendChild(cf); }
+  if (layer.type === 'shape') { p.appendChild(colorField('fill color', layer.fill || '#ffffff', (v) => { layer.fill = v; structuralEdit(); })); }
   if (layer.type === 'overlay') {
     const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'effect'; cf.appendChild(cl); const ci = el('input') as HTMLInputElement; ci.type = 'text'; ci.value = String(layer.effect).replace(/-/g, ' '); ci.readOnly = true; cf.appendChild(ci); p.appendChild(cf);
     const spec = (MAN.get('overlay.' + layer.effect) as any)?.params?.amount; const min = spec?.min ?? 0, max = spec?.max ?? 1;
@@ -1392,7 +1416,28 @@ function applyFromLibrary(entry: any) {
 }
 
 // ---------- playback ----------
-function updateTime() { $('tpTime').textContent = fmtClockMs(S.playhead); $('tpTotal').textContent = ' / ' + fmtClockMs(effectiveTotal()); }
+// true while any mounted preview <video> hasn't buffered enough to paint the
+// current frame (readyState < 2 == HAVE_CURRENT_DATA). Editor chrome only — used
+// to flash a buffering stripe on the seek bar. Pure read of live DOM state.
+function previewBuffering(): boolean {
+  return [...document.querySelectorAll('#stage video')].some((v) => (v as HTMLVideoElement).readyState < 2);
+}
+// drive the preview progress / seek bar: fill width + knob position from the
+// playhead fraction, and toggle the buffering stripe. Called on every seek and on
+// every playback tick. `forceLoading` lets the initial mount show buffering until
+// VGP.ready() resolves even before a <video> has attached.
+function updateSeekbar(forceLoading = false) {
+  const bar = document.getElementById('seekbar'); if (!bar) return;
+  const tot = effectiveTotal();
+  const frac = clamp01(tot > 0 ? S.playhead / tot : 0);
+  // fill + knob both live inside the 18px horizontal track inset, so size them
+  // against the same (100% - 36px) band — keeps the fill end aligned with the knob
+  // and the track's right edge (the track ::before is left:18px right:18px).
+  const fill = document.getElementById('seekFill'); if (fill) fill.style.width = `calc(${frac} * (100% - 36px))`;
+  const knob = document.getElementById('seekKnob'); if (knob) knob.style.left = `calc(18px + ${frac} * (100% - 36px))`;
+  bar.classList.toggle('loading', forceLoading || previewBuffering());
+}
+function updateTime() { $('tpTime').textContent = fmtClockMs(S.playhead); $('tpTotal').textContent = ' / ' + fmtClockMs(effectiveTotal()); updateSeekbar(); }
 // single zoom mutator — clamps to the shared range, rebuilds, and (optionally)
 // keeps the time under the cursor fixed on screen across the zoom step. anchorX is
 // in client coords; the anchor offset is measured against the SCROLL VIEWPORT.
@@ -1482,6 +1527,23 @@ async function init() {
   // transport
   $('tpPlay').onclick = togglePlay; $('tpStart').onclick = () => seekTo(0); $('tpBack').onclick = () => seekTo(S.playhead - 1); $('tpFwd').onclick = () => seekTo(S.playhead + 1);
   $('tpLoop').onclick = () => { S.loop = !S.loop; $('tpLoop').classList.toggle('on', S.loop); ($('tpLoop') as HTMLElement).style.opacity = S.loop ? '1' : '.5'; };
+  // preview seek bar: mousedown + drag scrubs (same window-listener pattern as the
+  // clip/trim handlers). fraction = clamp01((clientX - barLeft) / barWidth), seek to
+  // fraction * effectiveTotal(). Live-updates while dragging; clears on mouseup.
+  const seekbar = $('seekbar');
+  const seekFromX = (clientX: number) => { const r = seekbar.getBoundingClientRect(); const frac = clamp01((clientX - r.left) / Math.max(1, r.width)); seekTo(frac * effectiveTotal()); };
+  seekbar.addEventListener('mousedown', (e: MouseEvent) => {
+    if (e.button !== 0) return; e.preventDefault();
+    const wasPlaying = S.playing; if (wasPlaying) togglePlay(); // pause while scrubbing so loop() can't fight the drag
+    seekbar.classList.add('dragging'); seekFromX(e.clientX);
+    const mv = (ev: MouseEvent) => seekFromX(ev.clientX);
+    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); window.removeEventListener('blur', up); seekbar.classList.remove('dragging'); if (wasPlaying) togglePlay(); };
+    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); window.addEventListener('blur', up);
+  });
+  // buffering: show the loading stripe until the first VGP.ready() resolves after
+  // mount, then reconcile against live <video> readiness. Subsequent buffering (e.g.
+  // seeking into an unbuffered region) is picked up by updateSeekbar() per-seek.
+  updateSeekbar(true); VGP.ready().then(() => updateSeekbar()).catch(() => updateSeekbar());
 
   // tabs
   $('tabProps').onclick = () => setTab('props'); $('tabAnim').onclick = () => setTab('anim');
