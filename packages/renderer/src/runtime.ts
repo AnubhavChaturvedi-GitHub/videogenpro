@@ -67,6 +67,18 @@ const THREE_SCENES: Record<string, (canvas: HTMLCanvasElement, w: number, h: num
 // ---- helpers ----
 const px = (n: number) => `${n}px`;
 
+// overlay adjustment-layer effects -> CSS filter string (applied as backdrop-filter)
+const OVERLAY_FILTER: Record<string, (a?: number) => string> = {
+  blur: (a) => `blur(${a ?? 8}px)`,
+  'black-white': (a) => `grayscale(${a ?? 1})`,
+  sepia: (a) => `sepia(${a ?? 0.8})`,
+  brighten: (a) => `brightness(${1 + (a ?? 0.3)})`,
+  darken: (a) => `brightness(${1 - (a ?? 0.4)})`,
+  contrast: (a) => `contrast(${1 + (a ?? 0.4)})`,
+  saturate: (a) => `saturate(${a ?? 1.6})`,
+  invert: (a) => `invert(${a ?? 1})`,
+};
+
 // Inject reusable SVG filters (sketch / edge-detect) once per document.
 function ensureSvgFilters() {
   if (document.getElementById('vgp-svg-filters')) return;
@@ -283,6 +295,18 @@ function buildLayer(layer: Layer, sceneDur: number): LayerNode {
       if (layer.shape === 'circle') el.style.borderRadius = '50%';
       else if (layer.shape === 'line') el.style.borderRadius = '999px';
       else if (layer.radius) el.style.borderRadius = px(layer.radius);
+      break;
+    }
+    case 'overlay': {
+      // adjustment layer: affects everything painted beneath it via backdrop-filter
+      el.style.pointerEvents = 'none';
+      const eff = layer.effect; const a = layer.params?.amount;
+      if (eff === 'vignette') el.style.boxShadow = `inset 0 0 140px ${40 * (a ?? 0.7)}px rgba(0,0,0,${0.85 * (a ?? 0.7)})`;
+      else if (eff === 'fade') el.style.background = `rgba(0,0,0,${a ?? 0.5})`;
+      else {
+        const f = OVERLAY_FILTER[eff]?.(a);
+        if (f) { el.style.backdropFilter = f; (el.style as any).webkitBackdropFilter = f; }
+      }
       break;
     }
   }

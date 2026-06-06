@@ -4111,7 +4111,8 @@
     external_exports.object({ ...baseLayer, type: external_exports.literal("video"), src: external_exports.string(), trimStart: external_exports.number().optional(), fit: external_exports.enum(["cover", "contain"]).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("html"), html: external_exports.string() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("three"), scene: external_exports.string(), props: external_exports.record(external_exports.number()).optional() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("shape"), shape: external_exports.enum(["rect", "circle", "line"]), fill: external_exports.string().optional(), radius: external_exports.number().optional() })
+    external_exports.object({ ...baseLayer, type: external_exports.literal("shape"), shape: external_exports.enum(["rect", "circle", "line"]), fill: external_exports.string().optional(), radius: external_exports.number().optional() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("overlay"), effect: external_exports.string(), params: external_exports.record(external_exports.number()).optional() })
   ]);
   var scene = external_exports.object({
     id: external_exports.string().optional(),
@@ -5145,9 +5146,9 @@
     sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>'
   };
   var icon = (n) => `<svg viewBox="0 0 24 24">${I[n] ?? ""}</svg>`;
-  var typeIco = { text: "text", image: "image", video: "video", shape: "shape", three: "cube", html: "text" };
-  var clipColor = { text: "var(--clip-text)", image: "var(--clip-image)", three: "var(--clip-three)", shape: "var(--clip-shape)", html: "var(--clip-html)", video: "var(--clip-video)" };
-  var typeTint = { text: "var(--t-text)", image: "var(--t-image)", video: "var(--t-video)", three: "var(--t-three)", shape: "var(--t-shape)", html: "var(--t-html)", audio: "var(--t-audio)" };
+  var typeIco = { text: "text", image: "image", video: "video", shape: "shape", three: "cube", html: "text", overlay: "sliders" };
+  var clipColor = { text: "var(--clip-text)", image: "var(--clip-image)", three: "var(--clip-three)", shape: "var(--clip-shape)", html: "var(--clip-html)", video: "var(--clip-video)", overlay: "var(--clip-overlay)" };
+  var typeTint = { text: "var(--t-text)", image: "var(--t-image)", video: "var(--t-video)", three: "var(--t-three)", shape: "var(--t-shape)", html: "var(--t-html)", audio: "var(--t-audio)", overlay: "var(--t-overlay)" };
   var tintIcon = (n, type) => `<span style="color:${typeTint[type] || "#fff"}">${icon(n)}</span>`;
   var CATS = [
     { key: "text", label: "Text", icon: "text" },
@@ -5339,6 +5340,11 @@
   var newShape = () => ({ type: "shape", shape: "rect", fill: "#ffffff", rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [{ id: "in.scale" }], transform: {} });
   var newLine = () => ({ type: "shape", shape: "line", fill: "#ffffff", rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: "in.slide-left", params: { distance: 120 } }], transform: {} });
   var new3D = () => ({ type: "three", scene: "particles", props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
+  var overlayLayerFromId = (id) => {
+    const entry = MAN.get(id);
+    const effect = id.split(".")[1];
+    return { type: "overlay", effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: 3, presets: [{ id: "in.fade" }], transform: {} };
+  };
   var newAssetLayer = (a) => ({ type: a.type, src: a.src, fit: "cover", duration: 2.5, presets: a.type === "image" ? [{ id: "image.ken-burns" }] : [], transform: {} });
   function addLayerAtPlayhead(layer2) {
     const si = sceneAt(S.playhead);
@@ -6072,6 +6078,25 @@
       cf.appendChild(ci);
       p.appendChild(cf);
     }
+    if (layer2.type === "overlay") {
+      const cf = el("div", "field");
+      const cl = el("label");
+      cl.textContent = "effect";
+      cf.appendChild(cl);
+      const ci = el("input");
+      ci.type = "text";
+      ci.value = String(layer2.effect).replace(/-/g, " ");
+      ci.readOnly = true;
+      cf.appendChild(ci);
+      p.appendChild(cf);
+      const spec = MAN.get("overlay." + layer2.effect)?.params?.amount;
+      const min = spec?.min ?? 0, max = spec?.max ?? 1;
+      layer2.params = layer2.params || {};
+      p.appendChild(numField("amount", layer2.params.amount ?? (spec?.default ?? 1), min, max, (max - min) / 100 || 0.01, (v) => {
+        layer2.params.amount = v;
+        structuralEdit();
+      }));
+    }
     layer2.presets = layer2.presets || [];
     h("applied animations");
     if (!layer2.presets.length) {
@@ -6178,7 +6203,10 @@
       card.appendChild(nm);
       card.onclick = () => applyFromLibrary(e);
       card.draggable = true;
-      card.ondragstart = (ev) => ev.dataTransfer.setData(e.category === "transition" ? "application/x-vgp-transition" : "application/x-vgp-preset", e.id);
+      card.ondragstart = (ev) => {
+        const t = e.category === "transition" ? "application/x-vgp-transition" : e.category === "overlay" ? "application/x-vgp-overlay" : "application/x-vgp-preset";
+        ev.dataTransfer.setData(t, e.id);
+      };
       grid.appendChild(card);
     });
     p.appendChild(grid);
@@ -6189,6 +6217,11 @@
       S.ir.scenes[si].transitionIn = { id: entry.id };
       if (S.selected) S.playhead = Math.max(0, S.offsets[si] - 0.2);
       structuralEdit();
+      return;
+    }
+    if (entry.category === "overlay") {
+      addLayerAtPlayhead(overlayLayerFromId(entry.id));
+      showToast("Overlay layer added: " + entry.id.split(".")[1].replace(/-/g, " "));
       return;
     }
     if (!S.selected) {
@@ -6488,6 +6521,12 @@
     tl.addEventListener("drop", async (e) => {
       e.preventDefault();
       tl.classList.remove("over");
+      const ov = e.dataTransfer?.getData("application/x-vgp-overlay");
+      if (ov) {
+        dropLayerAt(e.clientX, overlayLayerFromId(ov));
+        showToast("Overlay layer added: " + ov.split(".")[1].replace(/-/g, " "));
+        return;
+      }
       const d = e.dataTransfer?.getData("application/x-vgp-asset");
       if (d) {
         dropLayerAt(e.clientX, newAssetLayer(JSON.parse(d)));
@@ -6521,6 +6560,7 @@
       for (let li = scene2.layers.length - 1; li >= 0; li--) {
         const L = scene2.layers[li];
         const st = L.start ?? 0, du = L.duration ?? scene2.duration;
+        if (L.type === "overlay") continue;
         if (localT < st - 0.01 || localT > st + du + 0.01) continue;
         const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
         const tf = L.transform ?? {};

@@ -52,6 +52,7 @@ const layer = z.discriminatedUnion('type', [
   z.object({ ...baseLayer, type: z.literal('html'), html: z.string() }),
   z.object({ ...baseLayer, type: z.literal('three'), scene: z.string(), props: z.record(z.number()).optional() }),
   z.object({ ...baseLayer, type: z.literal('shape'), shape: z.enum(['rect', 'circle', 'line']), fill: z.string().optional(), radius: z.number().optional() }),
+  z.object({ ...baseLayer, type: z.literal('overlay'), effect: z.string(), params: z.record(z.number()).optional() }),
 ]);
 
 const scene = z.object({

@@ -29,7 +29,7 @@ export type Transform = {
   anchor?: Vec2;    // 0..1 within layer box; default [0.5, 0.5]
 };
 
-export type LayerType = 'text' | 'image' | 'video' | 'html' | 'three' | 'shape';
+export type LayerType = 'text' | 'image' | 'video' | 'html' | 'three' | 'shape' | 'overlay';
 
 export interface BaseLayer {
   id?: string;
@@ -81,7 +81,13 @@ export interface ShapeLayer extends BaseLayer {
   radius?: number;
 }
 
-export type Layer = TextLayer | ImageLayer | VideoLayer | HtmlLayer | ThreeLayer | ShapeLayer;
+export interface OverlayLayer extends BaseLayer {
+  type: 'overlay';
+  effect: string;                  // blur | black-white | sepia | brighten | darken | contrast | saturate | invert | vignette | fade
+  params?: Record<string, number>; // e.g. { amount }
+}
+
+export type Layer = TextLayer | ImageLayer | VideoLayer | HtmlLayer | ThreeLayer | ShapeLayer | OverlayLayer;
 
 export interface Scene {
   id?: string;

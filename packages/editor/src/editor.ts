@@ -46,9 +46,9 @@ const I: Record<string, string> = {
   sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
 };
 const icon = (n: string) => `<svg viewBox="0 0 24 24">${I[n] ?? ''}</svg>`;
-const typeIco: Record<string, string> = { text: 'text', image: 'image', video: 'video', shape: 'shape', three: 'cube', html: 'text' };
-const clipColor: Record<string, string> = { text: 'var(--clip-text)', image: 'var(--clip-image)', three: 'var(--clip-three)', shape: 'var(--clip-shape)', html: 'var(--clip-html)', video: 'var(--clip-video)' };
-const typeTint: Record<string, string> = { text: 'var(--t-text)', image: 'var(--t-image)', video: 'var(--t-video)', three: 'var(--t-three)', shape: 'var(--t-shape)', html: 'var(--t-html)', audio: 'var(--t-audio)' };
+const typeIco: Record<string, string> = { text: 'text', image: 'image', video: 'video', shape: 'shape', three: 'cube', html: 'text', overlay: 'sliders' };
+const clipColor: Record<string, string> = { text: 'var(--clip-text)', image: 'var(--clip-image)', three: 'var(--clip-three)', shape: 'var(--clip-shape)', html: 'var(--clip-html)', video: 'var(--clip-video)', overlay: 'var(--clip-overlay)' };
+const typeTint: Record<string, string> = { text: 'var(--t-text)', image: 'var(--t-image)', video: 'var(--t-video)', three: 'var(--t-three)', shape: 'var(--t-shape)', html: 'var(--t-html)', audio: 'var(--t-audio)', overlay: 'var(--t-overlay)' };
 const tintIcon = (n: string, type: string) => `<span style="color:${typeTint[type] || '#fff'}">${icon(n)}</span>`;
 
 // library category tabs → preset categories
@@ -170,6 +170,7 @@ const newText = () => ({ type: 'text', text: 'New Text', style: { fontSize: '72p
 const newShape = () => ({ type: 'shape', shape: 'rect', fill: '#ffffff', rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [{ id: 'in.scale' }], transform: {} });
 const newLine = () => ({ type: 'shape', shape: 'line', fill: '#ffffff', rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: 'in.slide-left', params: { distance: 120 } }], transform: {} });
 const new3D = () => ({ type: 'three', scene: 'particles', props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
+const overlayLayerFromId = (id: string) => { const entry = MAN.get(id) as any; const effect = id.split('.')[1]; return { type: 'overlay', effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: 3, presets: [{ id: 'in.fade' }], transform: {} }; };
 const newAssetLayer = (a: any) => ({ type: a.type, src: a.src, fit: 'cover', duration: 2.5, presets: (a.type === 'image' ? [{ id: 'image.ken-burns' }] : []), transform: {} });
 function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
 function dropLayerAt(clientX: number, layer: any) { const r = $('tlInner').getBoundingClientRect(); const t = Math.max(0, Math.min(S.total, (clientX - r.left - LABELW) / S.pxPerSec)); const si = sceneAt(t); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
@@ -493,6 +494,12 @@ function buildProps() {
     const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fit'; cf.appendChild(cl); const sel = el('select') as HTMLSelectElement; ['cover', 'contain'].forEach((o) => { const op = el('option') as HTMLOptionElement; op.value = o; op.textContent = o; if ((layer.fit ?? 'cover') === o) op.selected = true; sel.appendChild(op); }); sel.onchange = () => { layer.fit = sel.value; structuralEdit(); }; cf.appendChild(sel); p.appendChild(cf);
   }
   if (layer.type === 'shape') { const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fill color'; cf.appendChild(cl); const ci = el('input') as HTMLInputElement; ci.type = 'text'; ci.value = layer.fill || '#ffffff'; ci.oninput = () => { layer.fill = ci.value; structuralEdit(); }; cf.appendChild(ci); p.appendChild(cf); }
+  if (layer.type === 'overlay') {
+    const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'effect'; cf.appendChild(cl); const ci = el('input') as HTMLInputElement; ci.type = 'text'; ci.value = String(layer.effect).replace(/-/g, ' '); ci.readOnly = true; cf.appendChild(ci); p.appendChild(cf);
+    const spec = (MAN.get('overlay.' + layer.effect) as any)?.params?.amount; const min = spec?.min ?? 0, max = spec?.max ?? 1;
+    layer.params = layer.params || {};
+    p.appendChild(numField('amount', layer.params.amount ?? (spec?.default ?? 1), min, max, (max - min) / 100 || 0.01, (v) => { layer.params.amount = v; structuralEdit(); }));
+  }
 
   layer.presets = layer.presets || [];
   h('applied animations');
@@ -539,7 +546,7 @@ function buildLibrary() {
     const nm = el('div', 'nm'); nm.innerHTML = icon('spark') + e.id.split('.')[1].replace(/-/g, ' '); card.appendChild(nm);
     card.onclick = () => applyFromLibrary(e);
     card.draggable = true;
-    card.ondragstart = (ev: any) => ev.dataTransfer.setData(e.category === 'transition' ? 'application/x-vgp-transition' : 'application/x-vgp-preset', e.id);
+    card.ondragstart = (ev: any) => { const t = e.category === 'transition' ? 'application/x-vgp-transition' : e.category === 'overlay' ? 'application/x-vgp-overlay' : 'application/x-vgp-preset'; ev.dataTransfer.setData(t, e.id); };
     grid.appendChild(card);
   });
   p.appendChild(grid);
@@ -551,6 +558,7 @@ function applyFromLibrary(entry: any) {
     if (S.selected) S.playhead = Math.max(0, S.offsets[si] - 0.2);
     structuralEdit(); return;
   }
+  if (entry.category === 'overlay') { addLayerAtPlayhead(overlayLayerFromId(entry.id)); showToast('Overlay layer added: ' + entry.id.split('.')[1].replace(/-/g, ' ')); return; }
   if (!S.selected) { setDot('edited', 'select a clip!'); return; }
   const layer = S.ir.scenes[S.selected.s].layers[S.selected.l];
   layer.presets = layer.presets || []; layer.presets.push({ id: entry.id, params: {} });
@@ -679,7 +687,12 @@ async function init() {
   });
   tl.addEventListener('dragover', (e) => { e.preventDefault(); tl.classList.add('over'); });
   tl.addEventListener('dragleave', () => tl.classList.remove('over'));
-  tl.addEventListener('drop', async (e: DragEvent) => { e.preventDefault(); tl.classList.remove('over'); const d = e.dataTransfer?.getData('application/x-vgp-asset'); if (d) { dropLayerAt(e.clientX, newAssetLayer(JSON.parse(d))); return; } if (e.dataTransfer?.files.length) { const before = S.assets.length; await uploadFiles(e.dataTransfer.files); if (S.assets.length > before) dropLayerAt(e.clientX, newAssetLayer(S.assets[0])); } });
+  tl.addEventListener('drop', async (e: DragEvent) => {
+    e.preventDefault(); tl.classList.remove('over');
+    const ov = e.dataTransfer?.getData('application/x-vgp-overlay'); if (ov) { dropLayerAt(e.clientX, overlayLayerFromId(ov)); showToast('Overlay layer added: ' + ov.split('.')[1].replace(/-/g, ' ')); return; }
+    const d = e.dataTransfer?.getData('application/x-vgp-asset'); if (d) { dropLayerAt(e.clientX, newAssetLayer(JSON.parse(d))); return; }
+    if (e.dataTransfer?.files.length) { const before = S.assets.length; await uploadFiles(e.dataTransfer.files); if (S.assets.length > before) dropLayerAt(e.clientX, newAssetLayer(S.assets[0])); }
+  });
 
   // wheel zoom (ctrl/cmd) — no manual zoom buttons
   tl.addEventListener('wheel', (e: WheelEvent) => {
@@ -699,6 +712,7 @@ async function init() {
     let hit = -1;
     for (let li = scene.layers.length - 1; li >= 0; li--) {
       const L = scene.layers[li]; const st = L.start ?? 0, du = L.duration ?? scene.duration;
+      if (L.type === 'overlay') continue; // full-frame adjustment layers aren't canvas-draggable; select via timeline
       if (localT < st - 0.01 || localT > st + du + 0.01) continue;
       const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height }; const tf = L.transform ?? {}; const scl = tf.scale ?? 1;
       const ccx = r.x + r.w / 2 + (tf.x ?? 0), ccy = r.y + r.h / 2 + (tf.y ?? 0), hw = r.w * scl / 2, hh = r.h * scl / 2;
