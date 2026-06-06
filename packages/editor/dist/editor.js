@@ -5019,6 +5019,7 @@
     split: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
     copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     audio: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+    fit: '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
     cube: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><line x1="12" y1="13" x2="12" y2="21"/>',
     trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
     plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
@@ -5072,6 +5073,14 @@
   };
   var baseUrl = () => new URL(S.assetBase, location.origin).href;
   var assetUrl = (src) => new URL(src, baseUrl()).href;
+  var fmtClock = (s) => {
+    s = Math.max(0, s);
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  };
+  var fmtClockMs = (s) => {
+    s = Math.max(0, s);
+    return `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, "0")}`;
+  };
   function derive() {
     if (S.sceneBase.length !== S.ir.scenes.length) captureSceneBase();
     S.ir.scenes.forEach((sc, i) => {
@@ -5294,17 +5303,19 @@
     inner.style.width = width + "px";
     const ruler = el("div", "ruler");
     ruler.style.width = width + "px";
-    for (let t = 0; t <= Math.ceil(S.total); t++) {
+    const STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+    const tickStep = STEPS.find((s) => s * S.pxPerSec >= 64) ?? 600;
+    for (let t = 0; t <= S.total + 1e-3; t += tickStep) {
       const tk = el("div", "tick");
       tk.style.left = LABELW + t * S.pxPerSec + "px";
-      tk.textContent = t + "s";
+      tk.textContent = fmtClock(t);
       ruler.appendChild(tk);
     }
     inner.appendChild(ruler);
     S.ir.scenes.forEach((scene2, si) => {
       const sr = el("div", "scene-row");
       const tag = el("div", "scene-tag");
-      tag.innerHTML = icon("film" in I ? "film" : "video") + `Scene ${si + 1} \xB7 ${scene2.duration}s`;
+      tag.innerHTML = icon("film" in I ? "film" : "video") + `Scene ${si + 1} \xB7 ${fmtClock(scene2.duration)}`;
       sr.appendChild(tag);
       inner.appendChild(sr);
       scene2.layers.forEach((layer2, li) => {
@@ -5918,8 +5929,18 @@
     positionPlayhead();
   }
   function updateTime() {
-    $("tpTime").textContent = S.playhead.toFixed(2);
-    $("tpTotal").textContent = " / " + S.total.toFixed(2) + "s";
+    $("tpTime").textContent = fmtClockMs(S.playhead);
+    $("tpTotal").textContent = " / " + fmtClockMs(S.total);
+  }
+  function fitTimeline() {
+    const w = $("tlScroll").clientWidth || 900;
+    S.pxPerSec = Math.max(6, Math.min(400, (w - LABELW - 40) / Math.max(1, S.total)));
+    buildTimeline();
+    $("tlScroll").scrollLeft = 0;
+  }
+  function zoomBy(f) {
+    S.pxPerSec = Math.max(6, Math.min(800, S.pxPerSec * f));
+    buildTimeline();
   }
   function seekTo(t) {
     S.playhead = Math.max(0, Math.min(S.total, t));
@@ -6044,6 +6065,7 @@
     $("i-split").innerHTML = icon("split");
     $("i-dup").innerHTML = icon("copy");
     $("i-del").innerHTML = icon("trash");
+    $("i-fit").innerHTML = icon("fit");
     $("tpStart").innerHTML = icon("start");
     $("tpBack").innerHTML = icon("back");
     $("tpFwd").innerHTML = icon("fwd");
@@ -6085,6 +6107,9 @@
     $("redoBtn").onclick = redo;
     $("btnSplit").onclick = splitSelected;
     $("btnDup").onclick = duplicateSelected;
+    $("btnFit").onclick = fitTimeline;
+    $("btnZoomIn").onclick = () => zoomBy(1.3);
+    $("btnZoomOut").onclick = () => zoomBy(1 / 1.3);
     $("btnDel").onclick = () => {
       if (S.selected) {
         const { s, l } = S.selected;
