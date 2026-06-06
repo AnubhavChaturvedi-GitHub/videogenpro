@@ -725,11 +725,19 @@ async function ready(): Promise<void> {
   const imgs = Array.from(stage.querySelectorAll('img'));
   await Promise.all(imgs.map((img) => img.complete ? Promise.resolve() : new Promise((res) => { img.onload = img.onerror = () => res(null); })));
   if ((document as any).fonts?.ready) { try { await (document as any).fonts.ready; } catch {} }
-  // prime videos for the first seek
+  // prime videos for the first seek. A failed/aborted/stalled video must NOT hang
+  // ready() forever — that would block editor init's buildTimeline()/renderRight()
+  // (silent blank UI) and render.ts's `await ready()`. Resolve on 'error' too (mirrors
+  // the img onload=onerror above) and cap with a timeout backstop for decodes that
+  // never emit an event (same defence as seekVideo's 'seeked' timeout).
   const vids = Array.from(stage.querySelectorAll('video')) as HTMLVideoElement[];
   await Promise.all(vids.map((v) => new Promise<void>((res) => {
     if (v.readyState >= 2) return res();
-    v.addEventListener('loadeddata', () => res(), { once: true });
+    let done = false;
+    const finish = () => { if (done) return; done = true; v.removeEventListener('loadeddata', finish); v.removeEventListener('error', finish); res(); };
+    v.addEventListener('loadeddata', finish, { once: true });
+    v.addEventListener('error', finish, { once: true });
+    setTimeout(finish, 8000);
     v.load();
   })));
 }
