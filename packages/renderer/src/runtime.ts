@@ -362,11 +362,16 @@ function reconcileAudio(c: Composition) {
   for (const a of audioEls) { a.el.pause(); a.el.remove(); }
   audioEls = tracks.map((track) => {
     const el = document.createElement('audio');
-    el.src = resolveSrc(track.src);
     el.preload = 'auto';
     el.volume = track.volume ?? 1;
     el.addEventListener('loadedmetadata', () => { try { (window as any).__vgpAudioReady?.(); } catch {} });
     document.body.appendChild(el); // appended exactly once (these are brand-new elements)
+    const url = resolveSrc(track.src);
+    // Fetch the whole clip into a blob URL so the entire track is seekable
+    // immediately. HTTP streaming leaves `seekable` = [0,0] until buffered, so a
+    // seek to an offset (e.g. 30s) clamps to 0 and audio plays from the start.
+    fetch(url).then((r) => r.blob()).then((blob) => { const u = URL.createObjectURL(blob); (el as any).__blobUrl = u; el.src = u; el.load(); })
+      .catch(() => { el.src = url; });
     return { el, track };
   });
 }

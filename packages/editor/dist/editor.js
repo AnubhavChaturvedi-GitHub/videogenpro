@@ -5300,21 +5300,6 @@
       tk.textContent = t + "s";
       ruler.appendChild(tk);
     }
-    ruler.onmousedown = (e) => {
-      const sf = (ev) => {
-        seekTo((ev.clientX - ruler.getBoundingClientRect().left - LABELW) / S.pxPerSec);
-        S.playing = false;
-        setPlayIcon();
-      };
-      sf(e);
-      const mv = (ev) => sf(ev);
-      const up = () => {
-        window.removeEventListener("mousemove", mv);
-        window.removeEventListener("mouseup", up);
-      };
-      window.addEventListener("mousemove", mv);
-      window.addEventListener("mouseup", up);
-    };
     inner.appendChild(ruler);
     S.ir.scenes.forEach((scene2, si) => {
       const sr = el("div", "scene-row");
@@ -5352,7 +5337,10 @@
             window.removeEventListener("mousemove", mv);
             window.removeEventListener("mouseup", up);
             if (moved) timingEdit();
-            else select(si, li);
+            else {
+              select(si, li);
+              seekTo((sx - $("tlInner").getBoundingClientRect().left - LABELW) / S.pxPerSec);
+            }
           };
           window.addEventListener("mousemove", mv);
           window.addEventListener("mouseup", up);
@@ -6153,6 +6141,19 @@
       if (e.dataTransfer?.files.length) uploadFiles(e.dataTransfer.files);
     };
     const tl = $("tlScroll");
+    tl.addEventListener("mousedown", (e) => {
+      const t = e.target;
+      if (t.closest(".clip") || t.closest(".track-label") || t.closest(".sh")) return;
+      const seekFrom = (ev) => seekTo((ev.clientX - $("tlInner").getBoundingClientRect().left - LABELW) / S.pxPerSec);
+      seekFrom(e);
+      const mv = (ev) => seekFrom(ev);
+      const up = () => {
+        window.removeEventListener("mousemove", mv);
+        window.removeEventListener("mouseup", up);
+      };
+      window.addEventListener("mousemove", mv);
+      window.addEventListener("mouseup", up);
+    });
     tl.addEventListener("dragover", (e) => {
       e.preventDefault();
       tl.classList.add("over");

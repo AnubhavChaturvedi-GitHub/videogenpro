@@ -187,12 +187,7 @@ function buildTimeline() {
 
   const ruler = el('div', 'ruler'); ruler.style.width = width + 'px';
   for (let t = 0; t <= Math.ceil(S.total); t++) { const tk = el('div', 'tick'); tk.style.left = (LABELW + t * S.pxPerSec) + 'px'; tk.textContent = t + 's'; ruler.appendChild(tk); }
-  ruler.onmousedown = (e: MouseEvent) => {
-    const sf = (ev: MouseEvent) => { seekTo((ev.clientX - ruler.getBoundingClientRect().left - LABELW) / S.pxPerSec); S.playing = false; setPlayIcon(); };
-    sf(e); const mv = (ev: MouseEvent) => sf(ev); const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); };
-    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
-  };
-  inner.appendChild(ruler);
+  inner.appendChild(ruler); // seeking handled by the unified timeline handler in init()
 
   S.ir.scenes.forEach((scene: any, si: number) => {
     const sr = el('div', 'scene-row');
@@ -211,7 +206,7 @@ function buildTimeline() {
         if (e.target === handle) return; e.preventDefault();
         const sx = e.clientX, os = layer.start ?? 0; let moved = false;
         const mv = (ev: MouseEvent) => { const dx = ev.clientX - sx; if (Math.abs(dx) > 3) moved = true; layer.start = +Math.max(0, Math.min(scene.duration - 0.1, os + dx / S.pxPerSec)).toFixed(3); clip.style.left = (LABELW + (S.offsets[si] + layer.start) * S.pxPerSec) + 'px'; };
-        const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); if (moved) timingEdit(); else select(si, li); };
+        const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); if (moved) timingEdit(); else { select(si, li); seekTo((sx - $('tlInner').getBoundingClientRect().left - LABELW) / S.pxPerSec); } };
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
       };
       handle.onmousedown = (e: MouseEvent) => {
@@ -564,6 +559,17 @@ async function init() {
 
   // drag-drop onto timeline
   const tl = $('tlScroll');
+  // click/drag anywhere on the timeline background (ruler, scene rows, empty track
+  // space) to move the playhead — clips/handles/labels keep their own behavior
+  tl.addEventListener('mousedown', (e: MouseEvent) => {
+    const t = e.target as HTMLElement;
+    if (t.closest('.clip') || t.closest('.track-label') || t.closest('.sh')) return;
+    const seekFrom = (ev: MouseEvent) => seekTo((ev.clientX - $('tlInner').getBoundingClientRect().left - LABELW) / S.pxPerSec);
+    seekFrom(e);
+    const mv = (ev: MouseEvent) => seekFrom(ev);
+    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+  });
   tl.addEventListener('dragover', (e) => { e.preventDefault(); tl.classList.add('over'); });
   tl.addEventListener('dragleave', () => tl.classList.remove('over'));
   tl.addEventListener('drop', async (e: DragEvent) => { e.preventDefault(); tl.classList.remove('over'); const d = e.dataTransfer?.getData('application/x-vgp-asset'); if (d) { dropLayerAt(e.clientX, newAssetLayer(JSON.parse(d))); return; } if (e.dataTransfer?.files.length) { const before = S.assets.length; await uploadFiles(e.dataTransfer.files); if (S.assets.length > before) dropLayerAt(e.clientX, newAssetLayer(S.assets[0])); } });
