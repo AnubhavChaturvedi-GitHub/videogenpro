@@ -5345,7 +5345,7 @@
   var overlayLayerFromId = (id) => {
     const entry = MAN.get(id);
     const effect = id.split(".")[1];
-    return { type: "overlay", effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: 3, presets: [{ id: "in.fade" }], transform: {} };
+    return { type: "overlay", effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: 3, zIndex: 9999, presets: [{ id: "in.fade" }], transform: {} };
   };
   var newFxLayer = (target, sceneDur, presetId) => ({ type: "fx", effect: presetId, params: {}, start: target.start ?? 0, duration: target.duration ?? sceneDur });
   var newAssetLayer = (a) => ({ type: a.type, src: a.src, fit: "cover", duration: 2.5, presets: a.type === "image" ? [{ id: "image.ken-burns" }] : [], transform: {} });
@@ -5445,7 +5445,7 @@
       tag.innerHTML = icon("film" in I ? "film" : "video") + `Scene ${si + 1} \xB7 ${fmtClock(scene2.duration)}`;
       sr.appendChild(tag);
       inner.appendChild(sr);
-      scene2.layers.forEach((layer2, li) => {
+      scene2.layers.map((layer2, li) => ({ layer: layer2, li })).reverse().forEach(({ layer: layer2, li }) => {
         const track = el("div", "track");
         const label = el("div", "track-label");
         label.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${layerLabel(layer2).slice(0, 9)}</span>`;
@@ -5846,19 +5846,32 @@
     }
     const { s, l } = S.selected;
     const arr = S.ir.scenes[s].layers;
-    if (arr.length < 2) return;
-    let ni = l;
-    if (mode === "top") ni = arr.length - 1;
-    else if (mode === "bottom") ni = 0;
-    else if (mode === "up") ni = Math.min(arr.length - 1, l + 1);
-    else ni = Math.max(0, l - 1);
-    if (ni === l) return;
-    const [layer2] = arr.splice(l, 1);
-    arr.splice(ni, 0, layer2);
-    arr.forEach((ly, i) => {
-      ly.zIndex = i;
+    const moved = arr[l];
+    const units = [];
+    let cur = null;
+    arr.forEach((L) => {
+      if (L.type === "fx" && cur) cur.push(L);
+      else {
+        cur = [L];
+        units.push(cur);
+      }
     });
-    S.selected = { s, l: ni };
+    let ui = units.findIndex((u2) => u2.includes(moved));
+    if (ui < 0 || units.length < 2) return;
+    let ni = ui;
+    if (mode === "top") ni = units.length - 1;
+    else if (mode === "bottom") ni = 0;
+    else if (mode === "up") ni = Math.min(units.length - 1, ui + 1);
+    else ni = Math.max(0, ui - 1);
+    if (ni === ui) return;
+    const [u] = units.splice(ui, 1);
+    units.splice(ni, 0, u);
+    const flat = units.flat();
+    flat.forEach((L, i) => {
+      L.zIndex = L.type === "overlay" ? 9e3 + i : i;
+    });
+    S.ir.scenes[s].layers = flat;
+    S.selected = { s, l: flat.indexOf(moved) };
     structuralEdit();
   }
   var projTab = "comp";

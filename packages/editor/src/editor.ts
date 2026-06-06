@@ -172,7 +172,7 @@ const newText = () => ({ type: 'text', text: 'New Text', style: { fontSize: '72p
 const newShape = () => ({ type: 'shape', shape: 'rect', fill: '#ffffff', rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [{ id: 'in.scale' }], transform: {} });
 const newLine = () => ({ type: 'shape', shape: 'line', fill: '#ffffff', rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: 'in.slide-left', params: { distance: 120 } }], transform: {} });
 const new3D = () => ({ type: 'three', scene: 'particles', props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
-const overlayLayerFromId = (id: string) => { const entry = MAN.get(id) as any; const effect = id.split('.')[1]; return { type: 'overlay', effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: 3, presets: [{ id: 'in.fade' }], transform: {} }; };
+const overlayLayerFromId = (id: string) => { const entry = MAN.get(id) as any; const effect = id.split('.')[1]; return { type: 'overlay', effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: 3, zIndex: 9999, presets: [{ id: 'in.fade' }], transform: {} }; };
 // an fx control-layer drives an effect (preset) onto the content layer below it
 const newFxLayer = (target: any, sceneDur: number, presetId: string) => ({ type: 'fx', effect: presetId, params: {}, start: target.start ?? 0, duration: target.duration ?? sceneDur });
 const newAssetLayer = (a: any) => ({ type: a.type, src: a.src, fit: 'cover', duration: 2.5, presets: (a.type === 'image' ? [{ id: 'image.ken-burns' }] : []), transform: {} });
@@ -218,7 +218,8 @@ function buildTimeline() {
     const sr = el('div', 'scene-row');
     const tag = el('div', 'scene-tag'); tag.innerHTML = icon('film' in I ? 'film' : 'video') + `Scene ${si + 1} · ${fmtClock(scene.duration)}`; sr.appendChild(tag);
     inner.appendChild(sr);
-    scene.layers.forEach((layer: any, li: number) => {
+    // display front-most layer on top (reverse array order); li stays the real array index
+    scene.layers.map((layer: any, li: number) => ({ layer, li })).reverse().forEach(({ layer, li }: any) => {
       const track = el('div', 'track');
       const label = el('div', 'track-label'); label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${layerLabel(layer).slice(0, 9)}</span>`; track.appendChild(label);
       const offset = S.offsets[si] + (layer.start ?? 0); const dur = layer.duration ?? scene.duration;
@@ -411,13 +412,21 @@ function duplicateSelected() { if (!S.selected) return; const { s, l } = S.selec
 // z-order: reorder the selected layer within its scene (array order == paint order; zIndex normalised to match)
 function arrangeLayer(mode: 'top' | 'up' | 'down' | 'bottom') {
   if (!S.selected) { showToast('Select a layer to arrange.'); return; }
-  const { s, l } = S.selected; const arr = S.ir.scenes[s].layers; if (arr.length < 2) return;
-  let ni = l;
-  if (mode === 'top') ni = arr.length - 1; else if (mode === 'bottom') ni = 0; else if (mode === 'up') ni = Math.min(arr.length - 1, l + 1); else ni = Math.max(0, l - 1);
-  if (ni === l) return;
-  const [layer] = arr.splice(l, 1); arr.splice(ni, 0, layer);
-  arr.forEach((ly: any, i: number) => { ly.zIndex = i; });
-  S.selected = { s, l: ni }; structuralEdit();
+  const { s, l } = S.selected; const arr = S.ir.scenes[s].layers;
+  const moved = arr[l];
+  // group layers into units: each content/overlay layer carries the fx layers that follow it
+  const units: any[][] = []; let cur: any[] | null = null;
+  arr.forEach((L: any) => { if (L.type === 'fx' && cur) cur.push(L); else { cur = [L]; units.push(cur); } });
+  let ui = units.findIndex((u) => u.includes(moved)); if (ui < 0 || units.length < 2) return;
+  let ni = ui;
+  if (mode === 'top') ni = units.length - 1; else if (mode === 'bottom') ni = 0; else if (mode === 'up') ni = Math.min(units.length - 1, ui + 1); else ni = Math.max(0, ui - 1);
+  if (ni === ui) return;
+  const [u] = units.splice(ui, 1); units.splice(ni, 0, u);
+  const flat = units.flat();
+  flat.forEach((L: any, i: number) => { L.zIndex = L.type === 'overlay' ? 9000 + i : i; }); // overlays stay on top
+  S.ir.scenes[s].layers = flat;
+  S.selected = { s, l: flat.indexOf(moved) };
+  structuralEdit();
 }
 // project views: Compositions (scenes) / Assets / Code
 let projTab = 'comp';
