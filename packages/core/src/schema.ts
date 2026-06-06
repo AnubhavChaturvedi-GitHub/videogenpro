@@ -54,6 +54,10 @@ const baseLayer = {
   presets: z.array(presetInstance).optional(),
   keyframes: z.record(z.array(keyframe)).optional(),
   zIndex: z.number().optional(),
+  // editor-only metadata: a shared id tying layers into a selectable group. The
+  // runtime ignores it (render == preview); kept here so grouping persists through
+  // POST /api/composition validation instead of being stripped/rejected.
+  groupId: z.string().optional(),
 };
 
 const layer = z.discriminatedUnion('type', [

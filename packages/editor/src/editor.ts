@@ -1,6 +1,6 @@
 // VideoGenPro Studio — CapCut-style editor over the Scene IR.
 // IR is the single source of truth, shared with the agent via the dev server.
-import { buildManifest, getPreset, resolveParams } from '../../core/src/index';
+import { buildManifest, getPreset, resolveParams, ease } from '../../core/src/index';
 
 declare const VGP: any;
 const MANIFEST = buildManifest();
@@ -77,6 +77,10 @@ const CATS = [
 type State = {
   ir: any; assetBase: string; assets: any[];
   selected: { s: number; l: number } | null; selAudio: number | null;
+  // FEATURE 1: multi-selection set. `selected` stays the PRIMARY (drives the props
+  // panel / selbox); `multi` holds every selected {scene,layer} when >1 are picked
+  // (shift/meta-click or a group). Empty for a plain single selection.
+  multi: { s: number; l: number }[];
   playhead: number; playing: boolean; loop: boolean; pxPerSec: number; scale: number;
   offsets: number[]; total: number; lastSyncJson: string;
   panel: 'props' | 'anim'; cat: string;
@@ -84,7 +88,7 @@ type State = {
   sceneBase: number[];
 };
 const S: State = {
-  ir: null, assetBase: '/', assets: [], selected: null, selAudio: null, playhead: 0, playing: false, loop: true,
+  ir: null, assetBase: '/', assets: [], selected: null, selAudio: null, multi: [], playhead: 0, playing: false, loop: true,
   pxPerSec: 120, scale: 1, offsets: [], total: 0, lastSyncJson: '', panel: 'props', cat: 'text',
   history: [], histIndex: -1, sceneBase: [],
 };
@@ -368,6 +372,7 @@ function applyHistory() {
   const prevSel = S.selected; const prevAudio = S.selAudio;
   S.ir = JSON.parse(json); S.lastSyncJson = json;
   S.selected = (prevSel && S.ir.scenes[prevSel.s]?.layers?.[prevSel.l]) ? prevSel : null;
+  S.multi = []; // doc shape may have changed; drop the multi-set (primary is re-validated above)
   S.selAudio = (prevAudio != null && S.ir.audio?.[prevAudio]) ? prevAudio : null;
   derive(); mountPreview(); buildTimeline(); renderRight(); updateTime();
   fetch('/api/composition', { method: 'POST', headers: { 'content-type': 'application/json' }, body: json }).catch(() => {});
@@ -377,7 +382,7 @@ function redo() { if (S.histIndex < S.history.length - 1) { S.histIndex++; apply
 const liveEdit = () => { liveSeek(); scheduleSave(); };
 const timingEdit = () => { liveSeek(); buildTimeline(); scheduleSave(); };
 const structuralEdit = () => { mountPreview(); buildTimeline(); renderRight(); scheduleSave(); };
-function setDoc(ir: any) { S.ir = ir; S.lastSyncJson = JSON.stringify(ir); S.selected = null; S.history = [S.lastSyncJson]; S.histIndex = 0; captureSceneBase(); ir.scenes.forEach((_: any, i: number) => normalizeZ(i)); derive(); autoFit(); mountPreview(); buildTimeline(); renderRight(); updateTime(); }
+function setDoc(ir: any) { S.ir = ir; S.lastSyncJson = JSON.stringify(ir); S.selected = null; S.multi = []; S.history = [S.lastSyncJson]; S.histIndex = 0; captureSceneBase(); ir.scenes.forEach((_: any, i: number) => normalizeZ(i)); derive(); autoFit(); mountPreview(); buildTimeline(); renderRight(); updateTime(); }
 
 // ---------- layer factories ----------
 const newText = () => ({ type: 'text', text: 'New Text', style: { fontSize: '72px', color: '#ffffff' }, duration: 2, presets: [{ id: 'in.fade' }], transform: {} });
@@ -398,8 +403,8 @@ const newFxLayer = (target: any, sceneDur: number, presetId: string) => {
   return { type: 'fx', effect: presetId, params: {}, start: target.start ?? 0, duration: dur };
 };
 const newAssetLayer = (a: any) => ({ type: a.type, src: a.src, fit: 'cover', duration: 2.5, presets: (a.type === 'image' ? [{ id: 'image.ken-burns' }] : []), transform: {} });
-function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); normalizeZ(si); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
-function dropLayerAt(clientX: number, layer: any) { const t = Math.max(0, Math.min(S.total, timeAtClientX(clientX))); const si = sceneAt(t); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); normalizeZ(si); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
+function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); normalizeZ(si); S.multi = []; S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
+function dropLayerAt(clientX: number, layer: any) { const t = Math.max(0, Math.min(S.total, timeAtClientX(clientX))); const si = sceneAt(t); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); normalizeZ(si); S.multi = []; S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
 
 // ---------- assets ----------
 async function loadAssets() { try { S.assets = await (await fetch('/api/assets')).json(); } catch { S.assets = []; } renderAssets(); }
@@ -421,7 +426,7 @@ function addAudioTrack(src: string, clientX?: number) {
   const maxStart = Math.max(0, S.total - 0.1);
   const start = clientX != null ? Math.min(maxStart, Math.max(0, +timeAtClientX(clientX).toFixed(2))) : 0;
   S.ir.audio.push({ src, start, volume: 1 });
-  S.selAudio = S.ir.audio.length - 1; S.selected = null; setTab('props'); structuralEdit();
+  S.selAudio = S.ir.audio.length - 1; S.selected = null; S.multi = []; setTab('props'); structuralEdit();
   showToast('Audio track added: ' + src.split('/').pop());
 }
 function renderAssets() {
@@ -512,7 +517,7 @@ function buildTimeline() {
       clip.style.left = (LABELW + offset * S.pxPerSec) + 'px'; clip.style.width = Math.max(24, dur * S.pxPerSec) + 'px'; clip.style.background = clipColor[layer.type] ?? '#555';
       clip.title = fullLabel;
       clip.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${fullLabel.slice(0, 16)}</span>`;
-      if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add('sel');
+      if (isSelected(si, li)) clip.classList.add('sel'); // FEATURE 1: highlight every selected clip (primary + multi)
       // fx layers that resolve to no content target are orphaned (the runtime
       // never registers them) — flag them visually.
       if (layer.type === 'fx' && !resolveFxTarget(scene, li)) { clip.style.opacity = '.5'; clip.style.outline = '1px dashed var(--clip-fx)'; clip.title = 'effect has no target layer below it'; }
@@ -557,10 +562,13 @@ function buildTimeline() {
         if (!id) return;
         if (!presetAppliesTo(id, layer.type)) { showToast(layer.type === 'overlay' ? "effects can't target an overlay layer" : 'this effect only works on text layers'); return; }
         scene.layers.splice(li + 1, 0, newFxLayer(layer, scene.duration, id)); normalizeZ(si);
-        S.selected = { s: si, l: li + 1 }; S.playhead = S.offsets[si] + (layer.start ?? 0) + 0.05; structuralEdit(); showToast('Added ' + id.split('.')[1].replace(/-/g, ' '));
+        S.multi = []; S.selected = { s: si, l: li + 1 }; S.playhead = S.offsets[si] + (layer.start ?? 0) + 0.05; structuralEdit(); showToast('Added ' + id.split('.')[1].replace(/-/g, ' '));
       });
       clip.onmousedown = (e: MouseEvent) => {
         if (e.target === handle || e.target === lh || e.button !== 0) return; e.preventDefault();
+        // FEATURE 1: capture the modifier at MOUSEDOWN — the up() closure may not get the
+        // event, so additive (shift/meta/ctrl) selection is decided here.
+        const additive = e.shiftKey || e.metaKey || e.ctrlKey;
         const rectLeft = $('tlInner').getBoundingClientRect().left; // cache before any rebuild (B-clip-click)
         const tl = $('tlScroll');
         const sx = e.clientX, sy = e.clientY, os = layer.start ?? 0, scrollStart = tl.scrollTop;
@@ -637,7 +645,7 @@ function buildTimeline() {
                 movedLayer.start = localStart;
                 S.ir.scenes[targetS].layers.push(movedLayer);
                 normalizeZ(si); normalizeZ(targetS);
-                S.selected = { s: targetS, l: S.ir.scenes[targetS].layers.length - 1 };
+                S.multi = []; S.selected = { s: targetS, l: S.ir.scenes[targetS].layers.length - 1 };
                 structuralEdit(); showToast(`Moved to scene ${targetS + 1}`);
               }
             } else {
@@ -652,6 +660,10 @@ function buildTimeline() {
             const steps = Math.round(Math.abs(dyFinal) / trackH);
             const mode: 'up' | 'down' = dyFinal < 0 ? 'up' : 'down';
             for (let k = 0; k < steps; k++) arrangeLayer(mode);
+          } else if (additive) {
+            // FEATURE 1: shift/meta/ctrl click — add/toggle this clip in the multi-set
+            // (don't move the playhead; this is a selection gesture, not a scrub).
+            toggleSelect(si, li);
           } else {
             // plain click: select the clip AND move the playhead to the click point
             // (cached mousedown rect so the seek lands under the cursor across relayout).
@@ -900,7 +912,7 @@ function buildTimeline() {
     inner.appendChild(seam);
   }
 }
-function selectAudio(ai: number) { S.selAudio = ai; S.selected = null; setTab('props'); buildTimeline(); }
+function selectAudio(ai: number) { S.selAudio = ai; S.selected = null; S.multi = []; setTab('props'); buildTimeline(); }
 function positionPlayhead() { const ph = document.getElementById('playhead'); if (ph) { ph.style.left = (LABELW + S.playhead * S.pxPerSec) + 'px'; ph.style.height = $('tlInner').scrollHeight + 'px'; } updateSelBox(); const cs = document.getElementById('curScene'); if (cs && S.ir) cs.innerHTML = icon('layers') + `Scene ${sceneAt(S.playhead) + 1} / ${S.ir.scenes.length}`; }
 // on-canvas selection box (lives in #scaler comp-space, survives stage re-mounts)
 function updateSelBox() {
@@ -937,75 +949,57 @@ function updateSelBox() {
   box.style.transform = rot ? `rotate(${rot}deg)` : '';
   box.style.transformOrigin = 'center center';
   const inv = Math.min(2.4, 1 / (S.scale || 1));
-  // B-resize-presetguard: grey the handles while a non-continuous transform preset is
-  // mid-animation (resize is blocked then — see initSelHandles) so the affordance
-  // matches the behaviour.
-  const presetActive = activeTransformPreset(layer, sel.s);
-  box.querySelectorAll('.sh').forEach((h) => { const he = h as HTMLElement; he.style.transform = `scale(${inv})`; he.style.opacity = presetActive ? '.3' : ''; he.style.cursor = presetActive ? 'not-allowed' : ''; });
+  // FEATURE 2: corner handles now drive a uniform scale that COMPOSES with any active
+  // preset (scale multiplies), so they're always live — no more grey/not-allowed
+  // affordance while an entrance preset animates. Just keep the screen-constant size.
+  box.querySelectorAll('.sh').forEach((h) => { const he = h as HTMLElement; he.style.transform = `scale(${inv})`; he.style.opacity = ''; he.style.cursor = ''; });
 }
 function initSelHandles() {
   document.querySelectorAll('#selbox .sh').forEach((h) => {
     (h as HTMLElement).addEventListener('mousedown', (e: any) => {
       if (!S.selected) return; e.preventDefault(); e.stopPropagation();
       const layer = S.ir.scenes[S.selected.s].layers[S.selected.l];
-      // B-resize-presetguard: block the resize while a non-continuous transform preset
-      // is mid-animation at the playhead — the box is in animated space but the resize
-      // writes the REST rect, so the committed geometry wouldn't match what's seen.
-      // Guide the user to move the playhead past the entrance window first.
-      if (activeTransformPreset(layer, S.selected.s)) { showToast('Move the playhead past the entrance animation to resize.'); return; }
+      const sceneIdx = S.selected.s;
+      // FEATURE 2: the 4 corner dots drive a real UNIFORM SCALE that writes
+      // layer.transform.scale (the same property the props "scale (zoom)" slider edits),
+      // anchored at the rendered layer CENTER. This works WHILE a preset is present —
+      // scale MULTIPLIES the preset's scale in renderedDelta() (combine semantics), so
+      // composing is correct; we no longer hard-block on an active entrance preset.
       // B-fullframe-handles: seed the SAME inset rect updateSelBox() displays for a
-      // no-rect (full-frame) layer, so the box the user grabs equals the box being
-      // written (the old full-frame seed jumped the element on first drag).
+      // no-rect (full-frame) layer so the box the user grabs equals the box being
+      // shown (keeps the selbox geometry consistent once they interact).
       if (!layer.rect) layer.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
-      const corner = h.getAttribute('data-h'); const sx = e.clientX, sy = e.clientY; const r0 = { ...layer.rect }; const sc = S.scale || 1;
-      // Use the SAME combined delta the runtime/box use (transform + keyframes +
-      // active presets), so the anchor pins to the actually-rendered scale/rotate/
-      // position — not just transform.* (B-resize-anchor / B-resize-scale).
-      const d0 = renderedDelta(layer, S.selected.s);
-      const tfs = d0.scale || 1;   // rendered element scale at playhead
-      const rot = d0.rotate * Math.PI / 180;
-      // rendered center = rect center + rendered x/y offset (the runtime re-adds this
-      // offset to the rect at paint, so we anchor against it then keep rect offset-free).
-      const offX = d0.x, offY = d0.y;
-      const cosr = Math.cos(rot), sinr = Math.sin(rot);
-      // fixed (anchor) corner in rect-local space (opposite of the dragged one)
-      const sgnX = corner!.includes('e') ? 1 : -1; const sgnY = corner!.includes('s') ? 1 : -1;
-      const anchorLX = -sgnX * r0.w / 2, anchorLY = -sgnY * r0.h / 2; // local coords rel. to center, in rect units (pre-scale)
-      // anchor's screen-space offset from the original RENDERED center: rotate(scale(local))
-      const ax = anchorLX * tfs, ay = anchorLY * tfs;
-      const anchorSX = ax * cosr - ay * sinr, anchorSY = ax * sinr + ay * cosr;
+      const r = layer.rect; const sc = S.scale || 1;
+      // rendered center in COMP space (rect center + the combined delta x/y) — exactly
+      // what updateSelBox() centers the box on, so the scale pivots about the visible
+      // element center even under a translating/scaling preset.
+      const d0 = renderedDelta(layer, sceneIdx);
+      const cxComp = r.x + r.w / 2 + d0.x;
+      const cyComp = r.y + r.h / 2 + d0.y;
+      // convert that center to SCREEN coords (#scaler is transform:scale(sc) about its
+      // top-left) so pointer distances and the center share one space; the ratio of
+      // distances is then unit-independent (sc cancels), so uniform scale is robust.
+      const stageRect = $('stage').getBoundingClientRect();
+      const cxScr = stageRect.left + cxComp * sc;
+      const cyScr = stageRect.top + cyComp * sc;
+      // when scale is keyframed the runtime ignores transform.scale, so route the gesture
+      // to the keyframe at the playhead (mirrors the x/y move handler). Base the gesture
+      // on the interpolated value so it grows from what's actually on screen.
+      const scaleKeyed = isKeyframed(layer, 'scale');
+      const baseScale = scaleKeyed ? tfAt(layer, sceneIdx, 'scale', 1) : (layer.transform?.scale ?? 1);
+      // pointer distance from center at gesture START — guard tiny/zero to avoid a
+      // divide-by-zero blow-up (clamp to a few px minimum).
+      const startDist = Math.max(8, Math.hypot(e.clientX - cxScr, e.clientY - cyScr));
       const mv = (ev: MouseEvent) => {
-        // screen delta -> comp px -> inverse-rotate into the layer's local axes -> /scale.
-        // Dividing by tfs converts the on-screen drag into rect units so that the
-        // runtime's rect*scale equals the dragged size (no double scale-count).
-        let ldx = ((ev.clientX - sx) / sc), ldy = ((ev.clientY - sy) / sc);
-        const localDX = (ldx * cosr + ldy * sinr) / tfs;   // inverse rotation
-        const localDY = (-ldx * sinr + ldy * cosr) / tfs;
-        let w = Math.max(20, r0.w + sgnX * localDX);
-        let hh = Math.max(20, r0.h + sgnY * localDY);
-        // B-resize-aspect: constrain proportionally following whichever axis the user
-        // dragged MORE (by scale factor), so a vertical-dominant drag grows both w & h
-        // (the old `hh = w*aspect` only ever drove height from width, so vertical drags
-        // barely moved the box). Derive the other axis from the dominant one.
-        if (ev.shiftKey) {
-          const sW = w / (r0.w || 1), sH = hh / (r0.h || 1);
-          const k = Math.abs(sW - 1) >= Math.abs(sH - 1) ? sW : sH; // dominant scale
-          w = Math.max(20, r0.w * k); hh = Math.max(20, r0.h * k);
-        }
-        // keep the anchor (opposite) corner pinned under center+scale+rotate:
-        // new center = anchorScreenPoint - rotate(scale(newAnchorLocal))
-        const newAnchorLX = -sgnX * w / 2, newAnchorLY = -sgnY * hh / 2;
-        const nax = newAnchorLX * tfs, nay = newAnchorLY * tfs;
-        const naSX = nax * cosr - nay * sinr, naSY = nax * sinr + nay * cosr;
-        // anchor in RENDERED space (rect center + x/y offset); subtract the offset
-        // back out when writing rect.x/y so x/y keyframes stay untouched and the
-        // runtime doesn't double-apply the offset.
-        const c0x = r0.x + r0.w / 2 + offX, c0y = r0.y + r0.h / 2 + offY;
-        const ncx = (c0x + anchorSX) - naSX, ncy = (c0y + anchorSY) - naSY;
-        layer.rect = { x: Math.round(ncx - offX - w / 2), y: Math.round(ncy - offY - hh / 2), w: Math.round(w), h: Math.round(hh) };
+        const nowDist = Math.hypot(ev.clientX - cxScr, ev.clientY - cyScr);
+        const newScale = +Math.max(0.05, baseScale * (nowDist / startDist)).toFixed(3);
+        if (scaleKeyed) setKeyframeAtPlayhead('scale', newScale);
+        else layer.transform = { ...(layer.transform || {}), scale: newScale };
         liveSeek(); updateSelBox();
       };
-      const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); scheduleSave(); buildProps(); };
+      // commit on mouseup and rebuild props (and timeline if keyframed, to refresh the
+      // diamonds) so the scale slider/markers reflect the new value.
+      const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); if (scaleKeyed) buildTimeline(); scheduleSave(); buildProps(); };
       window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
     });
   });
@@ -1014,7 +1008,136 @@ function initSelHandles() {
 // ---------- right panel ----------
 function setTab(t: 'props' | 'anim') { S.panel = t; $('tabProps').classList.toggle('on', t === 'props'); $('tabAnim').classList.toggle('on', t === 'anim'); renderRight(); }
 function renderRight() { S.panel === 'props' ? buildProps() : buildLibrary(); }
-function select(s: number, l: number) { S.selected = { s, l }; S.selAudio = null; setTab('props'); buildTimeline(); }
+// FEATURE 1: a layer is "selected" if it's the primary OR a member of the multi-set.
+function isSelected(s: number, l: number): boolean {
+  return (!!S.selected && S.selected.s === s && S.selected.l === l) || S.multi.some((m) => m.s === s && m.l === l);
+}
+// the full selection as a list (primary folded into multi when present, deduped).
+function selectionList(): { s: number; l: number }[] {
+  if (S.multi.length) return S.multi.slice();
+  return S.selected ? [{ s: S.selected.s, l: S.selected.l }] : [];
+}
+// FEATURE 3: monotonic group id from the existing ids (max gN + 1). Deterministic —
+// no Math.random / Date.now — so the IR stays render-stable across saves.
+function nextGroupId(): string {
+  let max = 0;
+  for (const sc of S.ir.scenes) for (const L of sc.layers) {
+    const g = L.groupId; if (typeof g === 'string') { const n = parseInt(g.replace(/^g/, ''), 10); if (Number.isFinite(n) && n > max) max = n; }
+  }
+  return 'g' + (max + 1);
+}
+// FEATURE 3: collect every {s,l} sharing a groupId across all scenes.
+function groupMembers(groupId: string): { s: number; l: number }[] {
+  const out: { s: number; l: number }[] = [];
+  S.ir.scenes.forEach((sc: any, s: number) => sc.layers.forEach((L: any, l: number) => { if (L.groupId === groupId) out.push({ s, l }); }));
+  return out;
+}
+// FEATURE 1/3: standard single select. Clears the multi-set UNLESS the clicked layer
+// carries a groupId — then the whole group is selected into multi (group-aware select).
+function select(s: number, l: number) {
+  S.selAudio = null; S.selected = { s, l };
+  const layer = S.ir.scenes[s]?.layers?.[l];
+  const gid = layer?.groupId;
+  if (gid) { const mem = groupMembers(gid); S.multi = mem.length > 1 ? mem : []; }
+  else S.multi = [];
+  setTab('props'); buildTimeline(); updateSelBox();
+}
+// FEATURE 1: shift/meta-click — ADD/toggle {s,l} in the multi-set. Seeds the set with
+// the prior primary so the first additive click yields a 2-item selection. Primary
+// becomes the last-clicked layer (drives props/selbox).
+function toggleSelect(s: number, l: number) {
+  S.selAudio = null;
+  if (!S.multi.length && S.selected) S.multi = [{ s: S.selected.s, l: S.selected.l }];
+  const ix = S.multi.findIndex((m) => m.s === s && m.l === l);
+  if (ix >= 0) {
+    S.multi.splice(ix, 1);
+    // primary follows the last remaining member; if none remain keep the toggled-off
+    // layer selected so the panel/selbox always show something.
+    S.selected = S.multi.length ? { ...S.multi[S.multi.length - 1] } : { s, l };
+  } else {
+    S.multi.push({ s, l }); S.selected = { s, l };
+  }
+  if (S.multi.length <= 1) S.multi = []; // a 0/1-item multi is just a single selection
+  setTab('props'); buildTimeline(); updateSelBox();
+}
+// FEATURE 1/3: multi-aware delete. With >1 selected, remove EVERY selected layer:
+// group by scene, splice in DESCENDING layer index per scene (indices stay valid),
+// normalizeZ each touched scene, clear selection, commit. Otherwise single-delete.
+function deleteSelection() {
+  const list = selectionList();
+  if (list.length > 1) {
+    const byScene = new Map<number, number[]>();
+    for (const { s, l } of list) { if (!byScene.has(s)) byScene.set(s, []); byScene.get(s)!.push(l); }
+    for (const [s, ls] of byScene) {
+      ls.sort((a, b) => b - a); // descending so earlier splices don't shift later indices
+      for (const l of ls) S.ir.scenes[s]?.layers?.splice(l, 1);
+      normalizeZ(s);
+    }
+    S.multi = []; S.selected = null; structuralEdit();
+    return;
+  }
+  if (S.selected) { const { s, l } = S.selected; S.ir.scenes[s].layers.splice(l, 1); normalizeZ(s); S.multi = []; S.selected = null; structuralEdit(); }
+}
+// FEATURE 3: stamp a shared groupId on every currently-selected layer so they select
+// as a unit afterwards (select() is group-aware). Reuses an existing shared id if the
+// whole selection already carries one; otherwise mints a fresh monotonic id.
+function groupSelection() {
+  const list = selectionList();
+  if (list.length < 2) { showToast('Select at least two layers to group.'); return; }
+  // if every selected layer already shares one groupId, keep it (idempotent regroup)
+  const existing = new Set(list.map(({ s, l }) => S.ir.scenes[s]?.layers?.[l]?.groupId));
+  const gid = (existing.size === 1 && [...existing][0]) ? String([...existing][0]) : nextGroupId();
+  for (const { s, l } of list) { const L = S.ir.scenes[s]?.layers?.[l]; if (L) L.groupId = gid; }
+  // re-seed multi from the full group so the selection is the whole unit, then commit.
+  S.multi = groupMembers(gid);
+  structuralEdit();
+  showToast(`Grouped ${list.length} layers`);
+}
+
+// FEATURE 3: floating right-click menu in the preview. Created lazily, reused, and
+// dismissed on outside-click / Esc / after an action. Styled inline to match the
+// monochrome dark-glass theme.
+let ctxMenuEl: HTMLDivElement | null = null;
+function hideContextMenu() {
+  if (ctxMenuEl) ctxMenuEl.style.display = 'none';
+  window.removeEventListener('mousedown', onCtxOutside, true);
+  window.removeEventListener('keydown', onCtxKey, true);
+  window.removeEventListener('blur', hideContextMenu);
+}
+function onCtxOutside(ev: MouseEvent) { if (ctxMenuEl && !ctxMenuEl.contains(ev.target as Node)) hideContextMenu(); }
+function onCtxKey(ev: KeyboardEvent) { if (ev.key === 'Escape') { ev.stopPropagation(); hideContextMenu(); } }
+function showContextMenu(clientX: number, clientY: number) {
+  if (!ctxMenuEl) {
+    const m = el('div') as HTMLDivElement;
+    m.style.cssText = 'position:fixed;z-index:200;min-width:148px;padding:6px;border-radius:12px;'
+      + 'background:rgba(18,18,18,.92);backdrop-filter:saturate(110%) blur(20px);-webkit-backdrop-filter:saturate(110%) blur(20px);'
+      + 'border:1px solid var(--border);box-shadow:0 24px 60px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.2);'
+      + 'font-family:inherit;font-size:12px;color:var(--text);user-select:none;';
+    const mk = (label: string, onClick: () => void) => {
+      const it = el('div') as HTMLDivElement;
+      it.textContent = label;
+      it.style.cssText = 'padding:8px 11px;border-radius:8px;cursor:pointer;font-weight:600;transition:background .12s;';
+      it.onmouseenter = () => { it.style.background = 'var(--glass-3)'; };
+      it.onmouseleave = () => { it.style.background = ''; };
+      // run on mousedown so the global outside-mousedown listener (capture) doesn't
+      // pre-empt a click; stopPropagation keeps that listener from dismissing first.
+      it.onmousedown = (ev) => { ev.preventDefault(); ev.stopPropagation(); hideContextMenu(); onClick(); };
+      return it;
+    };
+    m.appendChild(mk('Group', () => groupSelection()));
+    m.appendChild(mk('Delete', () => deleteSelection()));
+    document.body.appendChild(m);
+    ctxMenuEl = m;
+  }
+  // clamp into the viewport so the menu never opens off-screen at the edges.
+  const mw = 160, mh = 84;
+  const left = Math.min(clientX, window.innerWidth - mw - 6);
+  const top = Math.min(clientY, window.innerHeight - mh - 6);
+  ctxMenuEl.style.left = left + 'px'; ctxMenuEl.style.top = top + 'px'; ctxMenuEl.style.display = 'block';
+  window.addEventListener('mousedown', onCtxOutside, true);
+  window.addEventListener('keydown', onCtxKey, true);
+  window.addEventListener('blur', hideContextMenu);
+}
 
 function numField(label: string, value: number, min: number, max: number, step: number, onIn: (v: number) => void) {
   const f = el('div', 'field'); const lab = el('label'); lab.textContent = label; f.appendChild(lab);
@@ -1078,15 +1201,71 @@ function kfField(label: string, prop: string, value: number, min: number, max: n
       // reflects the current curve and re-confirming the shown value doesn't silently
       // change the motion.
       KF_EASINGS.forEach((nm) => { const op = el('option') as HTMLOptionElement; op.value = nm; op.textContent = nm; if ((at.easing ?? 'linear') === nm) op.selected = true; sel.appendChild(op); });
-      sel.onchange = () => { at.easing = sel.value; liveEdit(); };
+      // FEATURE 2: live SVG curve preview of the selected easing, next to the select.
+      // Plots y = ease(name, x) for x in [0,1] using the REAL core ease() so the graph
+      // matches the runtime exactly. Re-rendered on every change of the selector.
+      const graph = easingGraphEl(at.easing ?? 'linear');
+      sel.onchange = () => { at.easing = sel.value; redrawEasingGraph(graph, sel.value); liveEdit(); };
       // B-ease-direction: the easing stored on keyframe N governs the segment ARRIVING
       // into N (from N-1) — both runtime and keyframeValueAt use the END keyframe's
       // easing. The forward arrow was inverted; label it as the incoming segment.
       const elab = el('label'); elab.textContent = 'ease ← (into)'; elab.title = "easing of the segment arriving into this keyframe"; elab.style.cssText = 'font-size:9px;color:var(--dim)';
-      const row = el('div', 'row'); row.appendChild(elab); row.appendChild(sel); ef.appendChild(row); f.appendChild(ef);
+      const row = el('div', 'row'); row.appendChild(elab); row.appendChild(sel); ef.appendChild(row);
+      // graph sits on its own row under the selector so it never squeezes the dropdown.
+      const grow = el('div', 'row'); grow.style.cssText = 'margin-top:4px;justify-content:center'; grow.appendChild(graph); ef.appendChild(grow);
+      f.appendChild(ef);
     }
   }
   return f;
+}
+// FEATURE 2 helpers — small inline SVG that draws an easing curve y=ease(name,x).
+// Pure editor chrome: it reads the real core ease() so the plot matches the runtime,
+// but never touches the IR. Built once via easingGraphEl, redrawn via redrawEasingGraph.
+const EG_W = 88, EG_H = 40, EG_PAD = 4; // box + inner padding for the plot area
+// build the <svg> (grid + baseline + curve path). Sample ease() across [0,1] and map
+// to screen coords (x left->right, y flipped so 0 is bottom). Monochrome theme.
+function easingGraphEl(name: string): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  // cast the root explicitly: createElementNS with a non-literal namespace widens to
+  // Element under strict, but every call below only uses Element APIs (setAttribute /
+  // appendChild), so this single cast keeps the helper signature honest.
+  const svg = document.createElementNS(NS, 'svg') as SVGSVGElement;
+  svg.setAttribute('width', String(EG_W)); svg.setAttribute('height', String(EG_H));
+  svg.setAttribute('viewBox', `0 0 ${EG_W} ${EG_H}`);
+  svg.style.cssText = `border:1px solid var(--border);border-radius:7px;background:rgba(0,0,0,.25);display:block`;
+  // grid: a faint frame + the two diagonals-of-reference (the linear baseline 0->1).
+  const inner = document.createElementNS(NS, 'rect');
+  inner.setAttribute('x', String(EG_PAD - 1)); inner.setAttribute('y', String(EG_PAD - 1));
+  inner.setAttribute('width', String(EG_W - 2 * EG_PAD + 2)); inner.setAttribute('height', String(EG_H - 2 * EG_PAD + 2));
+  inner.setAttribute('fill', 'none'); inner.setAttribute('stroke', 'var(--border)'); inner.setAttribute('stroke-width', '1'); inner.setAttribute('rx', '3');
+  svg.appendChild(inner);
+  const base = document.createElementNS(NS, 'line'); // linear reference (corner to corner)
+  base.setAttribute('x1', String(EG_PAD)); base.setAttribute('y1', String(EG_H - EG_PAD));
+  base.setAttribute('x2', String(EG_W - EG_PAD)); base.setAttribute('y2', String(EG_PAD));
+  base.setAttribute('stroke', 'var(--dim)'); base.setAttribute('stroke-width', '1'); base.setAttribute('stroke-dasharray', '2 3'); base.setAttribute('opacity', '0.5');
+  svg.appendChild(base);
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('class', 'eg-curve'); path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'var(--accent)'); path.setAttribute('stroke-width', '1.5');
+  path.setAttribute('stroke-linejoin', 'round'); path.setAttribute('stroke-linecap', 'round');
+  svg.appendChild(path);
+  redrawEasingGraph(svg, name);
+  return svg;
+}
+// recompute just the curve <path> for a new easing (cheap; reuses the existing svg).
+function redrawEasingGraph(svg: SVGSVGElement, name: string) {
+  const path = svg.querySelector('.eg-curve') as SVGPathElement | null; if (!path) return;
+  const w = EG_W - 2 * EG_PAD, h = EG_H - 2 * EG_PAD, N = 40;
+  let d = '';
+  for (let i = 0; i <= N; i++) {
+    const x = i / N;
+    // overshoot eases (easeOutBack) can exceed [0,1]; clamp the plotted y so the
+    // curve stays inside the box (the runtime value itself is unchanged).
+    const y = Math.max(0, Math.min(1, ease(name as any, x)));
+    const sx = EG_PAD + x * w, sy = EG_PAD + (1 - y) * h; // flip y for screen coords
+    d += (i === 0 ? 'M' : 'L') + sx.toFixed(2) + ' ' + sy.toFixed(2);
+  }
+  path.setAttribute('d', d);
 }
 const playheadLocal = () => { if (!S.selected) return 0; const { s, l } = S.selected; const layer = S.ir.scenes[s].layers[l]; return Math.max(0, S.playhead - (S.offsets[s] + (layer.start ?? 0))); };
 // frame-aligned epsilon so add/toggle/split use consistent precision
@@ -1181,7 +1360,7 @@ function splitSelected() {
   while (insertAt < scene.layers.length && scene.layers[insertAt].type === 'fx') insertAt++;
   scene.layers.splice(insertAt, 0, second); normalizeZ(s); structuralEdit();
 }
-function duplicateSelected() { if (!S.selected) return; const { s, l } = S.selected; const scene = S.ir.scenes[s]; const copy = JSON.parse(JSON.stringify(scene.layers[l])); delete copy.zIndex; copy.start = (copy.start ?? 0) + 0.2; scene.layers.splice(l + 1, 0, copy); normalizeZ(s); S.selected = { s, l: l + 1 }; structuralEdit(); }
+function duplicateSelected() { if (!S.selected) return; const { s, l } = S.selected; const scene = S.ir.scenes[s]; const copy = JSON.parse(JSON.stringify(scene.layers[l])); delete copy.zIndex; delete copy.groupId; copy.start = (copy.start ?? 0) + 0.2; scene.layers.splice(l + 1, 0, copy); normalizeZ(s); S.multi = []; S.selected = { s, l: l + 1 }; structuralEdit(); }
 // z-order: reorder the selected layer within its scene (array order == paint order; zIndex normalised to match)
 function arrangeLayer(mode: 'top' | 'up' | 'down' | 'bottom') {
   if (!S.selected) { showToast('Select a layer to arrange.'); return; }
@@ -1206,7 +1385,7 @@ function arrangeLayer(mode: 'top' | 'up' | 'down' | 'bottom') {
   const [u] = units.splice(ui, 1); units.splice(ni, 0, u);
   S.ir.scenes[s].layers = units.flat();
   normalizeZ(s); // single source of truth for z-order == paint order
-  S.selected = { s, l: S.ir.scenes[s].layers.indexOf(moved) };
+  S.multi = []; S.selected = { s, l: S.ir.scenes[s].layers.indexOf(moved) };
   structuralEdit();
 }
 // project views: Compositions (scenes) / Assets / Code
@@ -1279,7 +1458,7 @@ function buildProps() {
     const head = el('div', 'sel-head');
     const pill = el('span', 'pill'); pill.innerHTML = icon('spark') + 'fx'; pill.style.background = 'var(--clip-fx)'; head.appendChild(pill);
     const title = el('span'); title.textContent = String(layer.effect).split('.')[1].replace(/-/g, ' '); title.style.cssText = 'flex:1;font-weight:600'; head.appendChild(title);
-    const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => { scene.layers.splice(l, 1); normalizeZ(s); S.selected = null; structuralEdit(); }; head.appendChild(del); p.appendChild(head);
+    const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => deleteSelection(); head.appendChild(del); p.appendChild(head); // FEATURE 1: multi-aware delete
     // resolve the real target using the SAME rule as the runtime (overlay-skipping)
     const tgt = resolveFxTarget(scene, l);
     const note = el('div'); note.style.cssText = 'font-size:11px;color:var(--dim);margin-bottom:8px';
@@ -1303,7 +1482,7 @@ function buildProps() {
   const head = el('div', 'sel-head');
   const pill = el('span', 'pill'); pill.innerHTML = icon(typeIco[layer.type] ?? 'shape') + layer.type; pill.style.background = clipColor[layer.type] ?? '#555'; head.appendChild(pill);
   const title = el('span'); title.textContent = layer.type === 'text' ? String(layer.text).slice(0, 16) : (layer.src ? String(layer.src).split('/').pop() : layer.type); title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
-  const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => { scene.layers.splice(l, 1); normalizeZ(s); S.selected = null; structuralEdit(); }; head.appendChild(del); p.appendChild(head);
+  const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => deleteSelection(); head.appendChild(del); p.appendChild(head); // FEATURE 1: multi-aware delete
 
   // arrange / z-order. Every layer — content AND overlays — lives in one z-stack now:
   // use these (or drag the clip vertically) to move it up/down. An overlay is an
@@ -1365,7 +1544,63 @@ function buildProps() {
   p.appendChild(tip);
 }
 
+// FEATURE 1 — hover-to-preview state. Holds the in-flight preview so it can be torn
+// down from mouseleave, from a card click, OR when the library rebuilds (the old
+// .anim-card elements get detached by innerHTML='' and their mouseleave never fires,
+// so we MUST cancel here too — otherwise the rAF loop leaks and keeps mounting a
+// stale clone). Pure editor chrome: it NEVER calls scheduleSave / writes the IR.
+let hoverPreview: { raf: number; savedIR: string; savedPlayhead: number } | null = null;
+// categories whose apply path inserts an fx control-layer onto the SELECTED layer —
+// these are the ones we can faithfully preview. transition/overlay change scene-level
+// or stack-level structure, so we skip live hover-preview for them (per spec).
+const HOVER_PREVIEW_CATS = new Set(['text', 'image', 'in', 'out']);
+// stop any running preview loop and fully revert to the saved IR + playhead. Idempotent.
+function endHoverPreview() {
+  if (!hoverPreview) return;
+  cancelAnimationFrame(hoverPreview.raf);
+  const { savedIR, savedPlayhead } = hoverPreview;
+  hoverPreview = null;
+  // restore the authoritative IR/playhead and remount from S.ir (NOT the clone).
+  try { S.ir = JSON.parse(savedIR); } catch { /* leave S.ir as-is on parse failure */ }
+  S.playhead = savedPlayhead;
+  mountPreview();
+  VGP.seek(S.playhead, { playing: S.playing });
+}
+// start a live, non-committing preview of `entry` on the selected layer. Deep-clones
+// S.ir, inserts the fx control-layer exactly as applyFromLibrary would (newFxLayer),
+// mounts the clone, then sweeps the playhead across the preset window via rAF so the
+// motion is visible. Nothing here persists.
+function startHoverPreview(entry: any) {
+  if (hoverPreview) endHoverPreview();           // never stack two previews
+  if (!S.selected || !HOVER_PREVIEW_CATS.has(entry.category)) return;
+  const { s, l } = S.selected; const scene = S.ir.scenes[s]; const target = scene.layers[l];
+  if (!target || !presetAppliesTo(entry.id, target.type)) return; // skip no-op presets silently
+  const savedIR = JSON.stringify(S.ir); const savedPlayhead = S.playhead;
+  // deep clone via the snapshot we just took (one stringify, no second pass).
+  const clone = JSON.parse(savedIR);
+  const cScene = clone.scenes[s]; const cTarget = cScene.layers[l];
+  const fx = newFxLayer(cTarget, cScene.duration, entry.id);
+  cScene.layers.splice(l + 1, 0, fx);
+  VGP.mount(clone, { assetBase: baseUrl() });
+  // sweep window: from the target's absolute start across the fx layer's duration,
+  // capped to the preset's defaultDuration when set so one-shots play at natural speed.
+  const startAbs = (S.offsets[s] ?? 0) + (cTarget.start ?? 0);
+  const presetEntry: any = MAN.get(entry.id);
+  const win = Math.max(0.3, Math.min(fx.duration ?? 1, presetEntry?.defaultDuration ?? fx.duration ?? 1));
+  const t0 = performance.now();
+  hoverPreview = { raf: 0, savedIR, savedPlayhead };
+  const tick = () => {
+    if (!hoverPreview) return;                    // cancelled mid-flight
+    const elapsed = (performance.now() - t0) / 1000;
+    const local = win > 0 ? (elapsed % (win + 0.25)) : 0; // small pause then loop
+    VGP.seek(startAbs + Math.min(local, win), { playing: false });
+    hoverPreview.raf = requestAnimationFrame(tick);
+  };
+  hoverPreview.raf = requestAnimationFrame(tick);
+}
+
 function buildLibrary() {
+  endHoverPreview(); // cancel any in-flight preview before the old cards are detached
   const p = $('rightBody'); p.innerHTML = '';
   const tabs = el('div', 'cat-tabs');
   CATS.forEach((c) => { const t = el('div', 'cat' + (S.cat === c.key ? ' on' : '')); t.textContent = c.label; t.onclick = () => { S.cat = c.key; buildLibrary(); }; tabs.appendChild(t); });
@@ -1381,9 +1616,20 @@ function buildLibrary() {
   MANIFEST.filter((e) => e.category === S.cat).forEach((e) => {
     const card = el('div', 'anim-card');
     const nm = el('div', 'nm'); nm.innerHTML = icon('spark') + e.id.split('.')[1].replace(/-/g, ' '); card.appendChild(nm);
-    card.onclick = () => applyFromLibrary(e);
+    // FEATURE 1: live hover preview. mouseenter shows the animation on a throwaway
+    // clone; mouseleave reverts. Click first ends the preview (restoring S.ir) so
+    // applyFromLibrary operates on the clean saved IR, never the preview clone.
+    card.onclick = () => { endHoverPreview(); applyFromLibrary(e); };
+    card.onmouseenter = () => {
+      if (!HOVER_PREVIEW_CATS.has(e.category)) return; // transitions/overlays: no live preview
+      if (!S.selected) { showToast('Select a clip to preview the effect.'); return; }
+      if (!presetAppliesTo(e.id, S.ir.scenes[S.selected.s].layers[S.selected.l]?.type)) return;
+      startHoverPreview(e);
+    };
+    card.onmouseleave = () => endHoverPreview();
     card.draggable = true;
-    card.ondragstart = (ev: any) => { const t = e.category === 'transition' ? 'application/x-vgp-transition' : e.category === 'overlay' ? 'application/x-vgp-overlay' : 'application/x-vgp-preset'; ev.dataTransfer.setData(t, e.id); };
+    // dragstart must also abort the preview so the drag operates on the real IR.
+    card.ondragstart = (ev: any) => { endHoverPreview(); const t = e.category === 'transition' ? 'application/x-vgp-transition' : e.category === 'overlay' ? 'application/x-vgp-overlay' : 'application/x-vgp-preset'; ev.dataTransfer.setData(t, e.id); };
     grid.appendChild(card);
   });
   p.appendChild(grid);
@@ -1409,7 +1655,7 @@ function applyFromLibrary(entry: any) {
   // gate by applicability so we never create a live-looking fx the runtime no-ops
   if (!presetAppliesTo(entry.id, target.type)) { showToast(target.type === 'overlay' ? "effects can't target an overlay layer" : 'this effect only works on text layers'); return; }
   scene.layers.splice(l + 1, 0, newFxLayer(target, scene.duration, entry.id)); normalizeZ(s);
-  S.selected = { s, l: l + 1 };
+  S.multi = []; S.selected = { s, l: l + 1 };
   S.playhead = (S.offsets[s] ?? 0) + (target.start ?? 0) + 0.05;
   setTab('props'); structuralEdit(); positionPlayhead();
   showToast('Added ' + entry.id.split('.')[1].replace(/-/g, ' '));
@@ -1565,7 +1811,7 @@ async function init() {
   $('projClose').onclick = closeProj;
   document.querySelectorAll('.proj-tab').forEach((t) => { (t as HTMLElement).onclick = () => { projTab = t.getAttribute('data-v') || 'comp'; renderProj(); }; });
   $('projModal').addEventListener('mousedown', (e) => { if (e.target === $('projModal')) closeProj(); });
-  $('btnDel').onclick = () => { if (S.selected) { const { s, l } = S.selected; S.ir.scenes[s].layers.splice(l, 1); normalizeZ(s); S.selected = null; structuralEdit(); } };
+  $('btnDel').onclick = () => { if (S.selected || S.multi.length) deleteSelection(); }; // FEATURE 1: multi-aware
   initSelHandles();
 
   // file menu toggle + outside click
@@ -1594,13 +1840,24 @@ async function init() {
     // in the LABELW column and scrubs the playhead to 0 (B-scenetag).
     if (t.closest('.clip') || t.closest('.track-label') || t.closest('.scene-tag') || t.closest('.sh') || t.closest('.seam') || t.closest('.kf-marker')) return;
     e.preventDefault(); // suppress text/range selection during a drag-scrub
-    // cache the rect once — it can't change mid-scrub (no buildTimeline runs)
-    const rectLeft = $('tlInner').getBoundingClientRect().left;
-    const seekFrom = (ev: MouseEvent) => seekTo(timeAtClientX(ev.clientX, rectLeft));
-    seekFrom(e);
-    const mv = (ev: MouseEvent) => seekFrom(ev);
-    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); };
-    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+    // recompute time LIVE (no cached rect) so the scrub stays correct while the
+    // timeline auto-scrolls horizontally under the cursor.
+    const seekFrom = (clientX: number) => seekTo(timeAtClientX(clientX));
+    let lastX = e.clientX; let autoT: any = null;
+    // when the cursor nears the left/right edge of the timeline, auto-scroll so the
+    // playhead can keep scrubbing past the visible edge (both directions).
+    const autoTick = () => {
+      const r = tl.getBoundingClientRect(); const EDGE = 36, max = tl.scrollWidth - tl.clientWidth;
+      let d = 0;
+      if (lastX < r.left + LABELW + EDGE) d = -Math.ceil((r.left + LABELW + EDGE - lastX) / 3);
+      else if (lastX > r.right - EDGE) d = Math.ceil((lastX - (r.right - EDGE)) / 3);
+      const next = Math.max(0, Math.min(max, tl.scrollLeft + d));
+      if (d && next !== tl.scrollLeft) { tl.scrollLeft = next; seekFrom(lastX); }
+    };
+    seekFrom(e.clientX);
+    const mv = (ev: MouseEvent) => { lastX = ev.clientX; seekFrom(ev.clientX); if (!autoT) autoT = setInterval(autoTick, 16); };
+    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); window.removeEventListener('blur', up); if (autoT) { clearInterval(autoT); autoT = null; } };
+    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); window.addEventListener('blur', up, { once: true });
   });
   tl.addEventListener('dragover', (e) => { e.preventDefault(); tl.classList.add('over'); });
   tl.addEventListener('dragleave', () => tl.classList.remove('over'));
@@ -1651,6 +1908,9 @@ async function init() {
     }
     if (hit < 0) return;
     e.preventDefault();
+    // FEATURE 1: shift/meta/ctrl click on canvas — add/toggle this layer in the multi-set
+    // and STOP (selection gesture only; don't start a move-drag).
+    if (e.shiftKey || e.metaKey || e.ctrlKey) { toggleSelect(si, hit); return; }
     if (!S.selected || S.selected.s !== si || S.selected.l !== hit) select(si, hit);
     const layer = scene.layers[hit]; layer.transform = layer.transform || {};
     // when x/y are keyframed, write the keyframe at the playhead (the runtime
@@ -1670,6 +1930,35 @@ async function init() {
     window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
   });
 
+  // FEATURE 3: right-click context menu in the preview — Group / Delete. Hit-test the
+  // layer under the cursor; if it isn't part of the current selection, single-select it
+  // first (so right-click on a layer targets it), then open the menu if anything is
+  // selected. Shares the same hit-test math as the canvas mousedown handler above.
+  stage.addEventListener('contextmenu', (e: MouseEvent) => {
+    e.preventDefault();
+    if (!S.ir) return;
+    const rect = stage.getBoundingClientRect(); const sc = S.scale || 1;
+    const cx = (e.clientX - rect.left) / sc, cy = (e.clientY - rect.top) / sc;
+    const si = sceneAt(S.playhead); const scene = S.ir.scenes[si]; if (!scene) return; const localT = S.playhead - S.offsets[si];
+    let hit = -1;
+    for (let li = scene.layers.length - 1; li >= 0; li--) {
+      const L = scene.layers[li]; const st = L.start ?? 0, du = L.duration ?? scene.duration;
+      if (L.type === 'overlay' || L.type === 'fx') continue;
+      if (localT < st - 0.01 || localT > st + du + 0.01) continue;
+      const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
+      const d = renderedDelta(L, si);
+      const ccx = r.x + r.w / 2 + d.x, ccy = r.y + r.h / 2 + d.y;
+      const rot = -(d.rotate) * Math.PI / 180;
+      const dxp = cx - ccx, dyp = cy - ccy;
+      const lx = dxp * Math.cos(rot) - dyp * Math.sin(rot), ly = dxp * Math.sin(rot) + dyp * Math.cos(rot);
+      if (Math.abs(lx) <= r.w * d.scale / 2 && Math.abs(ly) <= r.h * d.scale / 2) { hit = li; break; }
+    }
+    // right-clicking a layer that isn't already selected targets just that layer.
+    if (hit >= 0 && !isSelected(si, hit)) select(si, hit);
+    if (!S.selected && !S.multi.length) return; // nothing selected → no menu
+    showContextMenu(e.clientX, e.clientY);
+  });
+
   // keyboard: space play · arrows nudge · S split · ⌘D dup · ⌘S save · Del remove
   window.addEventListener('keydown', (e) => {
     const tag = (e.target as HTMLElement).tagName; if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -1687,7 +1976,7 @@ async function init() {
     if (!meta && e.shiftKey && (e.key === 'F' || e.key === 'f')) { e.preventDefault(); fitTimeline(); return; }
     if (!meta && (e.key === 's' || e.key === 'S')) { splitSelected(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.selAudio != null) { S.ir.audio.splice(S.selAudio, 1); S.selAudio = null; structuralEdit(); return; }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && S.selected) { const { s, l } = S.selected; S.ir.scenes[s].layers.splice(l, 1); normalizeZ(s); S.selected = null; structuralEdit(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && (S.selected || S.multi.length)) { deleteSelection(); return; } // FEATURE 1: multi-aware
     if (S.selected && e.key.startsWith('Arrow')) {
       e.preventDefault(); const { s, l } = S.selected; const layer = S.ir.scenes[s].layers[l]; layer.transform = layer.transform || {}; const step = e.shiftKey ? 1 : 10;
       const xKeyed = isKeyframed(layer, 'x'), yKeyed = isKeyframed(layer, 'y');
@@ -1710,7 +1999,7 @@ async function init() {
   const es = new EventSource('/api/events');
   es.onmessage = (ev) => {
     let m: any; try { m = JSON.parse(ev.data); } catch { return; }
-    if (m.t === 'doc') { const j = JSON.stringify(m.ir); if (j === S.lastSyncJson) return; clearTimeout(saveTimer); S.ir = m.ir; S.lastSyncJson = j; pushHistory(j); captureSceneBase(); S.ir.scenes.forEach((_: any, i: number) => normalizeZ(i)); derive(); mountPreview(); buildTimeline(); renderRight(); setDot('edited', 'agent edit ✦'); setTimeout(() => setDot('saved', 'synced'), 1400); }
+    if (m.t === 'doc') { const j = JSON.stringify(m.ir); if (j === S.lastSyncJson) return; clearTimeout(saveTimer); S.ir = m.ir; S.lastSyncJson = j; S.multi = []; pushHistory(j); captureSceneBase(); S.ir.scenes.forEach((_: any, i: number) => normalizeZ(i)); derive(); mountPreview(); buildTimeline(); renderRight(); setDot('edited', 'agent edit ✦'); setTimeout(() => setDot('saved', 'synced'), 1400); }
     if (m.t === 'render') {
       showRender(true);
       if (m.state === 'rendering') { $('renderFill').style.width = m.pct + '%'; $('renderPct').textContent = m.pct + '%'; $('renderLabel').textContent = `Rendering frame ${m.done}/${m.total}`; }

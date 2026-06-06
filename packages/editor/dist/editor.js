@@ -19,6 +19,15 @@
     easeOutBack: (p) => {
       const c1 = 1.70158, c3 = c1 + 1;
       return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+    },
+    easeInCubic: (p) => p * p * p,
+    easeInExpo: (p) => p <= 0 ? 0 : Math.pow(2, 10 * p - 10),
+    easeInOutExpo: (p) => p <= 0 ? 0 : p >= 1 ? 1 : p < 0.5 ? Math.pow(2, 20 * p - 10) / 2 : (2 - Math.pow(2, -20 * p + 10)) / 2,
+    easeOutQuint: (p) => 1 - Math.pow(1 - p, 5),
+    easeInOutQuint: (p) => p < 0.5 ? 16 * p * p * p * p * p : 1 - Math.pow(-2 * p + 2, 5) / 2,
+    easeInOutBack: (p) => {
+      const c1 = 1.70158, c2 = c1 * 1.525;
+      return p < 0.5 ? Math.pow(2 * p, 2) * ((c2 + 1) * 2 * p - c2) / 2 : (Math.pow(2 * p - 2, 2) * ((c2 + 1) * (p * 2 - 2) + c2) + 2) / 2;
     }
   };
   var ease = (name, p) => (EASINGS[name ?? "linear"] ?? EASINGS.linear)(clamp01(p));
@@ -4177,6 +4186,104 @@
       params: { amount: { default: 1, min: 0, max: 1 } },
       defaultDuration: 5,
       apply: (_p, prm) => ({ css: { filter: `invert(${prm.amount})` } })
+    },
+    {
+      id: "overlay.hue-rotate",
+      category: "overlay",
+      description: "rotate all hues of everything beneath by a chosen angle (psychedelic / color shift)",
+      tags: ["filter", "color"],
+      continuous: true,
+      params: { deg: { default: 90, min: 0, max: 360, unit: "deg" } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `hue-rotate(${prm.deg}deg)` } })
+    },
+    {
+      id: "overlay.warmth",
+      category: "overlay",
+      description: "warm the whole frame toward golden tones (sunset / cozy color temperature)",
+      tags: ["filter", "color", "warm", "grade"],
+      continuous: true,
+      params: { amount: { default: 0.5, min: 0, max: 1, desc: "warmth strength" } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `sepia(${prm.amount * 0.5}) saturate(${1 + prm.amount * 0.4}) hue-rotate(${-prm.amount * 12}deg) brightness(${1 + prm.amount * 0.04})` } })
+    },
+    {
+      id: "overlay.vibrance",
+      category: "overlay",
+      description: "boost color vibrance and punch of everything beneath (richer, more saturated look)",
+      tags: ["filter", "color", "pop"],
+      continuous: true,
+      params: { amount: { default: 0.6, min: 0, max: 1.5, desc: "vibrance boost" } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `saturate(${1 + prm.amount}) contrast(${1 + prm.amount * 0.15})` } })
+    },
+    {
+      id: "overlay.duotone-gradient",
+      category: "overlay",
+      description: "tint everything beneath with a two-color gradient wash (top color hueA, bottom color hueB) \u2014 a stylized duotone poster look. hueA/hueB are hue angles 0-360.",
+      tags: ["stylize", "duotone", "grade", "color"],
+      continuous: true,
+      params: {
+        hueA: { default: 280, min: 0, max: 360, unit: "deg", desc: "top color hue" },
+        hueB: { default: 30, min: 0, max: 360, unit: "deg", desc: "bottom color hue" },
+        amount: { default: 0.6, min: 0, max: 1, desc: "tint opacity" }
+      },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: {
+        // paint-on-top gradient blended over content; hsl drives the two stops.
+        backgroundImage: `linear-gradient(160deg, hsla(${prm.hueA},85%,55%,${prm.amount}) 0%, hsla(${prm.hueB},90%,55%,${prm.amount}) 100%)`,
+        mixBlendMode: "color"
+      } })
+    },
+    {
+      id: "overlay.scanlines",
+      category: "overlay",
+      description: "overlay thin horizontal CRT scanlines over everything beneath, for a retro monitor / VHS broadcast look",
+      tags: ["stylize", "retro", "scanlines", "crt"],
+      continuous: true,
+      params: {
+        amount: { default: 0.35, min: 0, max: 1, desc: "scanline darkness" },
+        gap: { default: 3, min: 2, max: 8, unit: "px", desc: "line spacing" }
+      },
+      defaultDuration: 5,
+      apply: (_p, prm) => {
+        const g = Math.round(prm.gap);
+        return { css: {
+          backgroundImage: `repeating-linear-gradient(0deg, rgba(0,0,0,${prm.amount}) 0px, rgba(0,0,0,${prm.amount}) 1px, rgba(0,0,0,0) ${Math.max(2, g - 1)}px, rgba(0,0,0,0) ${g}px)`
+        } };
+      }
+    },
+    {
+      id: "overlay.grain",
+      category: "overlay",
+      description: "overlay subtle monochrome film grain over everything beneath using deterministic SVG noise (analog texture; no flicker, stable across frames)",
+      tags: ["stylize", "film", "grain", "analog", "texture"],
+      continuous: true,
+      params: { amount: { default: 0.5, min: 0, max: 1, desc: "grain opacity" } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({
+        // Element opacity (numeric StyleDelta field) carries the grain strength — the
+        // runtime folds it into the overlay's composed opacity; do NOT set css.opacity
+        // (that would clobber the overlay opacity the runtime sets explicitly).
+        opacity: 0.06 + prm.amount * 0.22,
+        css: {
+          // Inline SVG turbulence as a tiled background image (paint-on-top). Fixed seed
+          // => identical every frame => deterministic. Tile is small and repeated.
+          backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>")`,
+          backgroundRepeat: "repeat",
+          mixBlendMode: "overlay"
+        }
+      })
+    },
+    {
+      id: "overlay.vignette-soft",
+      category: "overlay",
+      description: "a gentle soft-edged vignette that subtly darkens the corners (lighter than the standard vignette) to settle the frame",
+      tags: ["cinematic", "vignette", "subtle"],
+      continuous: true,
+      params: { amount: { default: 0.45, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { boxShadow: `inset 0 0 220px ${70 * prm.amount}px rgba(0,0,0,${0.5 * prm.amount})` } })
     }
   ];
 
@@ -4221,7 +4328,11 @@
     transform,
     presets: external_exports.array(presetInstance).optional(),
     keyframes: external_exports.record(external_exports.array(keyframe)).optional(),
-    zIndex: external_exports.number().optional()
+    zIndex: external_exports.number().optional(),
+    // editor-only metadata: a shared id tying layers into a selectable group. The
+    // runtime ignores it (render == preview); kept here so grouping persists through
+    // POST /api/composition validation instead of being stripped/rejected.
+    groupId: external_exports.string().optional()
   };
   var layer = external_exports.discriminatedUnion("type", [
     external_exports.object({ ...baseLayer, type: external_exports.literal("text"), text: external_exports.string(), style: external_exports.record(external_exports.string()).optional() }),
@@ -4433,6 +4544,148 @@
         const e = ease("easeInOutCubic", p);
         return { css: { backgroundImage: "linear-gradient(transparent 58%, rgba(167,139,250,.55) 58%)", backgroundRepeat: "no-repeat", backgroundSize: `${e * 100}% 100%` } };
       }
+    },
+    {
+      id: "text.shimmer",
+      category: "text",
+      description: "A bright specular highlight sweeps across the letters once, like light glinting off metal \u2014 emphasis without movement.",
+      tags: ["emphasis", "shine", "metallic"],
+      params: { width: { default: 22, min: 5, max: 60, unit: "%", desc: "width of the moving highlight band" } },
+      defaultDuration: 1.4,
+      apply: (p, prm) => {
+        const pos = -prm.width + p * (100 + prm.width * 2);
+        const a = pos - prm.width, b = pos, c = pos + prm.width;
+        return { css: {
+          backgroundImage: `linear-gradient(110deg, currentColor ${a}%, #ffffff ${b}%, currentColor ${c}%)`,
+          backgroundClip: "text",
+          webkitBackgroundClip: "text",
+          color: "transparent"
+        } };
+      }
+    },
+    {
+      id: "text.typewriter-cursor",
+      category: "text",
+      split: "char",
+      description: "Characters reveal left to right like typing, with a blinking block cursor trailing the last visible character.",
+      tags: ["enter", "char", "retro", "terminal"],
+      params: {
+        stagger: { default: 0.05, min: 5e-3, max: 0.3, desc: "delay fraction per char" },
+        blink: { default: 6, min: 0, max: 20, desc: "cursor blinks per second" }
+      },
+      defaultDuration: 1.6,
+      apply: (p, prm, ctx) => {
+        const pe = staggered(p, ctx, prm.stagger);
+        const visible = pe > 0;
+        const onCaret = pe > 0 && pe < 1;
+        const blinkOn = prm.blink <= 0 ? 1 : Math.floor(ctx.time * prm.blink * 2) % 2 === 0 ? 1 : 0;
+        const caret = onCaret && blinkOn ? "0.12em solid currentColor" : "0.12em solid transparent";
+        return { opacity: visible ? 1 : 0, css: { borderRight: caret } };
+      }
+    },
+    {
+      id: "text.bounce-in",
+      category: "text",
+      split: "word",
+      description: "Words drop in one by one, each landing with a springy squash-and-settle bounce.",
+      tags: ["enter", "stagger", "bouncy", "playful"],
+      params: {
+        distance: { default: 60, min: 0, max: 300, unit: "px" },
+        stagger: { default: 0.16, min: 0, max: 0.5, desc: "delay fraction per word" }
+      },
+      defaultDuration: 1.4,
+      apply: (p, prm, ctx) => {
+        const pe = staggered(p, ctx, prm.stagger);
+        const e = ease("easeOutBack", pe);
+        return { y: -(1 - e) * prm.distance, scale: 0.7 + 0.3 * ease("easeOutBack", pe), opacity: ease("easeOut", pe) };
+      }
+    },
+    {
+      id: "text.scramble",
+      category: "text",
+      split: "char",
+      description: "Each character jitters and rotates from a seeded offset and snaps cleanly into place \u2014 a decoding / data-scramble settle (positions are seeded per character so it is deterministic; the glyphs themselves do not change).",
+      tags: ["enter", "char", "tech", "decode", "glitch"],
+      params: {
+        amount: { default: 18, min: 0, max: 60, unit: "px", desc: "initial jitter magnitude" },
+        stagger: { default: 0.03, min: 0, max: 0.3, desc: "delay fraction per char" }
+      },
+      defaultDuration: 1.2,
+      apply: (p, prm, ctx) => {
+        const pe = staggered(p, ctx, prm.stagger);
+        const e = ease("easeOutCubic", pe);
+        const seed = Math.sin(ctx.index * 12.9898 + 4.1414) * 43758.5453;
+        const rx = (seed - Math.floor(seed)) * 2 - 1;
+        const ry = Math.sin(ctx.index * 78.233 + 1.7) * 1271.137 % 1 * 2 - 1;
+        const k = 1 - e;
+        return { x: rx * prm.amount * k, y: ry * prm.amount * k, rotate: rx * 35 * k, opacity: ease("easeOut", pe) };
+      }
+    },
+    {
+      id: "text.underline-draw",
+      category: "text",
+      description: "An underline draws itself in from left to right beneath the text as it sits (best on a fitted box).",
+      tags: ["emphasis", "underline", "draw"],
+      params: { thickness: { default: 6, min: 1, max: 24, unit: "px" } },
+      defaultDuration: 0.8,
+      apply: (p, prm) => {
+        const e = ease("easeInOutCubic", p);
+        const t = prm.thickness;
+        return { css: {
+          backgroundImage: "linear-gradient(currentColor, currentColor)",
+          backgroundRepeat: "no-repeat",
+          backgroundPosition: "0 100%",
+          backgroundSize: `${e * 100}% ${t}px`,
+          paddingBottom: `${t + 2}px`
+        } };
+      }
+    },
+    {
+      id: "text.fade-down",
+      category: "text",
+      description: "Text descends from above while fading in, with a soft ease-out (mirror of fade-up).",
+      tags: ["enter", "subtle", "vertical"],
+      params: { distance: { default: 40, min: 0, max: 300, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { y: -(1 - e) * prm.distance, opacity: e };
+      }
+    },
+    {
+      id: "text.wave",
+      category: "text",
+      split: "char",
+      description: "Characters rise into place in a left-to-right cresting wave, each cresting and settling \u2014 a lively staggered entrance.",
+      tags: ["enter", "stagger", "playful", "wave"],
+      params: {
+        amplitude: { default: 40, min: 0, max: 160, unit: "px" },
+        stagger: { default: 0.05, min: 0, max: 0.3, desc: "delay fraction per char" }
+      },
+      defaultDuration: 1.3,
+      apply: (p, prm, ctx) => {
+        const pe = staggered(p, ctx, prm.stagger);
+        const crest = Math.sin(ease("easeInOutCubic", pe) * Math.PI) * (1 - pe);
+        return { y: -crest * prm.amplitude, opacity: ease("easeOut", pe) };
+      }
+    },
+    {
+      id: "text.rainbow-sweep",
+      category: "text",
+      description: "A continuously cycling rainbow gradient flows across the letters \u2014 vibrant, looping color motion.",
+      tags: ["ambient", "loop", "vibrant", "rainbow"],
+      continuous: true,
+      params: { speed: { default: 0.5, min: 0.1, max: 3 } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => ({ css: {
+        backgroundImage: "linear-gradient(90deg,#ff4d4d,#ffb84d,#fff24d,#4dff88,#4dd2ff,#9b4dff,#ff4dd2,#ff4d4d)",
+        backgroundSize: "400% 100%",
+        backgroundRepeat: "no-repeat",
+        backgroundPosition: `${-(ctx.time * prm.speed) % 1 * 400}% 0`,
+        backgroundClip: "text",
+        webkitBackgroundClip: "text",
+        color: "transparent"
+      } })
     }
   ];
 
@@ -4603,6 +4856,146 @@
       params: { hue: { default: 200, min: 0, max: 360, unit: "deg" } },
       defaultDuration: 4,
       apply: (_p, prm) => ({ css: { filter: `grayscale(1) contrast(1.1) sepia(.5) hue-rotate(${prm.hue}deg) saturate(2.2)` } })
+    },
+    {
+      id: "image.parallax",
+      category: "image",
+      description: "Slow horizontal drift across a slight zoom \u2014 a parallax layer slide that gives depth behind foreground content.",
+      tags: ["ambient", "parallax", "depth", "crop"],
+      continuous: true,
+      params: {
+        shift: { default: 0.12, min: -0.5, max: 0.5, desc: "horizontal drift (fraction of frame)" },
+        zoom: { default: 0.12, min: 0, max: 0.6, desc: "extra scale held to hide edges" }
+      },
+      defaultDuration: 6,
+      apply: (p, prm) => {
+        const e = ease("easeInOut", p);
+        return { scale: 1 + prm.zoom, x: prm.shift * 200 * (e - 0.5) };
+      }
+    },
+    {
+      id: "image.light-leak",
+      category: "image",
+      description: "A warm light-leak bloom washes over the image and fades, as if film were briefly exposed to light \u2014 brightens and pushes color toward warm orange at the peak (applied as a color filter so it shows over the photo).",
+      tags: ["ambient", "film", "warm", "leak"],
+      continuous: true,
+      params: { intensity: { default: 0.6, min: 0, max: 1, desc: "leak strength at peak" } },
+      defaultDuration: 5,
+      apply: (p, prm) => {
+        const env = Math.sin(p * Math.PI) * prm.intensity;
+        return { css: {
+          filter: `brightness(${1 + env * 0.35}) saturate(${1 + env * 0.5}) sepia(${env * 0.45}) contrast(${1 + env * 0.05})`
+        } };
+      }
+    },
+    {
+      id: "image.film-grain",
+      category: "image",
+      description: "Overlays animated-looking static film grain (deterministic SVG noise) plus a subtle desaturation for an analog, celluloid texture.",
+      tags: ["stylize", "film", "grain", "analog"],
+      continuous: true,
+      params: { amount: { default: 1, min: 0, max: 1, desc: "0=light grain, 1=heavy grain" } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: {
+        filter: `url(#${prm.amount >= 0.5 ? "vgp-grain-heavy" : "vgp-grain"}) contrast(1.05) saturate(0.9)`
+      } })
+    },
+    {
+      id: "image.glitch",
+      category: "image",
+      description: "Digital glitch: RGB channel split (chromatic tear) with intermittent horizontal jitter and hue shifts, pulsing on a deterministic cadence.",
+      tags: ["stylize", "glitch", "tech", "rgb-split"],
+      continuous: true,
+      params: {
+        amount: { default: 6, min: 0, max: 24, unit: "px", desc: "horizontal tear magnitude" },
+        rate: { default: 8, min: 1, max: 30, desc: "glitch bursts per second" }
+      },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => {
+        const phase = ctx.time * prm.rate;
+        const cell = Math.floor(phase);
+        const r = Math.abs(Math.sin(cell * 91.7) * 1e3) % 1;
+        const fire = r > 0.6 ? 1 : 0;
+        const jitter = (Math.sin(cell * 33.3) * 1e3 % 1 * 2 - 1) * prm.amount * fire;
+        const hue = fire ? (r - 0.5) * 40 : 0;
+        return { x: jitter, css: { filter: `url(#vgp-rgb-split) hue-rotate(${hue}deg)` } };
+      }
+    },
+    {
+      id: "image.color-grade",
+      category: "image",
+      description: "Cinematic teal-and-orange color grade: warms highlights toward orange and pushes shadows toward teal. `temp` shifts warm/cool, `tint` shifts green/magenta.",
+      tags: ["stylize", "grade", "cinematic", "teal-orange"],
+      continuous: true,
+      params: {
+        temp: { default: 18, min: -60, max: 60, desc: "warm(+)/cool(-) hue shift in deg" },
+        tint: { default: 1.25, min: 0.5, max: 2, desc: "saturation/tint strength" }
+      },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: {
+        filter: `saturate(${prm.tint}) contrast(1.12) sepia(0.18) hue-rotate(${prm.temp - 18}deg) brightness(1.02)`
+      } })
+    },
+    {
+      id: "image.vhs",
+      category: "image",
+      description: "Retro VHS look: chromatic RGB-split, slight blur and boosted saturation with a slow vertical tracking wobble, for a worn 80s videotape vibe. (Pair with the overlay.scanlines preset for scanlines on top.)",
+      tags: ["stylize", "retro", "vhs", "rgb-split"],
+      continuous: true,
+      params: { wobble: { default: 1.5, min: 0, max: 6, unit: "px", desc: "tracking wobble amplitude" } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => {
+        const y = Math.sin(ctx.time * 2.3) * prm.wobble;
+        return { y, css: { filter: "url(#vgp-rgb-split) saturate(1.4) contrast(1.08) blur(0.4px)" } };
+      }
+    },
+    {
+      id: "image.spotlight",
+      category: "image",
+      description: "A heavy inset vignette darkens the edges to spotlight the center of the image and draw the eye inward; `amount` controls how dark the surround gets.",
+      tags: ["cinematic", "spotlight", "focus", "vignette"],
+      continuous: true,
+      params: { amount: { default: 0.7, min: 0, max: 1, desc: "darkness of the surround" } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: {
+        // inset box-shadow paints over the child <img>, unlike background-image.
+        boxShadow: `inset 0 0 ${160 + 120 * prm.amount}px ${50 * prm.amount}px rgba(0,0,0,${0.9 * prm.amount})`
+      } })
+    },
+    {
+      id: "image.zoom-pan",
+      category: "image",
+      description: "A configurable Ken-Burns variant: linear push-in with an independent diagonal pan \u2014 pick start scale and pan direction for a custom slow move.",
+      tags: ["ambient", "cinematic", "ken-burns", "crop"],
+      continuous: true,
+      params: {
+        from: { default: 1, min: 1, max: 2, desc: "start scale (pushes toward 1+zoom)" },
+        zoom: { default: 0.25, min: 0, max: 1, desc: "extra scale gained over the layer" },
+        panX: { default: 0.08, min: -0.5, max: 0.5, desc: "horizontal drift (fraction)" },
+        panY: { default: 0.05, min: -0.5, max: 0.5, desc: "vertical drift (fraction)" }
+      },
+      defaultDuration: 6,
+      apply: (p, prm) => {
+        const e = ease("easeInOut", p);
+        return { scale: prm.from + prm.zoom * e, x: prm.panX * 200 * e, y: prm.panY * 200 * e };
+      }
+    },
+    {
+      id: "image.pulse",
+      category: "image",
+      description: "A gentle continuous brightness-and-scale pulse, as if the image is glowing in and out \u2014 subtle attention without bouncing.",
+      tags: ["ambient", "loop", "pulse", "glow"],
+      continuous: true,
+      params: {
+        scale: { default: 0.03, min: 0, max: 0.2, desc: "scale pulse amount" },
+        glow: { default: 0.12, min: 0, max: 0.6, desc: "brightness pulse amount" },
+        speed: { default: 1.4, min: 0.2, max: 5 }
+      },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => {
+        const s = Math.sin(ctx.time * prm.speed);
+        return { scale: 1 + s * prm.scale, brightness: 1 + s * prm.glow };
+      }
     }
   ];
 
@@ -4765,6 +5158,120 @@
         const e = ease("easeInOutCubic", p);
         return { from: { rotate: e * 35, scale: 1 - 0.5 * e, opacity: 1 - e }, to: { rotate: -(1 - e) * 35, scale: 0.5 + 0.5 * e, opacity: e } };
       }
+    },
+    {
+      id: "transition.luma-wipe",
+      category: "transition",
+      description: "A soft diagonal gradient wipe sweeps the new scene over the old, with a feathered blurry edge \u2014 a luma-style dissolve wipe.",
+      tags: ["soft", "wipe", "gradient", "directional"],
+      params: { feather: { default: 10, min: 0, max: 40, unit: "px" } },
+      defaultDuration: 0.8,
+      transition: (p, prm) => {
+        const e = ease("easeInOutCubic", p);
+        const cut = (1 - e) * 130 - 15;
+        return {
+          from: { opacity: 1 },
+          to: { opacity: 1, blur: (1 - Math.abs(0.5 - e) * 2) * prm.feather, css: { clipPath: `polygon(0 0, ${cut + 30}% 0, ${cut}% 100%, 0 100%)` } }
+        };
+      }
+    },
+    {
+      id: "transition.iris-close",
+      category: "transition",
+      description: "The old scene collapses into a shrinking circle (iris closing) revealing the new scene beneath \u2014 the inverse of an iris-open.",
+      tags: ["shape", "reveal", "iris"],
+      params: {},
+      defaultDuration: 0.7,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return { from: { opacity: 1, css: { clipPath: `circle(${(1 - e) * 80}% at 50% 50%)` } }, to: { opacity: 1 } };
+      }
+    },
+    {
+      id: "transition.blinds",
+      category: "transition",
+      description: "The new scene is revealed through opening horizontal blinds \u2014 venetian-blind slats that widen open across the frame.",
+      tags: ["shape", "reveal", "blinds", "retro"],
+      params: { slats: { default: 8, min: 2, max: 20, desc: "number of blind slats" } },
+      defaultDuration: 0.8,
+      transition: (p, prm) => {
+        const e = ease("easeInOutCubic", p);
+        const n = Math.max(2, Math.round(prm.slats));
+        const band = 100 / n;
+        const open = e * band;
+        const grad = `repeating-linear-gradient(0deg, #000 0, #000 ${open}%, rgba(0,0,0,0) ${open}%, rgba(0,0,0,0) ${band}%)`;
+        return {
+          from: { opacity: 1 },
+          to: { opacity: 1, css: { maskImage: grad, WebkitMaskImage: grad, maskSize: "100% 100%", WebkitMaskSize: "100% 100%" } }
+        };
+      }
+    },
+    {
+      id: "transition.diamond",
+      category: "transition",
+      description: "The new scene irises in through an expanding diamond (rotated-square) shape from the center.",
+      tags: ["shape", "reveal", "diamond", "geometric"],
+      params: {},
+      defaultDuration: 0.7,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        const r = e * 100;
+        const cx = 50, cy = 50;
+        const poly = `polygon(${cx}% ${cy - r}%, ${cx + r}% ${cy}%, ${cx}% ${cy + r}%, ${cx - r}% ${cy}%)`;
+        return { from: { opacity: 1 }, to: { opacity: 1, css: { clipPath: poly } } };
+      }
+    },
+    {
+      id: "transition.push-down",
+      category: "transition",
+      description: "Incoming scene pushes the old one downward off-screen.",
+      tags: ["directional", "energetic", "push"],
+      params: {},
+      defaultDuration: 0.6,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return { from: { css: { transform: `translateY(${e * 100}%)` } }, to: { css: { transform: `translateY(${-(1 - e) * 100}%)` } } };
+      }
+    },
+    {
+      id: "transition.push-left",
+      category: "transition",
+      description: "Incoming scene pushes the old one leftward off-screen.",
+      tags: ["directional", "energetic", "push"],
+      params: {},
+      defaultDuration: 0.6,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return { from: { css: { transform: `translateX(${-e * 100}%)` } }, to: { css: { transform: `translateX(${(1 - e) * 100}%)` } } };
+      }
+    },
+    {
+      id: "transition.push-right",
+      category: "transition",
+      description: "Incoming scene pushes the old one rightward off-screen.",
+      tags: ["directional", "energetic", "push"],
+      params: {},
+      defaultDuration: 0.6,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return { from: { css: { transform: `translateX(${e * 100}%)` } }, to: { css: { transform: `translateX(${-(1 - e) * 100}%)` } } };
+      }
+    },
+    {
+      id: "transition.zoom-rotate",
+      category: "transition",
+      description: "The old scene spins away while zooming out as the new scene spins into place zooming in \u2014 a whirlpool swap.",
+      tags: ["dynamic", "zoom", "rotate", "punchy"],
+      params: { turns: { default: 0.25, min: 0, max: 2, desc: "rotations" } },
+      defaultDuration: 0.7,
+      transition: (p, prm) => {
+        const e = ease("easeInOutQuint", p);
+        const deg = prm.turns * 360;
+        return {
+          from: { rotate: e * deg, scale: 1 + 0.6 * e, opacity: 1 - e, blur: e * 8 },
+          to: { rotate: -(1 - e) * deg, scale: 0.4 + 0.6 * e, opacity: e, blur: (1 - e) * 8 }
+        };
+      }
     }
   ];
 
@@ -4910,6 +5417,78 @@
         const e = ease("easeOutCubic", p);
         return { x: (1 - e) * prm.distance, opacity: ease("easeOut", p), css: { transform: `skewX(${(1 - e) * -prm.skew}deg)` } };
       }
+    },
+    {
+      id: "in.slide-down",
+      category: "in",
+      description: "Descends from above into place while fading in.",
+      tags: ["enter", "vertical", "directional"],
+      params: { distance: { default: 80, min: 0, max: 600, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { y: -(1 - e) * prm.distance, opacity: e };
+      }
+    },
+    {
+      id: "in.fade-down",
+      category: "in",
+      description: "Gently fades in while drifting down a short distance \u2014 soft top-down entrance.",
+      tags: ["enter", "vertical", "subtle"],
+      params: { distance: { default: 40, min: 0, max: 300, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { y: -(1 - e) * prm.distance, opacity: e };
+      }
+    },
+    {
+      id: "in.bounce",
+      category: "in",
+      description: "Drops in from above and settles with a springy overshoot bounce.",
+      tags: ["enter", "vertical", "bouncy", "playful"],
+      params: { distance: { default: 140, min: 0, max: 600, unit: "px" } },
+      defaultDuration: 0.8,
+      apply: (p, prm) => {
+        const e = ease("easeOutBack", p);
+        return { y: -(1 - e) * prm.distance, scale: 0.9 + 0.1 * ease("easeOutBack", p), opacity: ease("easeOut", p) };
+      }
+    },
+    {
+      id: "in.unfold",
+      category: "in",
+      description: "Unfolds open around the horizontal axis from a closed flap (3D rotateX) while fading in.",
+      tags: ["enter", "3d", "unfold"],
+      params: { angle: { default: 90, min: 0, max: 90, unit: "deg", desc: "start fold angle" } },
+      defaultDuration: 0.7,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { opacity: ease("easeOut", p), css: { transform: `perspective(1200px) rotateX(${-(1 - e) * prm.angle}deg)`, transformOrigin: "top center" } };
+      }
+    },
+    {
+      id: "in.zoom-blur-in",
+      category: "in",
+      description: "Rushes in from oversized with heavy motion blur that snaps into focus \u2014 high-impact arrival.",
+      tags: ["enter", "punchy", "impact", "blur"],
+      params: { from: { default: 1.6, min: 1, max: 3, desc: "start scale" }, blur: { default: 20, min: 0, max: 60, unit: "px" } },
+      defaultDuration: 0.55,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { scale: prm.from - (prm.from - 1) * e, blur: (1 - e) * prm.blur, opacity: ease("easeOut", p) };
+      }
+    },
+    {
+      id: "in.rise-rotate",
+      category: "in",
+      description: "Rises up while un-tilting from a slight rotation \u2014 an elegant, slightly off-kilter entrance.",
+      tags: ["enter", "elegant", "rotate"],
+      params: { distance: { default: 70, min: 0, max: 400, unit: "px" }, angle: { default: 8, min: 0, max: 30, unit: "deg" } },
+      defaultDuration: 0.7,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { y: (1 - e) * prm.distance, rotate: (1 - e) * prm.angle, opacity: e };
+      }
     }
   ];
 
@@ -5041,6 +5620,59 @@
         const e = ease("easeIn", p);
         return { scale: 1 + 0.25 * Math.sin(e * Math.PI), opacity: 1 - e };
       }
+    },
+    {
+      id: "out.zoom-in",
+      category: "out",
+      description: "Recedes into the distance, shrinking away as it fades out.",
+      tags: ["exit", "punchy", "recede"],
+      params: { to: { default: 0.4, min: 0, max: 1, desc: "end scale (smaller = further away)" } },
+      defaultDuration: 0.5,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeInCubic", p);
+        return { scale: 1 - (1 - prm.to) * e, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.glitch-out",
+      category: "out",
+      description: "Tears apart with an RGB-split glitch and horizontal jitter as it fades \u2014 a digital crash exit.",
+      tags: ["exit", "glitch", "tech"],
+      params: { amount: { default: 10, min: 0, max: 40, unit: "px" } },
+      defaultDuration: 0.5,
+      fromEnd: true,
+      apply: (p, prm, ctx) => {
+        const e = ease("easeIn", p);
+        const j = Math.sin(ctx.time * 70) * prm.amount * e;
+        return { x: j, opacity: 1 - e, css: { filter: "url(#vgp-rgb-split)" } };
+      }
+    },
+    {
+      id: "out.dissolve",
+      category: "out",
+      description: "Softly blurs and brightens as it dissolves away into light.",
+      tags: ["exit", "soft", "dreamy"],
+      params: { blur: { default: 14, min: 0, max: 50, unit: "px" } },
+      defaultDuration: 0.7,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeInOutCubic", p);
+        return { blur: e * prm.blur, brightness: 1 + e * 0.4, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.fall",
+      category: "out",
+      description: "Topples over with a tilt and drops down off-screen, accelerating as it falls away.",
+      tags: ["exit", "gravity", "playful"],
+      params: { distance: { default: 200, min: 0, max: 800, unit: "px" }, angle: { default: 25, min: 0, max: 90, unit: "deg" } },
+      defaultDuration: 0.7,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeInCubic", p);
+        return { y: e * prm.distance, rotate: e * prm.angle, opacity: 1 - ease("easeIn", p) };
+      }
     }
   ];
 
@@ -5092,6 +5724,47 @@
       apply: (_p, prm, ctx) => {
         const b = beat(ctx.time, prm.bpm);
         return { x: Math.sin(ctx.time * 80) * b * prm.amount, rotate: Math.sin(ctx.time * 60) * b * 2 };
+      }
+    },
+    {
+      id: "audio.strobe",
+      category: "audio",
+      description: "Opacity flashes bright on every beat then dims between \u2014 a rhythmic strobe pulse.",
+      tags: ["reactive", "beat", "strobe", "flash"],
+      continuous: true,
+      params: { bpm: { default: 120, min: 40, max: 220, desc: "beats per minute" }, floor: { default: 0.35, min: 0, max: 1, desc: "dimmest opacity between beats" } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => {
+        const b = beat(ctx.time, prm.bpm);
+        return { opacity: prm.floor + (1 - prm.floor) * b };
+      }
+    },
+    {
+      id: "audio.kick-flash",
+      category: "audio",
+      description: "A white brightness flash slams on each kick (beat) and decays \u2014 punchy bass-drop strobe of light.",
+      tags: ["reactive", "beat", "kick", "flash", "glow"],
+      continuous: true,
+      params: { bpm: { default: 120, min: 40, max: 220 }, amount: { default: 0.8, min: 0, max: 2, desc: "flash brightness punch" } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => {
+        const b = beat(ctx.time, prm.bpm);
+        return { brightness: 1 + b * prm.amount, scale: 1 + b * 0.02 };
+      }
+    },
+    {
+      id: "audio.wobble",
+      category: "audio",
+      description: "Rotates and skews back and forth on the beat \u2014 a rubbery, dubstep-style wobble.",
+      tags: ["reactive", "beat", "wobble", "dynamic"],
+      continuous: true,
+      params: { bpm: { default: 120, min: 40, max: 220 }, amount: { default: 6, min: 0, max: 25, unit: "deg", desc: "rotation/skew magnitude" } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => {
+        const b = beat(ctx.time, prm.bpm);
+        const dir = Math.sin(ctx.time * 11);
+        const sk = dir * b * prm.amount;
+        return { rotate: sk * 0.5, css: { transform: `skewX(${sk}deg)` } };
       }
     }
   ];
@@ -5187,6 +5860,7 @@
     assets: [],
     selected: null,
     selAudio: null,
+    multi: [],
     playhead: 0,
     playing: false,
     loop: true,
@@ -5343,33 +6017,6 @@
     }
     return out;
   }
-  function activeTransformPreset(layer2, sceneIdx) {
-    const scene2 = S.ir.scenes[sceneIdx];
-    const off = S.offsets[sceneIdx] ?? 0;
-    const sceneLocalT = S.playhead - off;
-    const start = layer2.start ?? 0;
-    const dur = layer2.duration ?? scene2.duration;
-    const layerLocalT = sceneLocalT - start;
-    const entries = (layer2.presets ?? []).map((inst) => ({ inst, localT: layerLocalT, dur }));
-    const myIdx = scene2.layers.indexOf(layer2);
-    scene2.layers.forEach((fx, j) => {
-      if (fx.type !== "fx") return;
-      const tgt = resolveFxTarget(scene2, j);
-      if (!tgt || tgt.index !== myIdx) return;
-      const fs = fx.start ?? 0, fd = fx.duration ?? scene2.duration;
-      if (sceneLocalT >= fs - 1e-4 && sceneLocalT < fs + fd + 1e-4) entries.push({ inst: { id: fx.effect, params: fx.params }, localT: sceneLocalT - fs, dur: fd });
-    });
-    for (const e of entries) {
-      const preset = getPreset(e.inst.id);
-      if (!preset || !preset.apply || preset.split || preset.continuous) continue;
-      if (preset.category === "text" && layer2.type !== "text") continue;
-      const p = presetProgressE(e.inst, e.localT, e.dur, false);
-      if (p <= 1e-4 || p >= 0.9999) continue;
-      const d = preset.apply(p, resolveParams(preset, e.inst.params), { index: 0, count: 1, time: e.localT, dur: e.dur });
-      if (d.x || d.y || d.rotate || d.scale !== void 0 && d.scale !== 1 || d.scaleX !== void 0 && d.scaleX !== 1 || d.scaleY !== void 0 && d.scaleY !== 1) return true;
-    }
-    return false;
-  }
   function videoSrcDuration(layer2) {
     if (layer2?.type !== "video" || !layer2.src) return null;
     const want = assetUrl(layer2.src);
@@ -5491,6 +6138,7 @@
     S.ir = JSON.parse(json);
     S.lastSyncJson = json;
     S.selected = prevSel && S.ir.scenes[prevSel.s]?.layers?.[prevSel.l] ? prevSel : null;
+    S.multi = [];
     S.selAudio = prevAudio != null && S.ir.audio?.[prevAudio] ? prevAudio : null;
     derive();
     mountPreview();
@@ -5533,6 +6181,7 @@
     S.ir = ir;
     S.lastSyncJson = JSON.stringify(ir);
     S.selected = null;
+    S.multi = [];
     S.history = [S.lastSyncJson];
     S.histIndex = 0;
     captureSceneBase();
@@ -5566,6 +6215,7 @@
     layer2.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2)));
     S.ir.scenes[si].layers.push(layer2);
     normalizeZ(si);
+    S.multi = [];
     S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 };
     setTab("props");
     structuralEdit();
@@ -5577,6 +6227,7 @@
     layer2.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2)));
     S.ir.scenes[si].layers.push(layer2);
     normalizeZ(si);
+    S.multi = [];
     S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 };
     setTab("props");
     structuralEdit();
@@ -5611,6 +6262,7 @@
     S.ir.audio.push({ src, start, volume: 1 });
     S.selAudio = S.ir.audio.length - 1;
     S.selected = null;
+    S.multi = [];
     setTab("props");
     structuralEdit();
     showToast("Audio track added: " + src.split("/").pop());
@@ -5723,7 +6375,7 @@
         clip.style.background = clipColor[layer2.type] ?? "#555";
         clip.title = fullLabel;
         clip.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${fullLabel.slice(0, 16)}</span>`;
-        if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add("sel");
+        if (isSelected(si, li)) clip.classList.add("sel");
         if (layer2.type === "fx" && !resolveFxTarget(scene2, li)) {
           clip.style.opacity = ".5";
           clip.style.outline = "1px dashed var(--clip-fx)";
@@ -5795,6 +6447,7 @@
           }
           scene2.layers.splice(li + 1, 0, newFxLayer(layer2, scene2.duration, id));
           normalizeZ(si);
+          S.multi = [];
           S.selected = { s: si, l: li + 1 };
           S.playhead = S.offsets[si] + (layer2.start ?? 0) + 0.05;
           structuralEdit();
@@ -5803,6 +6456,7 @@
         clip.onmousedown = (e) => {
           if (e.target === handle || e.target === lh || e.button !== 0) return;
           e.preventDefault();
+          const additive = e.shiftKey || e.metaKey || e.ctrlKey;
           const rectLeft = $("tlInner").getBoundingClientRect().left;
           const tl = $("tlScroll");
           const sx = e.clientX, sy = e.clientY, os = layer2.start ?? 0, scrollStart = tl.scrollTop;
@@ -5880,6 +6534,7 @@
                   S.ir.scenes[targetS].layers.push(movedLayer);
                   normalizeZ(si);
                   normalizeZ(targetS);
+                  S.multi = [];
                   S.selected = { s: targetS, l: S.ir.scenes[targetS].layers.length - 1 };
                   structuralEdit();
                   showToast(`Moved to scene ${targetS + 1}`);
@@ -5893,6 +6548,8 @@
               const steps = Math.round(Math.abs(dyFinal) / trackH);
               const mode = dyFinal < 0 ? "up" : "down";
               for (let k = 0; k < steps; k++) arrangeLayer(mode);
+            } else if (additive) {
+              toggleSelect(si, li);
             } else {
               select(si, li);
               seekTo(timeAtClientX(sx, rectLeft));
@@ -6207,6 +6864,7 @@
   function selectAudio(ai) {
     S.selAudio = ai;
     S.selected = null;
+    S.multi = [];
     setTab("props");
     buildTimeline();
   }
@@ -6255,12 +6913,11 @@
     box.style.transform = rot ? `rotate(${rot}deg)` : "";
     box.style.transformOrigin = "center center";
     const inv = Math.min(2.4, 1 / (S.scale || 1));
-    const presetActive = activeTransformPreset(layer2, sel.s);
     box.querySelectorAll(".sh").forEach((h2) => {
       const he = h2;
       he.style.transform = `scale(${inv})`;
-      he.style.opacity = presetActive ? ".3" : "";
-      he.style.cursor = presetActive ? "not-allowed" : "";
+      he.style.opacity = "";
+      he.style.cursor = "";
     });
   }
   function initSelHandles() {
@@ -6270,49 +6927,31 @@
         e.preventDefault();
         e.stopPropagation();
         const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
-        if (activeTransformPreset(layer2, S.selected.s)) {
-          showToast("Move the playhead past the entrance animation to resize.");
-          return;
-        }
+        const sceneIdx = S.selected.s;
         if (!layer2.rect) layer2.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
-        const corner = h.getAttribute("data-h");
-        const sx = e.clientX, sy = e.clientY;
-        const r0 = { ...layer2.rect };
+        const r = layer2.rect;
         const sc = S.scale || 1;
-        const d0 = renderedDelta(layer2, S.selected.s);
-        const tfs = d0.scale || 1;
-        const rot = d0.rotate * Math.PI / 180;
-        const offX = d0.x, offY = d0.y;
-        const cosr = Math.cos(rot), sinr = Math.sin(rot);
-        const sgnX = corner.includes("e") ? 1 : -1;
-        const sgnY = corner.includes("s") ? 1 : -1;
-        const anchorLX = -sgnX * r0.w / 2, anchorLY = -sgnY * r0.h / 2;
-        const ax = anchorLX * tfs, ay = anchorLY * tfs;
-        const anchorSX = ax * cosr - ay * sinr, anchorSY = ax * sinr + ay * cosr;
+        const d0 = renderedDelta(layer2, sceneIdx);
+        const cxComp = r.x + r.w / 2 + d0.x;
+        const cyComp = r.y + r.h / 2 + d0.y;
+        const stageRect = $("stage").getBoundingClientRect();
+        const cxScr = stageRect.left + cxComp * sc;
+        const cyScr = stageRect.top + cyComp * sc;
+        const scaleKeyed = isKeyframed(layer2, "scale");
+        const baseScale = scaleKeyed ? tfAt(layer2, sceneIdx, "scale", 1) : layer2.transform?.scale ?? 1;
+        const startDist = Math.max(8, Math.hypot(e.clientX - cxScr, e.clientY - cyScr));
         const mv = (ev) => {
-          let ldx = (ev.clientX - sx) / sc, ldy = (ev.clientY - sy) / sc;
-          const localDX = (ldx * cosr + ldy * sinr) / tfs;
-          const localDY = (-ldx * sinr + ldy * cosr) / tfs;
-          let w = Math.max(20, r0.w + sgnX * localDX);
-          let hh = Math.max(20, r0.h + sgnY * localDY);
-          if (ev.shiftKey) {
-            const sW = w / (r0.w || 1), sH = hh / (r0.h || 1);
-            const k = Math.abs(sW - 1) >= Math.abs(sH - 1) ? sW : sH;
-            w = Math.max(20, r0.w * k);
-            hh = Math.max(20, r0.h * k);
-          }
-          const newAnchorLX = -sgnX * w / 2, newAnchorLY = -sgnY * hh / 2;
-          const nax = newAnchorLX * tfs, nay = newAnchorLY * tfs;
-          const naSX = nax * cosr - nay * sinr, naSY = nax * sinr + nay * cosr;
-          const c0x = r0.x + r0.w / 2 + offX, c0y = r0.y + r0.h / 2 + offY;
-          const ncx = c0x + anchorSX - naSX, ncy = c0y + anchorSY - naSY;
-          layer2.rect = { x: Math.round(ncx - offX - w / 2), y: Math.round(ncy - offY - hh / 2), w: Math.round(w), h: Math.round(hh) };
+          const nowDist = Math.hypot(ev.clientX - cxScr, ev.clientY - cyScr);
+          const newScale = +Math.max(0.05, baseScale * (nowDist / startDist)).toFixed(3);
+          if (scaleKeyed) setKeyframeAtPlayhead("scale", newScale);
+          else layer2.transform = { ...layer2.transform || {}, scale: newScale };
           liveSeek();
           updateSelBox();
         };
         const up = () => {
           window.removeEventListener("mousemove", mv);
           window.removeEventListener("mouseup", up);
+          if (scaleKeyed) buildTimeline();
           scheduleSave();
           buildProps();
         };
@@ -6330,11 +6969,155 @@
   function renderRight() {
     S.panel === "props" ? buildProps() : buildLibrary();
   }
+  function isSelected(s, l) {
+    return !!S.selected && S.selected.s === s && S.selected.l === l || S.multi.some((m) => m.s === s && m.l === l);
+  }
+  function selectionList() {
+    if (S.multi.length) return S.multi.slice();
+    return S.selected ? [{ s: S.selected.s, l: S.selected.l }] : [];
+  }
+  function nextGroupId() {
+    let max = 0;
+    for (const sc of S.ir.scenes) for (const L of sc.layers) {
+      const g = L.groupId;
+      if (typeof g === "string") {
+        const n = parseInt(g.replace(/^g/, ""), 10);
+        if (Number.isFinite(n) && n > max) max = n;
+      }
+    }
+    return "g" + (max + 1);
+  }
+  function groupMembers(groupId) {
+    const out = [];
+    S.ir.scenes.forEach((sc, s) => sc.layers.forEach((L, l) => {
+      if (L.groupId === groupId) out.push({ s, l });
+    }));
+    return out;
+  }
   function select(s, l) {
-    S.selected = { s, l };
     S.selAudio = null;
+    S.selected = { s, l };
+    const layer2 = S.ir.scenes[s]?.layers?.[l];
+    const gid = layer2?.groupId;
+    if (gid) {
+      const mem = groupMembers(gid);
+      S.multi = mem.length > 1 ? mem : [];
+    } else S.multi = [];
     setTab("props");
     buildTimeline();
+    updateSelBox();
+  }
+  function toggleSelect(s, l) {
+    S.selAudio = null;
+    if (!S.multi.length && S.selected) S.multi = [{ s: S.selected.s, l: S.selected.l }];
+    const ix = S.multi.findIndex((m) => m.s === s && m.l === l);
+    if (ix >= 0) {
+      S.multi.splice(ix, 1);
+      S.selected = S.multi.length ? { ...S.multi[S.multi.length - 1] } : { s, l };
+    } else {
+      S.multi.push({ s, l });
+      S.selected = { s, l };
+    }
+    if (S.multi.length <= 1) S.multi = [];
+    setTab("props");
+    buildTimeline();
+    updateSelBox();
+  }
+  function deleteSelection() {
+    const list = selectionList();
+    if (list.length > 1) {
+      const byScene = /* @__PURE__ */ new Map();
+      for (const { s, l } of list) {
+        if (!byScene.has(s)) byScene.set(s, []);
+        byScene.get(s).push(l);
+      }
+      for (const [s, ls] of byScene) {
+        ls.sort((a, b) => b - a);
+        for (const l of ls) S.ir.scenes[s]?.layers?.splice(l, 1);
+        normalizeZ(s);
+      }
+      S.multi = [];
+      S.selected = null;
+      structuralEdit();
+      return;
+    }
+    if (S.selected) {
+      const { s, l } = S.selected;
+      S.ir.scenes[s].layers.splice(l, 1);
+      normalizeZ(s);
+      S.multi = [];
+      S.selected = null;
+      structuralEdit();
+    }
+  }
+  function groupSelection() {
+    const list = selectionList();
+    if (list.length < 2) {
+      showToast("Select at least two layers to group.");
+      return;
+    }
+    const existing = new Set(list.map(({ s, l }) => S.ir.scenes[s]?.layers?.[l]?.groupId));
+    const gid = existing.size === 1 && [...existing][0] ? String([...existing][0]) : nextGroupId();
+    for (const { s, l } of list) {
+      const L = S.ir.scenes[s]?.layers?.[l];
+      if (L) L.groupId = gid;
+    }
+    S.multi = groupMembers(gid);
+    structuralEdit();
+    showToast(`Grouped ${list.length} layers`);
+  }
+  var ctxMenuEl = null;
+  function hideContextMenu() {
+    if (ctxMenuEl) ctxMenuEl.style.display = "none";
+    window.removeEventListener("mousedown", onCtxOutside, true);
+    window.removeEventListener("keydown", onCtxKey, true);
+    window.removeEventListener("blur", hideContextMenu);
+  }
+  function onCtxOutside(ev) {
+    if (ctxMenuEl && !ctxMenuEl.contains(ev.target)) hideContextMenu();
+  }
+  function onCtxKey(ev) {
+    if (ev.key === "Escape") {
+      ev.stopPropagation();
+      hideContextMenu();
+    }
+  }
+  function showContextMenu(clientX, clientY) {
+    if (!ctxMenuEl) {
+      const m = el("div");
+      m.style.cssText = "position:fixed;z-index:200;min-width:148px;padding:6px;border-radius:12px;background:rgba(18,18,18,.92);backdrop-filter:saturate(110%) blur(20px);-webkit-backdrop-filter:saturate(110%) blur(20px);border:1px solid var(--border);box-shadow:0 24px 60px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.2);font-family:inherit;font-size:12px;color:var(--text);user-select:none;";
+      const mk = (label, onClick) => {
+        const it = el("div");
+        it.textContent = label;
+        it.style.cssText = "padding:8px 11px;border-radius:8px;cursor:pointer;font-weight:600;transition:background .12s;";
+        it.onmouseenter = () => {
+          it.style.background = "var(--glass-3)";
+        };
+        it.onmouseleave = () => {
+          it.style.background = "";
+        };
+        it.onmousedown = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          hideContextMenu();
+          onClick();
+        };
+        return it;
+      };
+      m.appendChild(mk("Group", () => groupSelection()));
+      m.appendChild(mk("Delete", () => deleteSelection()));
+      document.body.appendChild(m);
+      ctxMenuEl = m;
+    }
+    const mw = 160, mh = 84;
+    const left = Math.min(clientX, window.innerWidth - mw - 6);
+    const top = Math.min(clientY, window.innerHeight - mh - 6);
+    ctxMenuEl.style.left = left + "px";
+    ctxMenuEl.style.top = top + "px";
+    ctxMenuEl.style.display = "block";
+    window.addEventListener("mousedown", onCtxOutside, true);
+    window.addEventListener("keydown", onCtxKey, true);
+    window.addEventListener("blur", hideContextMenu);
   }
   function numField(label, value, min, max, step, onIn) {
     const f = el("div", "field");
@@ -6455,8 +7238,10 @@
           if ((at.easing ?? "linear") === nm) op.selected = true;
           sel.appendChild(op);
         });
+        const graph = easingGraphEl(at.easing ?? "linear");
         sel.onchange = () => {
           at.easing = sel.value;
+          redrawEasingGraph(graph, sel.value);
           liveEdit();
         };
         const elab = el("label");
@@ -6467,10 +7252,68 @@
         row.appendChild(elab);
         row.appendChild(sel);
         ef.appendChild(row);
+        const grow = el("div", "row");
+        grow.style.cssText = "margin-top:4px;justify-content:center";
+        grow.appendChild(graph);
+        ef.appendChild(grow);
         f.appendChild(ef);
       }
     }
     return f;
+  }
+  var EG_W = 88;
+  var EG_H = 40;
+  var EG_PAD = 4;
+  function easingGraphEl(name) {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("width", String(EG_W));
+    svg.setAttribute("height", String(EG_H));
+    svg.setAttribute("viewBox", `0 0 ${EG_W} ${EG_H}`);
+    svg.style.cssText = `border:1px solid var(--border);border-radius:7px;background:rgba(0,0,0,.25);display:block`;
+    const inner = document.createElementNS(NS, "rect");
+    inner.setAttribute("x", String(EG_PAD - 1));
+    inner.setAttribute("y", String(EG_PAD - 1));
+    inner.setAttribute("width", String(EG_W - 2 * EG_PAD + 2));
+    inner.setAttribute("height", String(EG_H - 2 * EG_PAD + 2));
+    inner.setAttribute("fill", "none");
+    inner.setAttribute("stroke", "var(--border)");
+    inner.setAttribute("stroke-width", "1");
+    inner.setAttribute("rx", "3");
+    svg.appendChild(inner);
+    const base = document.createElementNS(NS, "line");
+    base.setAttribute("x1", String(EG_PAD));
+    base.setAttribute("y1", String(EG_H - EG_PAD));
+    base.setAttribute("x2", String(EG_W - EG_PAD));
+    base.setAttribute("y2", String(EG_PAD));
+    base.setAttribute("stroke", "var(--dim)");
+    base.setAttribute("stroke-width", "1");
+    base.setAttribute("stroke-dasharray", "2 3");
+    base.setAttribute("opacity", "0.5");
+    svg.appendChild(base);
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("class", "eg-curve");
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "var(--accent)");
+    path.setAttribute("stroke-width", "1.5");
+    path.setAttribute("stroke-linejoin", "round");
+    path.setAttribute("stroke-linecap", "round");
+    svg.appendChild(path);
+    redrawEasingGraph(svg, name);
+    return svg;
+  }
+  function redrawEasingGraph(svg, name) {
+    const path = svg.querySelector(".eg-curve");
+    if (!path) return;
+    const w = EG_W - 2 * EG_PAD, h = EG_H - 2 * EG_PAD, N = 40;
+    let d = "";
+    for (let i = 0; i <= N; i++) {
+      const x = i / N;
+      const y = Math.max(0, Math.min(1, ease(name, x)));
+      const sx = EG_PAD + x * w, sy = EG_PAD + (1 - y) * h;
+      d += (i === 0 ? "M" : "L") + sx.toFixed(2) + " " + sy.toFixed(2);
+    }
+    path.setAttribute("d", d);
   }
   var playheadLocal = () => {
     if (!S.selected) return 0;
@@ -6596,9 +7439,11 @@
     const scene2 = S.ir.scenes[s];
     const copy = JSON.parse(JSON.stringify(scene2.layers[l]));
     delete copy.zIndex;
+    delete copy.groupId;
     copy.start = (copy.start ?? 0) + 0.2;
     scene2.layers.splice(l + 1, 0, copy);
     normalizeZ(s);
+    S.multi = [];
     S.selected = { s, l: l + 1 };
     structuralEdit();
   }
@@ -6636,6 +7481,7 @@
     units.splice(ni, 0, u);
     S.ir.scenes[s].layers = units.flat();
     normalizeZ(s);
+    S.multi = [];
     S.selected = { s, l: S.ir.scenes[s].layers.indexOf(moved) };
     structuralEdit();
   }
@@ -6801,12 +7647,7 @@
       head2.appendChild(title2);
       const del2 = el("button", "icon-btn");
       del2.innerHTML = icon("trash");
-      del2.onclick = () => {
-        scene2.layers.splice(l, 1);
-        normalizeZ(s);
-        S.selected = null;
-        structuralEdit();
-      };
+      del2.onclick = () => deleteSelection();
       head2.appendChild(del2);
       p.appendChild(head2);
       const tgt = resolveFxTarget(scene2, l);
@@ -6851,12 +7692,7 @@
     head.appendChild(title);
     const del = el("button", "icon-btn");
     del.innerHTML = icon("trash");
-    del.onclick = () => {
-      scene2.layers.splice(l, 1);
-      normalizeZ(s);
-      S.selected = null;
-      structuralEdit();
-    };
+    del.onclick = () => deleteSelection();
     head.appendChild(del);
     p.appendChild(head);
     if (layer2.type === "overlay") {
@@ -7019,7 +7855,52 @@
     tip.innerHTML = "drag on canvas to move \xB7 arrows nudge \xB7 <b>S</b> split \xB7 <b>\u2318D</b> duplicate \xB7 <b>Del</b> remove";
     p.appendChild(tip);
   }
+  var hoverPreview = null;
+  var HOVER_PREVIEW_CATS = /* @__PURE__ */ new Set(["text", "image", "in", "out"]);
+  function endHoverPreview() {
+    if (!hoverPreview) return;
+    cancelAnimationFrame(hoverPreview.raf);
+    const { savedIR, savedPlayhead } = hoverPreview;
+    hoverPreview = null;
+    try {
+      S.ir = JSON.parse(savedIR);
+    } catch {
+    }
+    S.playhead = savedPlayhead;
+    mountPreview();
+    VGP.seek(S.playhead, { playing: S.playing });
+  }
+  function startHoverPreview(entry) {
+    if (hoverPreview) endHoverPreview();
+    if (!S.selected || !HOVER_PREVIEW_CATS.has(entry.category)) return;
+    const { s, l } = S.selected;
+    const scene2 = S.ir.scenes[s];
+    const target = scene2.layers[l];
+    if (!target || !presetAppliesTo(entry.id, target.type)) return;
+    const savedIR = JSON.stringify(S.ir);
+    const savedPlayhead = S.playhead;
+    const clone = JSON.parse(savedIR);
+    const cScene = clone.scenes[s];
+    const cTarget = cScene.layers[l];
+    const fx = newFxLayer(cTarget, cScene.duration, entry.id);
+    cScene.layers.splice(l + 1, 0, fx);
+    VGP.mount(clone, { assetBase: baseUrl() });
+    const startAbs = (S.offsets[s] ?? 0) + (cTarget.start ?? 0);
+    const presetEntry = MAN.get(entry.id);
+    const win = Math.max(0.3, Math.min(fx.duration ?? 1, presetEntry?.defaultDuration ?? fx.duration ?? 1));
+    const t0 = performance.now();
+    hoverPreview = { raf: 0, savedIR, savedPlayhead };
+    const tick = () => {
+      if (!hoverPreview) return;
+      const elapsed = (performance.now() - t0) / 1e3;
+      const local = win > 0 ? elapsed % (win + 0.25) : 0;
+      VGP.seek(startAbs + Math.min(local, win), { playing: false });
+      hoverPreview.raf = requestAnimationFrame(tick);
+    };
+    hoverPreview.raf = requestAnimationFrame(tick);
+  }
   function buildLibrary() {
+    endHoverPreview();
     const p = $("rightBody");
     p.innerHTML = "";
     const tabs = el("div", "cat-tabs");
@@ -7045,9 +7926,23 @@
       const nm = el("div", "nm");
       nm.innerHTML = icon("spark") + e.id.split(".")[1].replace(/-/g, " ");
       card.appendChild(nm);
-      card.onclick = () => applyFromLibrary(e);
+      card.onclick = () => {
+        endHoverPreview();
+        applyFromLibrary(e);
+      };
+      card.onmouseenter = () => {
+        if (!HOVER_PREVIEW_CATS.has(e.category)) return;
+        if (!S.selected) {
+          showToast("Select a clip to preview the effect.");
+          return;
+        }
+        if (!presetAppliesTo(e.id, S.ir.scenes[S.selected.s].layers[S.selected.l]?.type)) return;
+        startHoverPreview(e);
+      };
+      card.onmouseleave = () => endHoverPreview();
       card.draggable = true;
       card.ondragstart = (ev) => {
+        endHoverPreview();
         const t = e.category === "transition" ? "application/x-vgp-transition" : e.category === "overlay" ? "application/x-vgp-overlay" : "application/x-vgp-preset";
         ev.dataTransfer.setData(t, e.id);
       };
@@ -7089,6 +7984,7 @@
     }
     scene2.layers.splice(l + 1, 0, newFxLayer(target, scene2.duration, entry.id));
     normalizeZ(s);
+    S.multi = [];
     S.selected = { s, l: l + 1 };
     S.playhead = (S.offsets[s] ?? 0) + (target.start ?? 0) + 0.05;
     setTab("props");
@@ -7370,13 +8266,7 @@
       if (e.target === $("projModal")) closeProj();
     });
     $("btnDel").onclick = () => {
-      if (S.selected) {
-        const { s, l } = S.selected;
-        S.ir.scenes[s].layers.splice(l, 1);
-        normalizeZ(s);
-        S.selected = null;
-        structuralEdit();
-      }
+      if (S.selected || S.multi.length) deleteSelection();
     };
     initSelHandles();
     $("fileBtn").onclick = (e) => {
@@ -7431,16 +8321,39 @@
       const t = e.target;
       if (t.closest(".clip") || t.closest(".track-label") || t.closest(".scene-tag") || t.closest(".sh") || t.closest(".seam") || t.closest(".kf-marker")) return;
       e.preventDefault();
-      const rectLeft = $("tlInner").getBoundingClientRect().left;
-      const seekFrom = (ev) => seekTo(timeAtClientX(ev.clientX, rectLeft));
-      seekFrom(e);
-      const mv = (ev) => seekFrom(ev);
+      const seekFrom = (clientX) => seekTo(timeAtClientX(clientX));
+      let lastX = e.clientX;
+      let autoT = null;
+      const autoTick = () => {
+        const r = tl.getBoundingClientRect();
+        const EDGE = 36, max = tl.scrollWidth - tl.clientWidth;
+        let d = 0;
+        if (lastX < r.left + LABELW + EDGE) d = -Math.ceil((r.left + LABELW + EDGE - lastX) / 3);
+        else if (lastX > r.right - EDGE) d = Math.ceil((lastX - (r.right - EDGE)) / 3);
+        const next = Math.max(0, Math.min(max, tl.scrollLeft + d));
+        if (d && next !== tl.scrollLeft) {
+          tl.scrollLeft = next;
+          seekFrom(lastX);
+        }
+      };
+      seekFrom(e.clientX);
+      const mv = (ev) => {
+        lastX = ev.clientX;
+        seekFrom(ev.clientX);
+        if (!autoT) autoT = setInterval(autoTick, 16);
+      };
       const up = () => {
         window.removeEventListener("mousemove", mv);
         window.removeEventListener("mouseup", up);
+        window.removeEventListener("blur", up);
+        if (autoT) {
+          clearInterval(autoT);
+          autoT = null;
+        }
       };
       window.addEventListener("mousemove", mv);
       window.addEventListener("mouseup", up);
+      window.addEventListener("blur", up, { once: true });
     });
     tl.addEventListener("dragover", (e) => {
       e.preventDefault();
@@ -7517,6 +8430,10 @@
       }
       if (hit < 0) return;
       e.preventDefault();
+      if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        toggleSelect(si, hit);
+        return;
+      }
       if (!S.selected || S.selected.s !== si || S.selected.l !== hit) select(si, hit);
       const layer2 = scene2.layers[hit];
       layer2.transform = layer2.transform || {};
@@ -7546,6 +8463,37 @@
       };
       window.addEventListener("mousemove", mv);
       window.addEventListener("mouseup", up);
+    });
+    stage.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (!S.ir) return;
+      const rect2 = stage.getBoundingClientRect();
+      const sc = S.scale || 1;
+      const cx = (e.clientX - rect2.left) / sc, cy = (e.clientY - rect2.top) / sc;
+      const si = sceneAt(S.playhead);
+      const scene2 = S.ir.scenes[si];
+      if (!scene2) return;
+      const localT = S.playhead - S.offsets[si];
+      let hit = -1;
+      for (let li = scene2.layers.length - 1; li >= 0; li--) {
+        const L = scene2.layers[li];
+        const st = L.start ?? 0, du = L.duration ?? scene2.duration;
+        if (L.type === "overlay" || L.type === "fx") continue;
+        if (localT < st - 0.01 || localT > st + du + 0.01) continue;
+        const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
+        const d = renderedDelta(L, si);
+        const ccx = r.x + r.w / 2 + d.x, ccy = r.y + r.h / 2 + d.y;
+        const rot = -d.rotate * Math.PI / 180;
+        const dxp = cx - ccx, dyp = cy - ccy;
+        const lx = dxp * Math.cos(rot) - dyp * Math.sin(rot), ly = dxp * Math.sin(rot) + dyp * Math.cos(rot);
+        if (Math.abs(lx) <= r.w * d.scale / 2 && Math.abs(ly) <= r.h * d.scale / 2) {
+          hit = li;
+          break;
+        }
+      }
+      if (hit >= 0 && !isSelected(si, hit)) select(si, hit);
+      if (!S.selected && !S.multi.length) return;
+      showContextMenu(e.clientX, e.clientY);
     });
     window.addEventListener("keydown", (e) => {
       const tag = e.target.tagName;
@@ -7611,12 +8559,8 @@
         structuralEdit();
         return;
       }
-      if ((e.key === "Delete" || e.key === "Backspace") && S.selected) {
-        const { s, l } = S.selected;
-        S.ir.scenes[s].layers.splice(l, 1);
-        normalizeZ(s);
-        S.selected = null;
-        structuralEdit();
+      if ((e.key === "Delete" || e.key === "Backspace") && (S.selected || S.multi.length)) {
+        deleteSelection();
         return;
       }
       if (S.selected && e.key.startsWith("Arrow")) {
@@ -7667,6 +8611,7 @@
         clearTimeout(saveTimer);
         S.ir = m.ir;
         S.lastSyncJson = j;
+        S.multi = [];
         pushHistory(j);
         captureSceneBase();
         S.ir.scenes.forEach((_, i) => normalizeZ(i));

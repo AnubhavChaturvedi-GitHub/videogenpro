@@ -42,6 +42,9 @@ export interface BaseLayer {
   presets?: PresetInstance[];
   keyframes?: Partial<Record<Keyable, Keyframe[]>>;
   zIndex?: number;
+  // editor-only metadata: a shared id grouping layers so they select as a unit.
+  // The runtime ignores it, so render == preview is preserved.
+  groupId?: string;
 }
 
 export interface TextLayer extends BaseLayer {
