@@ -182,6 +182,44 @@
     .proj { display:flex; align-items:center; gap:10px; padding:11px; border-radius:11px; background:var(--glass-2); border:1px solid var(--border); margin-bottom:8px; cursor:pointer; font-size:13px; }
     .proj:hover { background:var(--glass-3); }
     .proj.active { box-shadow:inset 0 0 0 1px var(--accent); }
+
+    /* no text/element selection while editing (scrubbing etc.); inputs still selectable */
+    #app, .modal { user-select:none; -webkit-user-select:none; }
+    input, textarea, #projBody pre { user-select:text; -webkit-user-select:text; }
+
+    /* top-right view segmented control */
+    .seg { display:flex; gap:4px; background:var(--glass); border:1px solid var(--border); border-radius:100px; padding:3px; }
+    .seg-btn { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--dim); padding:6px 12px; border-radius:100px; }
+    .seg-btn:hover { color:var(--text); background:var(--glass-2); }
+    .seg-btn svg { width:14px; height:14px; }
+
+    /* current scene badge in side panel */
+    .cur-scene { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; color:var(--text); background:var(--glass-2); border:1px solid var(--border); border-radius:9px; padding:8px 11px; margin-bottom:14px; }
+
+    /* arrange (z-order) buttons in properties */
+    .arrange { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:6px; }
+    .arrange button { background:var(--glass-2); border:1px solid var(--border); border-radius:8px; padding:7px 4px; font-size:10px; font-weight:600; color:var(--dim); display:flex; flex-direction:column; align-items:center; gap:3px; }
+    .arrange button:hover { background:var(--glass-3); color:var(--text); }
+    .arrange svg { width:15px; height:15px; }
+
+    /* project modal: compositions / assets / code */
+    .proj-modal { width:640px; max-width:92vw; }
+    .proj-tabs { display:flex; gap:6px; align-items:center; margin-bottom:14px; }
+    .proj-tab { font-size:13px; font-weight:700; color:var(--dim); padding:8px 14px; border-radius:9px; }
+    .proj-tab.on { color:#000; background:var(--accent-grad); }
+    .proj-tab:hover { color:var(--text); }
+    .proj-body { max-height:62vh; overflow:auto; }
+    .scene-item { display:flex; align-items:center; gap:11px; padding:12px 13px; border-radius:11px; background:var(--glass-2); border:1px solid var(--border); margin-bottom:8px; cursor:pointer; }
+    .scene-item:hover { background:var(--glass-3); }
+    .scene-item.cur { box-shadow:inset 0 0 0 2px var(--accent); }
+    .scene-item .num { width:26px; height:26px; border-radius:7px; background:var(--accent-grad); color:#000; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; }
+    .scene-item .meta { flex:1; } .scene-item .meta b { font-size:13px; } .scene-item .meta span { display:block; font-size:11px; color:var(--dim); }
+    .pa-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .pa { position:relative; border-radius:10px; overflow:hidden; aspect-ratio:16/10; background:var(--glass-2); border:1px solid var(--border); }
+    .pa img, .pa video { width:100%; height:100%; object-fit:cover; }
+    .pa .lbl { position:absolute; bottom:0; left:0; right:0; font-size:9px; padding:3px 5px; background:rgba(0,0,0,.78); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pa .badge { position:absolute; top:4px; left:4px; font-size:8px; font-weight:800; text-transform:uppercase; padding:1px 6px; border-radius:100px; background:var(--accent); color:#000; }
+    #projBody pre { font-family:ui-monospace,Menlo,monospace; font-size:11px; line-height:1.5; color:var(--text); background:rgba(0,0,0,.4); border:1px solid var(--border); border-radius:10px; padding:14px; white-space:pre-wrap; word-break:break-word; }
   </style>
 </head>
 <body>
@@ -196,12 +234,18 @@
       <button class="btn icon-only" id="undoBtn" title="Undo (⌘Z)"><span id="i-undo"></span></button>
       <button class="btn icon-only" id="redoBtn" title="Redo (⌘⇧Z)"><span id="i-redo"></span></button>
       <div class="spacer"></div>
+      <div class="seg">
+        <button class="seg-btn" id="viewComp" title="Compositions / scenes"><span id="i-comp"></span>Scenes</button>
+        <button class="seg-btn" id="viewAssets" title="Project assets"><span id="i-assets"></span>Assets</button>
+        <button class="seg-btn" id="viewCode" title="Composition code"><span id="i-code"></span>Code</button>
+      </div>
       <span class="status"><span class="dot saved" id="syncDot"></span><span id="syncText">synced</span></span>
       <button class="btn primary" id="export"><span id="expIcon"></span>Export</button>
     </div>
 
     <div class="mid">
       <div class="side">
+        <div class="cur-scene" id="curScene">Scene 1</div>
         <div class="sec-title">Add layer</div>
         <div class="add-grid">
           <button class="btn" id="addText"><span id="i-text"></span>Text</button>
@@ -270,6 +314,19 @@
         <button class="btn" id="importBtn">Import .json…</button>
         <button class="btn primary" id="openClose">Close</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="projModal">
+    <div class="modal proj-modal">
+      <div class="proj-tabs">
+        <button class="proj-tab" data-v="comp">Compositions</button>
+        <button class="proj-tab" data-v="assets">Assets</button>
+        <button class="proj-tab" data-v="code">Code</button>
+        <div class="spacer"></div>
+        <button class="btn" id="projClose">✕</button>
+      </div>
+      <div class="proj-body" id="projBody"></div>
     </div>
   </div>
 

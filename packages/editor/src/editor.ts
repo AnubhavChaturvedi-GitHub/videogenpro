@@ -26,6 +26,13 @@ const I: Record<string, string> = {
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   audio: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
   fit: '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
+  code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+  layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+  grid: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
+  arrTop: '<polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>',
+  arrUp: '<polyline points="18 15 12 9 6 15"/>',
+  arrDown: '<polyline points="6 9 12 15 18 9"/>',
+  arrBot: '<polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/>',
   cube: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><line x1="12" y1="13" x2="12" y2="21"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
@@ -265,7 +272,7 @@ function buildTimeline() {
   const ph = el('div', 'playhead'); ph.id = 'playhead'; inner.appendChild(ph); positionPlayhead();
 }
 function selectAudio(ai: number) { S.selAudio = ai; S.selected = null; setTab('props'); buildTimeline(); }
-function positionPlayhead() { const ph = document.getElementById('playhead'); if (ph) { ph.style.left = (LABELW + S.playhead * S.pxPerSec) + 'px'; ph.style.height = $('tlInner').scrollHeight + 'px'; } updateSelBox(); }
+function positionPlayhead() { const ph = document.getElementById('playhead'); if (ph) { ph.style.left = (LABELW + S.playhead * S.pxPerSec) + 'px'; ph.style.height = $('tlInner').scrollHeight + 'px'; } updateSelBox(); const cs = document.getElementById('curScene'); if (cs && S.ir) cs.innerHTML = icon('layers') + `Scene ${sceneAt(S.playhead) + 1} / ${S.ir.scenes.length}`; }
 // on-canvas selection box (lives in #scaler comp-space, survives stage re-mounts)
 function updateSelBox() {
   const box = document.getElementById('selbox'); if (!box) return;
@@ -372,6 +379,51 @@ function splitSelected() {
   scene.layers.splice(l + 1, 0, second); structuralEdit();
 }
 function duplicateSelected() { if (!S.selected) return; const { s, l } = S.selected; const scene = S.ir.scenes[s]; const copy = JSON.parse(JSON.stringify(scene.layers[l])); copy.start = (copy.start ?? 0) + 0.2; scene.layers.splice(l + 1, 0, copy); S.selected = { s, l: l + 1 }; structuralEdit(); }
+// z-order: reorder the selected layer within its scene (array order == paint order; zIndex normalised to match)
+function arrangeLayer(mode: 'top' | 'up' | 'down' | 'bottom') {
+  if (!S.selected) { showToast('Select a layer to arrange.'); return; }
+  const { s, l } = S.selected; const arr = S.ir.scenes[s].layers; if (arr.length < 2) return;
+  let ni = l;
+  if (mode === 'top') ni = arr.length - 1; else if (mode === 'bottom') ni = 0; else if (mode === 'up') ni = Math.min(arr.length - 1, l + 1); else ni = Math.max(0, l - 1);
+  if (ni === l) return;
+  const [layer] = arr.splice(l, 1); arr.splice(ni, 0, layer);
+  arr.forEach((ly: any, i: number) => { ly.zIndex = i; });
+  S.selected = { s, l: ni }; structuralEdit();
+}
+// project views: Compositions (scenes) / Assets / Code
+let projTab = 'comp';
+function openProj(tab: string) { projTab = tab; $('projModal').classList.add('show'); renderProj(); }
+function closeProj() { $('projModal').classList.remove('show'); }
+function renderProj() {
+  document.querySelectorAll('.proj-tab').forEach((t) => t.classList.toggle('on', t.getAttribute('data-v') === projTab));
+  const body = $('projBody'); body.innerHTML = '';
+  if (projTab === 'comp') {
+    const cur = sceneAt(S.playhead);
+    S.ir.scenes.forEach((sc: any, i: number) => {
+      const d = el('div', 'scene-item' + (i === cur ? ' cur' : ''));
+      d.innerHTML = `<div class="num">${i + 1}</div><div class="meta"><b>${sc.id || ('Scene ' + (i + 1))}</b><span>${fmtClock(sc.duration)} · ${sc.layers.length} layers${i === cur ? ' · ▶ playing' : ''}</span></div>`;
+      d.onclick = () => { seekTo(S.offsets[i] + 0.01); closeProj(); };
+      body.appendChild(d);
+    });
+  } else if (projTab === 'assets') {
+    const seen = new Map<string, string>();
+    S.ir.scenes.forEach((sc: any) => sc.layers.forEach((l: any) => { if ((l.type === 'image' || l.type === 'video') && l.src && !seen.has(l.src)) seen.set(l.src, l.type); }));
+    (S.ir.audio || []).forEach((a: any) => { if (a.src && !seen.has(a.src)) seen.set(a.src, 'audio'); });
+    if (!seen.size) { body.innerHTML = '<div class="empty">No assets used in this project yet.</div>'; return; }
+    const g = el('div', 'pa-grid');
+    seen.forEach((type, src) => {
+      const d = el('div', 'pa'); const u = assetUrl(src); const name = src.split('/').pop() || src;
+      if (type === 'video') { const v = el('video') as HTMLVideoElement; v.src = u; v.muted = true; d.appendChild(v); }
+      else if (type === 'image') { const im = el('img') as HTMLImageElement; im.src = u; d.appendChild(im); }
+      else { d.style.cssText += 'display:flex;align-items:center;justify-content:center'; d.innerHTML = icon('audio'); }
+      const b = el('div', 'badge'); b.textContent = type; d.appendChild(b);
+      const lb = el('div', 'lbl'); lb.textContent = name; d.appendChild(lb); g.appendChild(d);
+    });
+    body.appendChild(g);
+  } else {
+    const pre = el('pre'); pre.textContent = JSON.stringify(S.ir, null, 2); body.appendChild(pre);
+  }
+}
 function buildProps() {
   const p = $('rightBody'); p.innerHTML = '';
   if (S.selAudio != null) {
@@ -398,6 +450,13 @@ function buildProps() {
   const pill = el('span', 'pill'); pill.innerHTML = icon(typeIco[layer.type] ?? 'shape') + layer.type; pill.style.background = clipColor[layer.type] ?? '#555'; head.appendChild(pill);
   const title = el('span'); title.textContent = layer.type === 'text' ? String(layer.text).slice(0, 16) : (layer.src ? String(layer.src).split('/').pop() : layer.type); title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
   const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => { scene.layers.splice(l, 1); S.selected = null; structuralEdit(); }; head.appendChild(del); p.appendChild(head);
+
+  // arrange / z-order
+  const arrange = el('div', 'arrange');
+  ([['arrTop', 'To front', 'top'], ['arrUp', 'Forward', 'up'], ['arrDown', 'Backward', 'down'], ['arrBot', 'To back', 'bottom']] as const).forEach(([ic, lbl, mode]) => {
+    const bn = el('button'); bn.innerHTML = icon(ic) + `<span>${lbl}</span>`; bn.onclick = () => arrangeLayer(mode as any); arrange.appendChild(bn);
+  });
+  p.appendChild(arrange);
 
   if (layer.type === 'text') {
     const f = el('div', 'field'); const lab = el('label'); lab.textContent = 'text'; f.appendChild(lab);
@@ -550,6 +609,13 @@ async function init() {
   $('undoBtn').onclick = undo; $('redoBtn').onclick = redo;
   $('btnSplit').onclick = splitSelected; $('btnDup').onclick = duplicateSelected;
   $('btnFit').onclick = fitTimeline; $('btnZoomIn').onclick = () => zoomBy(1.3); $('btnZoomOut').onclick = () => zoomBy(1 / 1.3);
+
+  // top-right project views: Compositions / Assets / Code
+  $('i-comp').innerHTML = icon('layers'); $('i-assets').innerHTML = icon('grid'); $('i-code').innerHTML = icon('code');
+  $('viewComp').onclick = () => openProj('comp'); $('viewAssets').onclick = () => openProj('assets'); $('viewCode').onclick = () => openProj('code');
+  $('projClose').onclick = closeProj;
+  document.querySelectorAll('.proj-tab').forEach((t) => { (t as HTMLElement).onclick = () => { projTab = t.getAttribute('data-v') || 'comp'; renderProj(); }; });
+  $('projModal').addEventListener('mousedown', (e) => { if (e.target === $('projModal')) closeProj(); });
   $('btnDel').onclick = () => { if (S.selected) { const { s, l } = S.selected; S.ir.scenes[s].layers.splice(l, 1); S.selected = null; structuralEdit(); } };
   initSelHandles();
 
@@ -592,15 +658,28 @@ async function init() {
     buildTimeline(); tl.scrollLeft = LABELW + curT * S.pxPerSec - (e.clientX - r.left);
   }, { passive: false });
 
-  // free-move: drag the selected layer directly on the canvas
+  // canvas editing: click the topmost layer under the cursor to select it, then drag to move
   const stage = $('stage');
-  stage.style.cursor = 'default';
+  stage.style.cursor = 'move';
   stage.addEventListener('mousedown', (e: MouseEvent) => {
-    if (!S.selected) return; e.preventDefault();
-    const layer = S.ir.scenes[S.selected.s].layers[S.selected.l]; layer.transform = layer.transform || {};
-    const sx = e.clientX, sy = e.clientY, ox = layer.transform.x ?? 0, oy = layer.transform.y ?? 0, sc = S.scale || 1;
-    const mv = (ev: MouseEvent) => { layer.transform.x = Math.round(ox + (ev.clientX - sx) / sc); layer.transform.y = Math.round(oy + (ev.clientY - sy) / sc); liveSeek(); };
-    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); scheduleSave(); buildProps(); };
+    const rect = stage.getBoundingClientRect(); const sc = S.scale || 1;
+    const cx = (e.clientX - rect.left) / sc, cy = (e.clientY - rect.top) / sc; // composition coords
+    const si = sceneAt(S.playhead); const scene = S.ir.scenes[si]; const localT = S.playhead - S.offsets[si];
+    let hit = -1;
+    for (let li = scene.layers.length - 1; li >= 0; li--) {
+      const L = scene.layers[li]; const st = L.start ?? 0, du = L.duration ?? scene.duration;
+      if (localT < st - 0.01 || localT > st + du + 0.01) continue;
+      const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height }; const tf = L.transform ?? {}; const scl = tf.scale ?? 1;
+      const ccx = r.x + r.w / 2 + (tf.x ?? 0), ccy = r.y + r.h / 2 + (tf.y ?? 0), hw = r.w * scl / 2, hh = r.h * scl / 2;
+      if (Math.abs(cx - ccx) <= hw && Math.abs(cy - ccy) <= hh) { hit = li; break; }
+    }
+    if (hit < 0) return;
+    e.preventDefault();
+    if (!S.selected || S.selected.s !== si || S.selected.l !== hit) select(si, hit);
+    const layer = scene.layers[hit]; layer.transform = layer.transform || {};
+    const sx = e.clientX, sy = e.clientY, ox = layer.transform.x ?? 0, oy = layer.transform.y ?? 0; let moved = false;
+    const mv = (ev: MouseEvent) => { if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 2) moved = true; layer.transform.x = Math.round(ox + (ev.clientX - sx) / sc); layer.transform.y = Math.round(oy + (ev.clientY - sy) / sc); liveSeek(); updateSelBox(); };
+    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); if (moved) { scheduleSave(); buildProps(); } };
     window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
   });
 
