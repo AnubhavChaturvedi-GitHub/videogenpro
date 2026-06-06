@@ -8,6 +8,8 @@
   "scripts": {
     "build:runtime": "tsx packages/cli/src/build.ts",
     "render": "tsx packages/cli/src/render.ts",
+    "preview": "tsx packages/cli/src/preview.ts",
+    "studio": "tsx packages/cli/src/serve.ts",
     "manifest": "tsx packages/cli/src/manifest.ts",
     "demo": "pnpm build:runtime && pnpm render examples/hello.json out/hello.mp4"
   },

@@ -18,11 +18,15 @@ type LayerNode = {
   three?: ThreeHandle;
   video?: HTMLVideoElement;
 };
-type ThreeHandle = { render: (t: number, props: Record<string, number>) => void };
+type ThreeHandle = { render: (t: number, props: Record<string, number>) => void; dispose?: () => void };
 
 let comp: Composition;
 let sceneNodes: SceneNode[] = [];
 let stage: HTMLDivElement;
+let assetBase: string | undefined;
+
+const isAbsUrl = (s: string) => /^(https?:|data:|file:|blob:)/.test(s);
+const resolveSrc = (src: string) => (assetBase && !isAbsUrl(src) ? new URL(src, assetBase).href : src);
 
 // ---- Three.js demo scenes (registered by id). Deterministic: driven by time. ----
 const THREE_SCENES: Record<string, (canvas: HTMLCanvasElement, w: number, h: number) => ThreeHandle> = {
@@ -49,6 +53,11 @@ const THREE_SCENES: Record<string, (canvas: HTMLCanvasElement, w: number, h: num
         pts.rotation.y = t * (props.speed ?? 0.3);
         pts.rotation.x = t * 0.12;
         renderer.render(scene, cam);
+      },
+      dispose: () => {
+        geo.dispose(); mat.dispose();
+        renderer.dispose();
+        renderer.forceContextLoss?.();
       },
     };
   },
@@ -188,7 +197,7 @@ function buildLayer(layer: Layer, sceneDur: number): LayerNode {
     }
     case 'image': {
       const img = document.createElement('img');
-      img.src = layer.src;
+      img.src = resolveSrc(layer.src);
       img.style.width = '100%';
       img.style.height = '100%';
       img.style.objectFit = layer.fit ?? 'cover';
@@ -197,7 +206,7 @@ function buildLayer(layer: Layer, sceneDur: number): LayerNode {
     }
     case 'video': {
       const v = document.createElement('video');
-      v.src = layer.src;
+      v.src = resolveSrc(layer.src);
       v.muted = true;
       v.style.width = '100%';
       v.style.height = '100%';
@@ -232,8 +241,11 @@ function buildLayer(layer: Layer, sceneDur: number): LayerNode {
 }
 
 // ---- public API ----
-function mount(c: Composition) {
+function mount(c: Composition, opts?: { assetBase?: string }) {
   comp = c;
+  assetBase = opts?.assetBase;
+  // dispose previous WebGL contexts before rebuilding (avoid context-limit leaks on live edit)
+  for (const sn of sceneNodes) for (const ln of sn.layers) ln.three?.dispose?.();
   stage = document.getElementById('stage') as HTMLDivElement;
   stage.style.width = px(c.width);
   stage.style.height = px(c.height);
