@@ -9,10 +9,18 @@ const presetInstance = z.object({
   duration: z.number().optional(),
 });
 
+// Must match EasingName in ./easing. Typos fail validation instead of being
+// silently linearized.
+const easingName = z.enum([
+  'linear',
+  'easeIn', 'easeOut', 'easeInOut',
+  'easeOutBack', 'easeOutExpo', 'easeOutCubic', 'easeInOutCubic',
+]);
+
 const keyframe = z.object({
   t: z.number(),
   value: z.number(),
-  easing: z.string().optional(),
+  easing: easingName.optional(),
 });
 
 const transform = z.object({
@@ -63,6 +71,7 @@ export const compositionSchema = z.object({
     src: z.string(),
     start: z.number().optional(),
     trimStart: z.number().optional(),
+    duration: z.number().optional(), // clip length (seconds) — lets audio-clip trimming persist
     volume: z.number().optional(),
   })).optional(),
   defaultTransition: presetInstance.optional(),

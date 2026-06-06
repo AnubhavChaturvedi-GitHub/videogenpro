@@ -4071,10 +4071,20 @@
     start: external_exports.number().optional(),
     duration: external_exports.number().optional()
   });
+  var easingName = external_exports.enum([
+    "linear",
+    "easeIn",
+    "easeOut",
+    "easeInOut",
+    "easeOutBack",
+    "easeOutExpo",
+    "easeOutCubic",
+    "easeInOutCubic"
+  ]);
   var keyframe = external_exports.object({
     t: external_exports.number(),
     value: external_exports.number(),
-    easing: external_exports.string().optional()
+    easing: easingName.optional()
   });
   var transform = external_exports.object({
     x: external_exports.number().optional(),
@@ -4119,6 +4129,8 @@
       src: external_exports.string(),
       start: external_exports.number().optional(),
       trimStart: external_exports.number().optional(),
+      duration: external_exports.number().optional(),
+      // clip length (seconds) — lets audio-clip trimming persist
       volume: external_exports.number().optional()
     })).optional(),
     defaultTransition: presetInstance.optional()
@@ -4226,12 +4238,13 @@
     {
       id: "text.expand",
       category: "text",
-      description: "Letters spread apart from tight tracking while fading in.",
+      description: "Letters spread apart from tight tracking while fading in. NOTE: this preset drives the element's `letterSpacing` directly while animating, so it overrides any layer `style.letterSpacing` during the entrance; at rest it stops emitting letterSpacing so your own value applies.",
       tags: ["enter", "elegant", "tracking"],
       params: { spacing: { default: 24, min: 0, max: 80, unit: "px" } },
       defaultDuration: 0.7,
       apply: (p, prm) => {
         const e = ease("easeOutCubic", p);
+        if (e >= 1) return { opacity: e };
         return { opacity: e, css: { letterSpacing: `${(1 - e) * -prm.spacing}px` } };
       }
     },
@@ -4342,16 +4355,18 @@
     {
       id: "image.reveal-wipe",
       category: "image",
-      description: "Image is revealed by a wipe sliding in from a chosen edge.",
+      description: "Image is revealed by a wipe sliding in from a chosen edge. `from` picks the edge: 0=top, 1=right, 2=bottom, 3=left.",
       tags: ["enter", "reveal", "wipe"],
       params: {
-        from: { default: 3, min: 0, max: 3, desc: "0=top 1=right 2=bottom 3=left" }
+        // Integer edge selector (rounded in apply). clipInset order is
+        // [top, right, bottom, left], so the value maps 1:1 to that index.
+        from: { default: 3, min: 0, max: 3, desc: "integer edge to wipe from: 0=top, 1=right, 2=bottom, 3=left" }
       },
       defaultDuration: 0.8,
       apply: (p, prm) => {
         const e = ease("easeInOutCubic", p);
         const hidden = (1 - e) * 100;
-        const edge = Math.round(clamp01(prm.from / 3) * 3);
+        const edge = Math.min(3, Math.max(0, Math.round(prm.from)));
         const inset = [0, 0, 0, 0];
         inset[edge] = hidden;
         return { clipInset: inset };
@@ -4372,14 +4387,22 @@
     {
       id: "image.sketch",
       category: "image",
-      description: "Renders the image as a hand-drawn pencil sketch (edge-detected line art), then dissolves to the real photo.",
+      description: "Starts as a hand-drawn pencil sketch (edge-detected line art) and genuinely dissolves to the real photo: the sketch filter holds, then the line-art weight fades out as the photo's natural color/contrast blooms back in.",
       tags: ["stylize", "sketch", "line-art", "reveal"],
       continuous: true,
-      params: { hold: { default: 0.6, min: 0, max: 1, desc: "fraction held as sketch before dissolving (1 = stays a sketch)" } },
+      params: { hold: { default: 0.6, min: 0, max: 1, desc: "fraction held as full sketch before dissolving (1 = stays a sketch forever)" } },
       defaultDuration: 4,
       apply: (p, prm) => {
         const fade = prm.hold >= 1 ? 0 : ease("easeInOutCubic", Math.max(0, (p - prm.hold) / (1 - prm.hold)));
-        return fade >= 1 ? {} : { css: { filter: `url(#vgp-sketch)`, opacity: String(1 - fade * 0) } };
+        if (fade >= 1) return { css: { filter: "none" } };
+        if (fade <= 0) return { css: { filter: "url(#vgp-sketch)" } };
+        const sat = fade;
+        const gray = 1 - fade;
+        return {
+          css: {
+            filter: `url(#vgp-sketch) grayscale(${gray}) saturate(${0.2 + sat * 0.8}) contrast(${1 + gray * 0.25}) brightness(${1 - gray * 0.08})`
+          }
+        };
       }
     },
     {
@@ -5035,8 +5058,12 @@
     panel: "props",
     cat: "text",
     history: [],
-    histIndex: -1
+    histIndex: -1,
+    sceneBase: []
   };
+  function captureSceneBase() {
+    S.sceneBase = S.ir.scenes.map((sc) => sc.duration ?? 0.5);
+  }
   var $ = (id) => document.getElementById(id);
   var el = (tag, cls) => {
     const e = document.createElement(tag);
@@ -5046,12 +5073,13 @@
   var baseUrl = () => new URL(S.assetBase, location.origin).href;
   var assetUrl = (src) => new URL(src, baseUrl()).href;
   function derive() {
-    for (const sc of S.ir.scenes) {
+    if (S.sceneBase.length !== S.ir.scenes.length) captureSceneBase();
+    S.ir.scenes.forEach((sc, i) => {
       let maxEnd = 0;
       for (const l of sc.layers) if (l.duration != null) maxEnd = Math.max(maxEnd, (l.start ?? 0) + l.duration);
-      if (maxEnd > (sc.duration ?? 0)) sc.duration = +maxEnd.toFixed(2);
-      if (!sc.duration || sc.duration < 0.5) sc.duration = 0.5;
-    }
+      const base = S.sceneBase[i] ?? 0.5;
+      sc.duration = +Math.max(0.5, base, maxEnd).toFixed(2);
+    });
     S.offsets = [];
     let a = 0;
     for (const sc of S.ir.scenes) {
@@ -5070,7 +5098,7 @@
     return si;
   }
   function fit() {
-    const wrap = $("stage").parentElement.parentElement;
+    const wrap = document.querySelector(".stagewrap") ?? $("scaler").parentElement;
     const s = Math.min((wrap.clientWidth - 40) / S.ir.width, (wrap.clientHeight - 40) / S.ir.height, 1);
     S.scale = s;
     const sc = $("scaler");
@@ -5115,9 +5143,12 @@
   function applyHistory() {
     const json = S.history[S.histIndex];
     if (!json) return;
+    const prevSel = S.selected;
+    const prevAudio = S.selAudio;
     S.ir = JSON.parse(json);
     S.lastSyncJson = json;
-    S.selected = null;
+    S.selected = prevSel && S.ir.scenes[prevSel.s]?.layers?.[prevSel.l] ? prevSel : null;
+    S.selAudio = prevAudio != null && S.ir.audio?.[prevAudio] ? prevAudio : null;
     derive();
     mountPreview();
     buildTimeline();
@@ -5161,6 +5192,7 @@
     S.selected = null;
     S.history = [S.lastSyncJson];
     S.histIndex = 0;
+    captureSceneBase();
     derive();
     autoFit();
     mountPreview();
@@ -5175,7 +5207,8 @@
   var newAssetLayer = (a) => ({ type: a.type, src: a.src, fit: "cover", duration: 2.5, presets: a.type === "image" ? [{ id: "image.ken-burns" }] : [], transform: {} });
   function addLayerAtPlayhead(layer2) {
     const si = sceneAt(S.playhead);
-    layer2.start = Math.max(0, +(S.playhead - S.offsets[si]).toFixed(2));
+    const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2);
+    layer2.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2)));
     S.ir.scenes[si].layers.push(layer2);
     S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 };
     setTab("props");
@@ -5185,7 +5218,8 @@
     const r = $("tlInner").getBoundingClientRect();
     const t = Math.max(0, Math.min(S.total, (clientX - r.left - LABELW) / S.pxPerSec));
     const si = sceneAt(t);
-    layer2.start = Math.max(0, +(t - S.offsets[si]).toFixed(2));
+    const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2);
+    layer2.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2)));
     S.ir.scenes[si].layers.push(layer2);
     S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 };
     setTab("props");
@@ -5319,8 +5353,9 @@
           e.preventDefault();
           e.stopPropagation();
           const sx = e.clientX, od = layer2.duration ?? scene2.duration;
+          const maxDur = Math.max(scene2.duration, S.total) || scene2.duration;
           const mv = (ev) => {
-            layer2.duration = +Math.max(0.1, Math.min(scene2.duration - (layer2.start ?? 0), od + (ev.clientX - sx) / S.pxPerSec)).toFixed(3);
+            layer2.duration = +Math.max(0.1, Math.min(maxDur, od + (ev.clientX - sx) / S.pxPerSec)).toFixed(3);
             clip.style.width = Math.max(24, layer2.duration * S.pxPerSec) + "px";
           };
           const up = () => {
@@ -5438,14 +5473,21 @@
     }
     const r = layer2.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
     const tf = layer2.transform ?? {};
+    const sc = tf.scale ?? 1;
+    const cx = r.x + r.w / 2 + (tf.x ?? 0);
+    const cy = r.y + r.h / 2 + (tf.y ?? 0);
+    const w = r.w * sc, h = r.h * sc;
     box.style.display = "block";
-    box.style.left = r.x + (tf.x ?? 0) + "px";
-    box.style.top = r.y + (tf.y ?? 0) + "px";
-    box.style.width = r.w + "px";
-    box.style.height = r.h + "px";
+    box.style.left = cx - w / 2 + "px";
+    box.style.top = cy - h / 2 + "px";
+    box.style.width = w + "px";
+    box.style.height = h + "px";
+    const rot = tf.rotate ?? 0;
+    box.style.transform = rot ? `rotate(${rot}deg)` : "";
+    box.style.transformOrigin = "center center";
     const inv = Math.min(2.4, 1 / (S.scale || 1));
-    box.querySelectorAll(".sh").forEach((h) => {
-      h.style.transform = `scale(${inv})`;
+    box.querySelectorAll(".sh").forEach((h2) => {
+      h2.style.transform = `scale(${inv})`;
     });
   }
   function initSelHandles() {
@@ -5580,6 +5622,15 @@
     layer2.duration = +local.toFixed(2);
     second.start = +(ls + local).toFixed(2);
     second.duration = +(ld - local).toFixed(2);
+    if (second.keyframes) {
+      for (const prop of Object.keys(second.keyframes)) {
+        second.keyframes[prop] = second.keyframes[prop].map((k) => ({ ...k, t: +Math.max(0, k.t - local).toFixed(3) }));
+      }
+    }
+    const isExit = (id) => MAN.get(id)?.category === "out" || id.startsWith("out.");
+    const isEnter = (id) => !isExit(id) && (MAN.get(id)?.category === "in" || id.startsWith("in."));
+    if (Array.isArray(layer2.presets)) layer2.presets = layer2.presets.filter((pr) => !isExit(pr.id));
+    if (Array.isArray(second.presets)) second.presets = second.presets.filter((pr) => !isEnter(pr.id));
     scene2.layers.splice(l + 1, 0, second);
     structuralEdit();
   }
@@ -5608,7 +5659,7 @@
       pill2.style.background = "#1f6e4d";
       head2.appendChild(pill2);
       const title2 = el("span");
-      title2.textContent = String(a.src).split("/").pop();
+      title2.textContent = String(a.src).split("/").pop() ?? "audio";
       title2.style.cssText = "flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis";
       head2.appendChild(title2);
       p.appendChild(head2);
@@ -5781,7 +5832,7 @@
       layer2.start = v;
       timingEdit();
     }));
-    p.appendChild(numField("duration (s)", layer2.duration ?? scene2.duration, 0.1, scene2.duration, 0.05, (v) => {
+    p.appendChild(numField("duration (s)", layer2.duration ?? scene2.duration, 0.1, Math.max(scene2.duration, S.total), 0.05, (v) => {
       layer2.duration = v;
       timingEdit();
     }));
@@ -5920,7 +5971,10 @@
       };
       m.appendChild(b);
     };
-    item("file", "New", "", () => setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: "scene-1", duration: 5, background: "#0b0e16", layers: [] }] }) || scheduleSave());
+    item("file", "New", "", () => {
+      setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: "scene-1", duration: 5, background: "#0b0e16", layers: [] }] });
+      scheduleSave();
+    });
     item("folder", "Open\u2026", "", openProjects);
     m.appendChild(el("div", "menu-sep"));
     item("save", "Save project (.json)", "\u2318S", saveJson);
@@ -5960,11 +6014,18 @@
   function showRender(show) {
     $("renderBar").classList.toggle("show", show);
   }
-  function runExport() {
+  async function runExport() {
     showRender(true);
     $("renderFill").style.width = "0%";
     $("renderPct").textContent = "0%";
     $("renderLabel").textContent = "Starting render\u2026";
+    clearTimeout(saveTimer);
+    const body = JSON.stringify(S.ir);
+    S.lastSyncJson = body;
+    try {
+      await fetch("/api/composition", { method: "POST", headers: { "content-type": "application/json" }, body });
+    } catch {
+    }
     fetch("/api/render", { method: "POST" }).catch(() => {
     });
   }
@@ -5996,6 +6057,7 @@
     S.lastSyncJson = JSON.stringify(S.ir);
     S.history = [S.lastSyncJson];
     S.histIndex = 0;
+    captureSceneBase();
     derive();
     autoFit();
     mountPreview();
@@ -6201,9 +6263,11 @@
       if (m.t === "doc") {
         const j = JSON.stringify(m.ir);
         if (j === S.lastSyncJson) return;
+        clearTimeout(saveTimer);
         S.ir = m.ir;
         S.lastSyncJson = j;
         pushHistory(j);
+        captureSceneBase();
         derive();
         mountPreview();
         buildTimeline();

@@ -89,9 +89,16 @@ export const textPresets: Preset[] = [
     defaultDuration: 0.5, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { scale: prm.from - (prm.from - 1) * e, opacity: ease('easeOut', p), blur: (1 - e) * 12 }; },
   },
   {
-    id: 'text.expand', category: 'text', description: 'Letters spread apart from tight tracking while fading in.',
+    id: 'text.expand', category: 'text',
+    description: 'Letters spread apart from tight tracking while fading in. NOTE: this preset drives the element\'s `letterSpacing` directly while animating, so it overrides any layer `style.letterSpacing` during the entrance; at rest it stops emitting letterSpacing so your own value applies.',
     tags: ['enter', 'elegant', 'tracking'], params: { spacing: { default: 24, min: 0, max: 80, unit: 'px' } },
-    defaultDuration: 0.7, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { opacity: e, css: { letterSpacing: `${(1 - e) * -prm.spacing}px` } }; },
+    defaultDuration: 0.7, apply: (p, prm) => {
+      const e = ease('easeOutCubic', p);
+      // Once settled (e === 1) the tracking delta is 0 — emit nothing so a
+      // user-set style.letterSpacing is honored instead of being clobbered.
+      if (e >= 1) return { opacity: e };
+      return { opacity: e, css: { letterSpacing: `${(1 - e) * -prm.spacing}px` } };
+    },
   },
   {
     id: 'text.glitch', category: 'text', description: 'Digital glitch with RGB split that snaps into clean text.',

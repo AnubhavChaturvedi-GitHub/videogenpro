@@ -1,5 +1,5 @@
 import type { Preset } from '../preset';
-import { ease, clamp01 } from '../easing';
+import { ease } from '../easing';
 
 export const imagePresets: Preset[] = [
   {
@@ -39,18 +39,21 @@ export const imagePresets: Preset[] = [
   {
     id: 'image.reveal-wipe',
     category: 'image',
-    description: 'Image is revealed by a wipe sliding in from a chosen edge.',
+    description: 'Image is revealed by a wipe sliding in from a chosen edge. `from` picks the edge: 0=top, 1=right, 2=bottom, 3=left.',
     tags: ['enter', 'reveal', 'wipe'],
     params: {
-      from: { default: 3, min: 0, max: 3, desc: '0=top 1=right 2=bottom 3=left' },
+      // Integer edge selector (rounded in apply). clipInset order is
+      // [top, right, bottom, left], so the value maps 1:1 to that index.
+      from: { default: 3, min: 0, max: 3, desc: 'integer edge to wipe from: 0=top, 1=right, 2=bottom, 3=left' },
     },
     defaultDuration: 0.8,
     apply: (p, prm) => {
       const e = ease('easeInOutCubic', p);
       const hidden = (1 - e) * 100;
-      const edge = Math.round(clamp01(prm.from / 3) * 3);
+      // Clamp + round to one of the four valid edge indices (deterministic).
+      const edge = Math.min(3, Math.max(0, Math.round(prm.from)));
       const inset: [number, number, number, number] = [0, 0, 0, 0];
-      inset[edge] = hidden; // top,right,bottom,left
+      inset[edge] = hidden; // [top, right, bottom, left]
       return { clipInset: inset };
     },
   },
@@ -69,16 +72,31 @@ export const imagePresets: Preset[] = [
   {
     id: 'image.sketch',
     category: 'image',
-    description: 'Renders the image as a hand-drawn pencil sketch (edge-detected line art), then dissolves to the real photo.',
+    description: 'Starts as a hand-drawn pencil sketch (edge-detected line art) and genuinely dissolves to the real photo: the sketch filter holds, then the line-art weight fades out as the photo\'s natural color/contrast blooms back in.',
     tags: ['stylize', 'sketch', 'line-art', 'reveal'],
     continuous: true,
-    params: { hold: { default: 0.6, min: 0, max: 1, desc: 'fraction held as sketch before dissolving (1 = stays a sketch)' } },
+    params: { hold: { default: 0.6, min: 0, max: 1, desc: 'fraction held as full sketch before dissolving (1 = stays a sketch forever)' } },
     defaultDuration: 4,
     apply: (p, prm) => {
-      // Crossfade from the SVG sketch filter to the real image after `hold`.
+      // `fade` goes 0 -> 1 over the post-`hold` portion of the layer.
       const fade = prm.hold >= 1 ? 0 : ease('easeInOutCubic', Math.max(0, (p - prm.hold) / (1 - prm.hold)));
-      // Reduce filter strength as we dissolve to the photo.
-      return fade >= 1 ? {} : { css: { filter: `url(#vgp-sketch)`, opacity: String(1 - fade * 0) } };
+      // A single element can't crossfade a url() filter against itself, so we
+      // honestly reveal the photo by ramping the filter chain:
+      //   - keep the SVG sketch filter, but drive its weight down via grayscale
+      //     + brightness so the white-on-line-art look gives way to the photo;
+      //   - let saturate/contrast bloom from washed-out back to the real photo.
+      // Always return an explicit `filter` across the whole range (never leave
+      // stale CSS) and land on a clean `filter: none` at the end.
+      if (fade >= 1) return { css: { filter: 'none' } };
+      if (fade <= 0) return { css: { filter: 'url(#vgp-sketch)' } };
+      // Mid-dissolve: combine a fading sketch pass with a reviving photo grade.
+      const sat = fade;                 // 0 (gray sketch) -> 1 (full color)
+      const gray = 1 - fade;            // 1 (line art)    -> 0 (photo)
+      return {
+        css: {
+          filter: `url(#vgp-sketch) grayscale(${gray}) saturate(${0.2 + sat * 0.8}) contrast(${1 + gray * 0.25}) brightness(${1 - gray * 0.08})`,
+        },
+      };
     },
   },
   {

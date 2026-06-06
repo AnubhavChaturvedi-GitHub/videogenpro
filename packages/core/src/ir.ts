@@ -94,9 +94,10 @@ export interface Scene {
 
 export interface AudioTrack {
   src: string;
-  start?: number;   // composition-timeline seconds
+  start?: number;     // composition-timeline seconds
   trimStart?: number;
-  volume?: number;  // 0..1
+  duration?: number;  // clip length (seconds) — persists audio-clip trimming
+  volume?: number;    // 0..1
 }
 
 export interface Composition {

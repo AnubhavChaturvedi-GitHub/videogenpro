@@ -23,7 +23,9 @@ async function main() {
   const raw = JSON.parse(readFileSync(absComp, 'utf8'));
   const comp = validateComposition(raw);
   const totalDur = compositionDuration(comp);
-  const totalFrames = Math.round(totalDur * comp.fps);
+  // B19: exactly round(totalDur*fps) frames, each at t = f/fps so the loop maps
+  // cleanly onto [0, totalDur) — never requests t >= duration (which clamps oddly).
+  const totalFrames = Math.max(1, Math.round(totalDur * comp.fps));
   console.log(`▶ ${comp.width}x${comp.height} @ ${comp.fps}fps · ${totalDur.toFixed(2)}s · ${totalFrames} frames`);
 
   if (!existsSync(resolve(root, 'packages/renderer/dist/runtime.js'))) {
@@ -54,32 +56,86 @@ async function main() {
 
   // ffmpeg reads raw PNGs from stdin -> mp4
   // audio tracks (voiceover, music) — mixed in with per-track delay + volume
-  const tracks = (comp.audio ?? []) as Array<{ src: string; start?: number; volume?: number; trimStart?: number }>;
+  const rawTracks = (comp.audio ?? []) as Array<{ src: string; start?: number; volume?: number; trimStart?: number; duration?: number }>;
+  // B06: skip tracks whose source file is missing instead of letting ffmpeg abort
+  // the whole export. Resolve relative paths against the composition dir.
+  const tracks = rawTracks.filter((a) => {
+    if (/^https?:|^file:/.test(a.src)) return true;
+    const ap = resolve(dirname(absComp), a.src);
+    if (existsSync(ap)) return true;
+    console.warn(`⚠ audio file missing, skipping track: ${a.src}`);
+    return false;
+  });
   const audioArgs: string[] = []; const filters: string[] = [];
   tracks.forEach((a, i) => {
     const ap = /^https?:|^file:/.test(a.src) ? a.src : resolve(dirname(absComp), a.src);
     audioArgs.push('-i', ap);
     const ms = Math.round((a.start ?? 0) * 1000); const vol = a.volume ?? 1;
-    const trim = a.trimStart ? `atrim=start=${a.trimStart},asetpts=PTS-STARTPTS,` : '';
+    // B01: respect per-track trim — trimStart sets where playback begins, and
+    // duration (if present) caps the exported length. atrim must come first so the
+    // subsequent adelay offsets the already-trimmed clip into the timeline.
+    const ts = a.trimStart ?? 0;
+    const trimParts: string[] = [];
+    if (ts || a.duration != null) {
+      const endClause = a.duration != null ? `:end=${ts + a.duration}` : '';
+      trimParts.push(`atrim=start=${ts}${endClause}`, 'asetpts=PTS-STARTPTS');
+    }
+    const trim = trimParts.length ? trimParts.join(',') + ',' : '';
     filters.push(`[${i + 1}:a]${trim}adelay=${ms}|${ms},volume=${vol}[a${i}]`);
   });
   const hasAudio = tracks.length > 0;
   if (hasAudio) filters.push(`${tracks.map((_, i) => `[a${i}]`).join('')}amix=inputs=${tracks.length}:normalize=0[aout]`);
 
   const ffArgs = ['-y', '-f', 'image2pipe', '-framerate', String(comp.fps), '-i', '-', ...audioArgs];
+  // B06: with no valid audio tracks, render video-only (no -filter_complex / audio map).
   if (hasAudio) ffArgs.push('-filter_complex', filters.join(';'), '-map', '0:v', '-map', '[aout]');
   ffArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'slow', '-crf', '15', '-profile:v', 'high', '-level', '4.2', '-movflags', '+faststart');
   if (hasAudio) ffArgs.push('-c:a', 'aac', '-b:a', '192k', '-t', String(totalDur));
   ffArgs.push(absOut);
   const ff = spawn('ffmpeg', ffArgs, { stdio: ['pipe', 'inherit', 'inherit'] });
+  // B06: a missing/unspawnable ffmpeg must produce a clear error + non-zero exit,
+  // not a silent hang on the stdin pipe.
+  let ffFailed = false;
+  ff.on('error', (err: NodeJS.ErrnoException) => {
+    ffFailed = true;
+    if (err.code === 'ENOENT') console.error('ffmpeg not found on PATH — install ffmpeg to export video.');
+    else console.error('failed to start ffmpeg:', err.message);
+    process.exit(1);
+  });
+  ff.stdin.on('error', () => { /* swallow EPIPE if ffmpeg died; the error handler reports it */ });
 
   const stage = await page.$('#stage');
   if (!stage) throw new Error('#stage not found');
 
+  // B05: does the current frame contain any <video> layers? Only then do we pay
+  // the extra settle cost — keeps non-video renders fast.
+  const hasVideoLayers = resolved.scenes.some((s: any) => s.layers.some((l: any) => l.type === 'video'));
+
   for (let f = 0; f < totalFrames; f++) {
+    if (ffFailed) break;
     const t = f / comp.fps;
     await page.evaluate((tt) => (window as any).VGP.seek(tt), t);
+    if (hasVideoLayers) {
+      // B05: after seeking, let video layers actually paint the seeked frame before
+      // screenshotting, otherwise we can capture a stale/duplicate decode. Prefer
+      // requestVideoFrameCallback (fires when a new video frame is presented), fall
+      // back to a double rAF settle.
+      await page.evaluate(() => new Promise<void>((res) => {
+        const vids = Array.from(document.querySelectorAll('video')) as HTMLVideoElement[];
+        const rvfc = vids.filter((v) => typeof (v as any).requestVideoFrameCallback === 'function');
+        if (rvfc.length) {
+          let pending = rvfc.length;
+          const done = () => { if (--pending <= 0) res(); };
+          // safety timeout so a paused/ended video can't stall the render
+          const to = setTimeout(res, 300);
+          rvfc.forEach((v) => (v as any).requestVideoFrameCallback(() => { clearTimeout(to); done(); }));
+        } else {
+          requestAnimationFrame(() => requestAnimationFrame(() => res()));
+        }
+      }));
+    }
     const buf = await stage.screenshot({ type: 'png' });
+    if (ffFailed) break;
     if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once('drain', r));
     process.stdout.write(`@P ${f + 1} ${totalFrames}\n`); // machine-readable progress (parsed by the dev server)
   }

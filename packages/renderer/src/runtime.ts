@@ -123,6 +123,20 @@ function combine(into: ReturnType<typeof emptyDelta>, d: StyleDelta) {
   if (d.css) Object.assign(into.css, d.css);
 }
 
+// Clear css keys that were applied on the PREVIOUS frame but are absent this frame,
+// so scrubbing backward produces the same result as forward (determinism).
+// `managed` are keys this function always sets explicitly (transform/filter/clipPath/opacity)
+// and so must never be cleared via the raw-css path.
+function clearStaleCss(el: HTMLElement, applied: Set<string>, managed: Set<string>) {
+  const prev: Set<string> | undefined = (el as any).__vgpCss;
+  if (prev) {
+    for (const k of prev) {
+      if (!applied.has(k) && !managed.has(k)) (el.style as any)[k] = '';
+    }
+  }
+  (el as any).__vgpCss = applied;
+}
+
 // Full-frame scene containers are inset:0 (already filling the frame), so they
 // must NOT get the -50% centering that layer boxes use.
 function applySceneDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
@@ -137,7 +151,11 @@ function applySceneDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
   el.style.clipPath = d.clipInset
     ? `inset(${d.clipInset[0]}% ${d.clipInset[1]}% ${d.clipInset[2]}% ${d.clipInset[3]}%)`
     : (d.css.clipPath ?? '');
-  for (const [k, v] of Object.entries(d.css)) { if (k !== 'transform' && k !== 'clipPath' && k !== 'filter') (el.style as any)[k] = v; }
+  const applied = new Set<string>();
+  for (const [k, v] of Object.entries(d.css)) {
+    if (k !== 'transform' && k !== 'clipPath' && k !== 'filter') { (el.style as any)[k] = v; applied.add(k); }
+  }
+  clearStaleCss(el, applied, new Set(['transform', 'clipPath', 'filter', 'opacity', 'transformOrigin']));
 }
 
 function applyDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
@@ -147,13 +165,15 @@ function applyDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
   const filters: string[] = [];
   if (d.blur > 0.01) filters.push(`blur(${px(d.blur)})`);
   if (Math.abs(d.brightness - 1) > 0.01) filters.push(`brightness(${d.brightness})`);
-  el.style.filter = filters.join(' ');
+  el.style.filter = d.css.filter ?? filters.join(' ');
   el.style.clipPath = d.clipInset
     ? `inset(${d.clipInset[0]}% ${d.clipInset[1]}% ${d.clipInset[2]}% ${d.clipInset[3]}%)`
-    : '';
+    : (d.css.clipPath ?? '');
+  const applied = new Set<string>();
   for (const [k, v] of Object.entries(d.css)) {
-    if (k !== 'transform') (el.style as any)[k] = v;
+    if (k !== 'transform' && k !== 'clipPath' && k !== 'filter') { (el.style as any)[k] = v; applied.add(k); }
   }
+  clearStaleCss(el, applied, new Set(['transform', 'clipPath', 'filter', 'opacity']));
 }
 
 // per-element progress for a preset instance on a layer
@@ -161,7 +181,12 @@ function presetProgress(inst: PresetInstance, layerLocalT: number, layerDur: num
   if (continuous) return clamp01(layerLocalT / Math.max(0.0001, layerDur));
   const preset = getPreset(inst.id);
   const dur = inst.duration ?? preset?.defaultDuration ?? 0.6;
-  if (preset?.fromEnd) return clamp01((layerLocalT - (layerDur - dur)) / Math.max(0.0001, dur));
+  if (preset?.fromEnd) {
+    // B09: an exit longer than the layer must not pre-fade at t=0; clamp the
+    // effective duration to the layer so progress stays 0 until the tail.
+    const effDur = Math.min(dur, layerDur);
+    return clamp01((layerLocalT - (layerDur - effDur)) / Math.max(0.0001, effDur));
+  }
   const start = inst.start ?? 0;
   return clamp01((layerLocalT - start) / Math.max(0.0001, dur));
 }
@@ -335,6 +360,8 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
   for (const inst of insts) {
     const preset = getPreset(inst.id);
     if (!preset || !preset.apply || preset.split) continue;
+    // B15: text-only presets must not silently affect non-text layers.
+    if ((preset.category === 'text' || preset.split) && layer.type !== 'text') continue;
     const p = presetProgress(inst, layerLocalT, dur, !!preset.continuous);
     combine(wholeDelta, preset.apply(p, resolveParams(preset, inst.params), { index: 0, count: 1, time: layerLocalT, dur }));
   }
@@ -380,7 +407,10 @@ async function seekVideo(v: HTMLVideoElement, time: number): Promise<void> {
 function syncAudio(t: number, playing: boolean) {
   for (const { el, track } of audioEls) {
     const start = track.start ?? 0;
-    const dur = track.duration ?? (isFinite(el.duration) ? el.duration : 1e9);
+    // B25: before metadata loads el.duration is NaN; don't treat the track as
+    // active forever. Fall back to the remaining composition duration from `start`.
+    const safeDur = Math.max(0, compositionDuration(comp) - start);
+    const dur = track.duration ?? (isFinite(el.duration) ? el.duration : safeDur);
     const local = t - start;
     const active = local >= -0.03 && local < dur;
     const target = (track.trimStart ?? 0) + Math.max(0, local);
@@ -391,6 +421,9 @@ function syncAudio(t: number, playing: boolean) {
       // start once at the right offset, then let it play freely (its own clock stays
       // in sync with the rAF playhead — re-seeking every frame causes stutter/silence)
       if (el.paused && !e.__req) { e.__req = true; const tgt = target; try { el.currentTime = tgt; } catch {} el.play().then(() => { e.__req = false; if (Math.abs(el.currentTime - tgt) > 0.25) { try { el.currentTime = tgt; } catch {} } }).catch(() => { e.__req = false; }); }
+      // B12: if the playhead jumped BACKWARD (element is ahead of target by more than
+      // ~0.3s), the natural-play clock is now stale — reseek. Forward drift is tolerated.
+      else if (!el.paused && el.currentTime - target > 0.3) { try { el.currentTime = target; } catch {} }
     } else {
       e.__req = false;
       if (!el.paused) el.pause();
@@ -402,8 +435,10 @@ function syncAudio(t: number, playing: boolean) {
 async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
   const playing = !!opts?.playing;
   const dur = compositionDuration(comp);
-  const t = Math.min(Math.max(0, time), Math.max(0, dur - 0.0001));
-  // find active scene
+  // B19: allow reaching the true final instant (t === dur), not dur - epsilon.
+  const t = Math.min(Math.max(0, time), Math.max(0, dur));
+  // find active scene. The half-open ranges exclude t === dur, so when at (or past)
+  // the very end, fall through to the last scene (handled by the default `i`).
   let i = sceneNodes.length - 1;
   for (let k = 0; k < sceneNodes.length; k++) {
     const n = sceneNodes[k];
@@ -412,24 +447,32 @@ async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
   const cur = sceneNodes[i];
   const sceneLocalT = t - cur.offset;
 
-  // reset visibility
-  sceneNodes.forEach((n) => { n.el.style.display = 'none'; n.el.style.transform = ''; n.el.style.opacity = '1'; n.el.style.clipPath = ''; n.el.style.filter = ''; });
+  // reset visibility. B02: also clear any raw-css that leaked onto the scene
+  // container on a previous frame (e.g. a transition's `to`/`from` css).
+  sceneNodes.forEach((n) => {
+    n.el.style.display = 'none'; n.el.style.transform = ''; n.el.style.opacity = '1'; n.el.style.clipPath = ''; n.el.style.filter = '';
+    clearStaleCss(n.el, new Set<string>(), new Set(['transform', 'clipPath', 'filter', 'opacity', 'transformOrigin']));
+  });
 
   // transition handling (from previous scene into current)
   const transInst: PresetInstance | undefined = cur.scene.transitionIn ?? (i > 0 ? comp.defaultTransition : undefined);
   let inTransition = false;
   if (i > 0 && transInst) {
     const preset = getPreset(transInst.id);
-    const tdur = transInst.duration ?? preset?.defaultDuration ?? 0.6;
+    const prev = sceneNodes[i - 1];
+    // B22: a transition longer than the previous scene's duration would otherwise
+    // freeze the previous scene for longer than it exists. Clamp gracefully so the
+    // transition never outlasts the scene it's transitioning from.
+    const rawTdur = transInst.duration ?? preset?.defaultDuration ?? 0.6;
+    const tdur = Math.max(0.0001, Math.min(rawTdur, prev.scene.duration));
     if (preset?.transition && sceneLocalT < tdur) {
       inTransition = true;
       const p = clamp01(sceneLocalT / tdur);
       const { from, to } = preset.transition(p, resolveParams(preset, transInst.params));
-      const prev = sceneNodes[i - 1];
-      // render prev frozen at its end
+      // render prev frozen at its end (guard against a zero/short scene -> no negative time)
       prev.el.style.display = 'block';
       const prevD = emptyDelta(); combine(prevD, from); applySceneDelta(prev.el, prevD);
-      prev.layers.forEach((ln) => renderLayer(ln, prev.scene.duration - 0.0001, prev.scene.duration));
+      prev.layers.forEach((ln) => renderLayer(ln, Math.max(0, prev.scene.duration - 0.0001), prev.scene.duration));
       // current with `to`
       cur.el.style.display = 'block';
       const curD = emptyDelta(); combine(curD, to); applySceneDelta(cur.el, curD);
@@ -457,6 +500,9 @@ async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
     const vv = v as any;
     if (playing) {
       if (v.paused && !vv.__req) { vv.__req = true; try { v.currentTime = target; } catch {} v.play().then(() => { vv.__req = false; }).catch(() => { vv.__req = false; }); }
+      // B12: backward scrub while playing — element ahead of target by >~0.3s means a
+      // backward jump; reposition. Forward drift is left to play naturally.
+      else if (!v.paused && v.currentTime - target > 0.3) { try { v.currentTime = target; } catch {} }
     } else {
       vv.__req = false;
       if (!v.paused) v.pause();

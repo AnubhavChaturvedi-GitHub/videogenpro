@@ -57,12 +57,19 @@ type State = {
   offsets: number[]; total: number; lastSyncJson: string;
   panel: 'props' | 'anim'; cat: string;
   history: string[]; histIndex: number;
+  sceneBase: number[];
 };
 const S: State = {
   ir: null, assetBase: '/', assets: [], selected: null, selAudio: null, playhead: 0, playing: false, loop: true,
   pxPerSec: 120, scale: 1, offsets: [], total: 0, lastSyncJson: '', panel: 'props', cat: 'text',
-  history: [], histIndex: -1,
+  history: [], histIndex: -1, sceneBase: [],
 };
+
+// capture each scene's authored/intended duration so derive() can shrink back
+// to it after an over-long clip is removed (B03). Call on load/setDoc/open.
+function captureSceneBase() {
+  S.sceneBase = S.ir.scenes.map((sc: any) => (sc.duration ?? 0.5));
+}
 
 const $ = (id: string) => document.getElementById(id)!;
 const el = (tag: string, cls?: string) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
@@ -70,22 +77,26 @@ const baseUrl = () => new URL(S.assetBase, location.origin).href;
 const assetUrl = (src: string) => new URL(src, baseUrl()).href;
 
 function derive() {
-  // auto-extend each scene to fit its latest clip. Only clips with an EXPLICIT
-  // duration extend the scene — full-scene layers (no duration) must not, or the
-  // scene would grow every tick (start + sceneDuration always exceeds it).
-  for (const sc of S.ir.scenes) {
+  // auto-extend each scene to fit its latest clip, AND shrink back to its
+  // authored base when the over-long clip is removed (B03). Only clips with an
+  // EXPLICIT duration extend the scene — full-scene layers (no duration) must
+  // not, or the scene would grow every tick (start + sceneDuration always
+  // exceeds it). duration = max(0.5, sceneBase, maxExplicitClipEnd).
+  if (S.sceneBase.length !== S.ir.scenes.length) captureSceneBase();
+  S.ir.scenes.forEach((sc: any, i: number) => {
     let maxEnd = 0;
     for (const l of sc.layers) if (l.duration != null) maxEnd = Math.max(maxEnd, (l.start ?? 0) + l.duration);
-    if (maxEnd > (sc.duration ?? 0)) sc.duration = +maxEnd.toFixed(2);
-    if (!sc.duration || sc.duration < 0.5) sc.duration = 0.5;
-  }
+    const base = S.sceneBase[i] ?? 0.5;
+    sc.duration = +Math.max(0.5, base, maxEnd).toFixed(2);
+  });
   S.offsets = []; let a = 0; for (const sc of S.ir.scenes) { S.offsets.push(a); a += sc.duration; } S.total = a; if (S.playhead > S.total) S.playhead = 0;
 }
 function sceneAt(t: number) { let si = 0; for (let i = S.offsets.length - 1; i >= 0; i--) if (t >= S.offsets[i]) { si = i; break; } return si; }
 
 // ---------- preview ----------
 function fit() {
-  const wrap = $('stage').parentElement!.parentElement! as HTMLElement;
+  // B24: query .stagewrap directly instead of brittle parentElement chains.
+  const wrap = (document.querySelector('.stagewrap') ?? $('scaler').parentElement) as HTMLElement;
   const s = Math.min((wrap.clientWidth - 40) / S.ir.width, (wrap.clientHeight - 40) / S.ir.height, 1);
   S.scale = s;
   const sc = $('scaler'); sc.style.width = S.ir.width + 'px'; sc.style.height = S.ir.height + 'px'; sc.style.transform = `scale(${s})`;
@@ -115,7 +126,11 @@ function pushHistory(json: string) {
 }
 function applyHistory() {
   const json = S.history[S.histIndex]; if (!json) return;
-  S.ir = JSON.parse(json); S.lastSyncJson = json; S.selected = null;
+  // B11: preserve selection across undo/redo when the indices are still valid.
+  const prevSel = S.selected; const prevAudio = S.selAudio;
+  S.ir = JSON.parse(json); S.lastSyncJson = json;
+  S.selected = (prevSel && S.ir.scenes[prevSel.s]?.layers?.[prevSel.l]) ? prevSel : null;
+  S.selAudio = (prevAudio != null && S.ir.audio?.[prevAudio]) ? prevAudio : null;
   derive(); mountPreview(); buildTimeline(); renderRight(); updateTime();
   fetch('/api/composition', { method: 'POST', headers: { 'content-type': 'application/json' }, body: json }).catch(() => {});
 }
@@ -124,7 +139,7 @@ function redo() { if (S.histIndex < S.history.length - 1) { S.histIndex++; apply
 const liveEdit = () => { liveSeek(); scheduleSave(); };
 const timingEdit = () => { liveSeek(); buildTimeline(); scheduleSave(); };
 const structuralEdit = () => { mountPreview(); buildTimeline(); renderRight(); scheduleSave(); };
-function setDoc(ir: any) { S.ir = ir; S.lastSyncJson = JSON.stringify(ir); S.selected = null; S.history = [S.lastSyncJson]; S.histIndex = 0; derive(); autoFit(); mountPreview(); buildTimeline(); renderRight(); updateTime(); }
+function setDoc(ir: any) { S.ir = ir; S.lastSyncJson = JSON.stringify(ir); S.selected = null; S.history = [S.lastSyncJson]; S.histIndex = 0; captureSceneBase(); derive(); autoFit(); mountPreview(); buildTimeline(); renderRight(); updateTime(); }
 
 // ---------- layer factories ----------
 const newText = () => ({ type: 'text', text: 'New Text', style: { fontSize: '72px', color: '#ffffff' }, duration: 2, presets: [{ id: 'in.fade' }], transform: {} });
@@ -132,8 +147,8 @@ const newShape = () => ({ type: 'shape', shape: 'rect', fill: '#6366f1', rect: {
 const newLine = () => ({ type: 'shape', shape: 'line', fill: '#6ea8fe', rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: 'in.slide-left', params: { distance: 120 } }], transform: {} });
 const new3D = () => ({ type: 'three', scene: 'particles', props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
 const newAssetLayer = (a: any) => ({ type: a.type, src: a.src, fit: 'cover', duration: 2.5, presets: (a.type === 'image' ? [{ id: 'image.ken-burns' }] : []), transform: {} });
-function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); layer.start = Math.max(0, +(S.playhead - S.offsets[si]).toFixed(2)); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
-function dropLayerAt(clientX: number, layer: any) { const r = $('tlInner').getBoundingClientRect(); const t = Math.max(0, Math.min(S.total, (clientX - r.left - LABELW) / S.pxPerSec)); const si = sceneAt(t); layer.start = Math.max(0, +(t - S.offsets[si]).toFixed(2)); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
+function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
+function dropLayerAt(clientX: number, layer: any) { const r = $('tlInner').getBoundingClientRect(); const t = Math.max(0, Math.min(S.total, (clientX - r.left - LABELW) / S.pxPerSec)); const si = sceneAt(t); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
 
 // ---------- assets ----------
 async function loadAssets() { try { S.assets = await (await fetch('/api/assets')).json(); } catch { S.assets = []; } renderAssets(); }
@@ -194,7 +209,10 @@ function buildTimeline() {
       };
       handle.onmousedown = (e: MouseEvent) => {
         e.preventDefault(); e.stopPropagation(); const sx = e.clientX, od = layer.duration ?? scene.duration;
-        const mv = (ev: MouseEvent) => { layer.duration = +Math.max(0.1, Math.min(scene.duration - (layer.start ?? 0), od + (ev.clientX - sx) / S.pxPerSec)).toFixed(3); clip.style.width = Math.max(24, layer.duration * S.pxPerSec) + 'px'; };
+        // B08: don't cap at scene.duration — derive() auto-extends the scene.
+        // Keep a generous sane cap (whole composition length).
+        const maxDur = Math.max(scene.duration, S.total) || scene.duration;
+        const mv = (ev: MouseEvent) => { layer.duration = +Math.max(0.1, Math.min(maxDur, od + (ev.clientX - sx) / S.pxPerSec)).toFixed(3); clip.style.width = Math.max(24, layer.duration * S.pxPerSec) + 'px'; };
         const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); timingEdit(); };
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
       };
@@ -248,9 +266,20 @@ function updateSelBox() {
   if (S.playhead < st - 0.01 || S.playhead > st + dur + 0.01) { box.style.display = 'none'; return; }
   const r = layer.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
   const tf = layer.transform ?? {};
+  // B13: the runtime positions a layer centered on the rect center (translate
+  // -50%,-50%) then applies transform.scale/rotate around that center. Mirror
+  // that here so the box matches the rendered element: scale the box size about
+  // its center and apply rotate via CSS transform (rotation around center).
+  const sc = (tf.scale ?? 1);
+  const cx = r.x + r.w / 2 + (tf.x ?? 0);
+  const cy = r.y + r.h / 2 + (tf.y ?? 0);
+  const w = r.w * sc, h = r.h * sc;
   box.style.display = 'block';
-  box.style.left = (r.x + (tf.x ?? 0)) + 'px'; box.style.top = (r.y + (tf.y ?? 0)) + 'px';
-  box.style.width = r.w + 'px'; box.style.height = r.h + 'px';
+  box.style.left = (cx - w / 2) + 'px'; box.style.top = (cy - h / 2) + 'px';
+  box.style.width = w + 'px'; box.style.height = h + 'px';
+  const rot = tf.rotate ?? 0;
+  box.style.transform = rot ? `rotate(${rot}deg)` : '';
+  box.style.transformOrigin = 'center center';
   const inv = Math.min(2.4, 1 / (S.scale || 1));
   box.querySelectorAll('.sh').forEach((h) => { (h as HTMLElement).style.transform = `scale(${inv})`; });
 }
@@ -317,6 +346,19 @@ function splitSelected() {
   if (local <= 0.05 || local >= ld - 0.05) { setDot('edited', 'move playhead over clip'); return; }
   const second = JSON.parse(JSON.stringify(layer));
   layer.duration = +local.toFixed(2); second.start = +(ls + local).toFixed(2); second.duration = +(ld - local).toFixed(2);
+  // B07: keyframe times are layer-local, so the second half must shift by -local
+  // (clamped ≥0). Also: the first half keeps its enter (in.*) but drops exit
+  // (out.*) presets; the second half keeps its exit but drops enter presets so
+  // the split reads naturally and exit presets aren't duplicated.
+  if (second.keyframes) {
+    for (const prop of Object.keys(second.keyframes)) {
+      second.keyframes[prop] = second.keyframes[prop].map((k: any) => ({ ...k, t: +Math.max(0, k.t - local).toFixed(3) }));
+    }
+  }
+  const isExit = (id: string) => MAN.get(id)?.category === 'out' || id.startsWith('out.');
+  const isEnter = (id: string) => !isExit(id) && (MAN.get(id)?.category === 'in' || id.startsWith('in.'));
+  if (Array.isArray(layer.presets)) layer.presets = layer.presets.filter((pr: any) => !isExit(pr.id));
+  if (Array.isArray(second.presets)) second.presets = second.presets.filter((pr: any) => !isEnter(pr.id));
   scene.layers.splice(l + 1, 0, second); structuralEdit();
 }
 function duplicateSelected() { if (!S.selected) return; const { s, l } = S.selected; const scene = S.ir.scenes[s]; const copy = JSON.parse(JSON.stringify(scene.layers[l])); copy.start = (copy.start ?? 0) + 0.2; scene.layers.splice(l + 1, 0, copy); S.selected = { s, l: l + 1 }; structuralEdit(); }
@@ -327,7 +369,7 @@ function buildProps() {
     if (!a) { S.selAudio = null; return buildProps(); }
     const head = el('div', 'sel-head');
     const pill = el('span', 'pill'); pill.innerHTML = icon('audio') + 'audio'; pill.style.background = '#1f6e4d'; head.appendChild(pill);
-    const title = el('span'); title.textContent = String(a.src).split('/').pop(); title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
+    const title = el('span'); title.textContent = String(a.src).split('/').pop() ?? 'audio'; title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
     p.appendChild(head);
     const h3 = el('h3'); h3.textContent = 'audio'; p.appendChild(h3);
     p.appendChild(numField('volume', a.volume ?? 1, 0, 1, 0.01, (v) => { a.volume = v; liveEdit(); }));
@@ -372,7 +414,8 @@ function buildProps() {
 
   h('timing');
   p.appendChild(numField('start (s)', layer.start ?? 0, 0, scene.duration, 0.05, (v) => { layer.start = v; timingEdit(); }));
-  p.appendChild(numField('duration (s)', layer.duration ?? scene.duration, 0.1, scene.duration, 0.05, (v) => { layer.duration = v; timingEdit(); }));
+  // B08: allow lengthening past the scene — derive() auto-extends. Generous cap.
+  p.appendChild(numField('duration (s)', layer.duration ?? scene.duration, 0.1, Math.max(scene.duration, S.total), 0.05, (v) => { layer.duration = v; timingEdit(); }));
   h('transform  ·  ◆ = keyframe at playhead');
   layer.transform = layer.transform || {}; const tf = layer.transform;
   p.appendChild(kfField('x', 'x', tf.x ?? 0, -800, 800, 1, (v) => { tf.x = v; liveEdit(); }));
@@ -437,7 +480,8 @@ function autoFit() { const w = $('tlScroll').clientWidth || 900; S.pxPerSec = Ma
 function buildFileMenu() {
   const m = $('fileMenu'); m.innerHTML = '';
   const item = (ic: string, label: string, key: string, fn: () => void) => { const b = el('button', 'menu-item'); b.innerHTML = icon(ic) + `<span>${label}</span>` + (key ? `<span class="k">${key}</span>` : ''); b.onclick = () => { closeMenu(); fn(); }; m.appendChild(b); };
-  item('file', 'New', '', () => setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: 'scene-1', duration: 5, background: '#0b0e16', layers: [] }] }) || scheduleSave());
+  // B20: explicit statements instead of the fragile `setDoc() || scheduleSave()`.
+  item('file', 'New', '', () => { setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: 'scene-1', duration: 5, background: '#0b0e16', layers: [] }] }); scheduleSave(); });
   item('folder', 'Open…', '', openProjects);
   m.appendChild(el('div', 'menu-sep'));
   item('save', 'Save project (.json)', '⌘S', saveJson);
@@ -455,7 +499,15 @@ async function openProjects() {
 
 // ---------- export with progress ----------
 function showRender(show: boolean) { $('renderBar').classList.toggle('show', show); }
-function runExport() { showRender(true); $('renderFill').style.width = '0%'; $('renderPct').textContent = '0%'; $('renderLabel').textContent = 'Starting render…'; fetch('/api/render', { method: 'POST' }).catch(() => {}); }
+async function runExport() {
+  showRender(true); $('renderFill').style.width = '0%'; $('renderPct').textContent = '0%'; $('renderLabel').textContent = 'Starting render…';
+  // B04: flush any pending debounced save so the render uses the latest edit,
+  // not the stale on-disk file. Cancel the timer and write S.ir directly first.
+  clearTimeout(saveTimer);
+  const body = JSON.stringify(S.ir); S.lastSyncJson = body;
+  try { await fetch('/api/composition', { method: 'POST', headers: { 'content-type': 'application/json' }, body }); } catch {}
+  fetch('/api/render', { method: 'POST' }).catch(() => {});
+}
 
 // ---------- init ----------
 async function init() {
@@ -470,7 +522,7 @@ async function init() {
   const data = await (await fetch('/api/composition')).json();
   S.ir = data.ir; S.assetBase = data.assetBase; S.lastSyncJson = JSON.stringify(S.ir);
   S.history = [S.lastSyncJson]; S.histIndex = 0;
-  derive(); autoFit(); mountPreview(); await VGP.ready();
+  captureSceneBase(); derive(); autoFit(); mountPreview(); await VGP.ready();
   buildTimeline(); renderRight(); updateTime(); await loadAssets();
   (window as any).__vgpAudioReady = () => buildTimeline(); // refresh audio-lane widths once durations load
   requestAnimationFrame((t) => { last = t; loop(t); });
@@ -558,7 +610,7 @@ async function init() {
   const es = new EventSource('/api/events');
   es.onmessage = (ev) => {
     let m: any; try { m = JSON.parse(ev.data); } catch { return; }
-    if (m.t === 'doc') { const j = JSON.stringify(m.ir); if (j === S.lastSyncJson) return; S.ir = m.ir; S.lastSyncJson = j; pushHistory(j); derive(); mountPreview(); buildTimeline(); renderRight(); setDot('edited', 'agent edit ✦'); setTimeout(() => setDot('saved', 'synced'), 1400); }
+    if (m.t === 'doc') { const j = JSON.stringify(m.ir); if (j === S.lastSyncJson) return; clearTimeout(saveTimer); S.ir = m.ir; S.lastSyncJson = j; pushHistory(j); captureSceneBase(); derive(); mountPreview(); buildTimeline(); renderRight(); setDot('edited', 'agent edit ✦'); setTimeout(() => setDot('saved', 'synced'), 1400); }
     if (m.t === 'render') {
       showRender(true);
       if (m.state === 'rendering') { $('renderFill').style.width = m.pct + '%'; $('renderPct').textContent = m.pct + '%'; $('renderLabel').textContent = `Rendering frame ${m.done}/${m.total}`; }

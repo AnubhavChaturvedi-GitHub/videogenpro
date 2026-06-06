@@ -7,7 +7,7 @@ import { createServer, type ServerResponse } from 'node:http';
 import { readFileSync, writeFileSync, existsSync, watch, statSync, createReadStream, readdirSync, mkdirSync, type FSWatcher } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, relative, extname, normalize, join } from 'node:path';
+import { dirname, resolve, relative, extname, normalize, join, isAbsolute, sep } from 'node:path';
 import { validateComposition } from '../../core/src/index';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -16,6 +16,9 @@ const root = resolve(__dirname, '../../..');
 const VIDEO_EXT = new Set(['.mp4', '.webm', '.mov', '.m4v']);
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg']);
 const assetType = (f: string) => (VIDEO_EXT.has(extname(f).toLowerCase()) ? 'video' : 'image');
+// True only when `f` is `root` itself or strictly contained within it (separator boundary),
+// so a sibling dir sharing the prefix (e.g. `<root>-evil`) cannot bypass the guard.
+const withinRoot = (f: string) => { const r = relative(root, f); return r === '' || (!r.startsWith('..' + sep) && r !== '..' && !isAbsolute(r)); };
 
 let active = resolve(process.cwd(), process.argv[2] ?? 'examples/hello.json');
 if (!existsSync(active)) { console.error('composition not found:', active); process.exit(1); }
@@ -74,7 +77,7 @@ const server = createServer((req, res) => {
       try {
         const { path: rel } = JSON.parse(body);
         const f = resolve(root, rel);
-        if (!f.startsWith(root) || !existsSync(f)) return json(res, 400, { ok: false, error: 'not found' });
+        if (!withinRoot(f) || !existsSync(f)) return json(res, 400, { ok: false, error: 'not found' });
         active = f; setWatch(active);
         json(res, 200, { ok: true, ir: JSON.parse(readFileSync(active, 'utf8')), assetBase: assetBaseFor(active), file: relative(root, active) });
       } catch (e: any) { json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
@@ -101,6 +104,10 @@ const server = createServer((req, res) => {
 
   if (path === '/api/upload' && req.method === 'POST') {
     const name = (url.searchParams.get('name') ?? 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
+    // Trust the extension, not the client-provided MIME type: reject anything that
+    // isn't a known image/video extension, and derive the stored type from it.
+    const ext = extname(name).toLowerCase();
+    if (!IMAGE_EXT.has(ext) && !VIDEO_EXT.has(ext)) return json(res, 400, { ok: false, error: 'unsupported file type' });
     const dest = resolve(dirname(active), '..', 'assets', 'uploads'); mkdirSync(dest, { recursive: true });
     const finalName = `${Date.now().toString(36)}-${name}`;
     const chunks: Buffer[] = []; req.on('data', (c) => chunks.push(c));
@@ -113,7 +120,7 @@ const server = createServer((req, res) => {
     const relComp = relative(root, active);
     send({ t: 'render', state: 'start', pct: 0, done: 0, total: 0 });
     const child = spawn('npx', ['tsx', 'packages/cli/src/render.ts', relComp, 'out/studio-render.mp4'], { cwd: root });
-    let buf = '', log = '';
+    let buf = '', log = '', replied = false;
     child.stdout.on('data', (d) => {
       buf += d; let i;
       while ((i = buf.indexOf('\n')) >= 0) {
@@ -123,7 +130,16 @@ const server = createServer((req, res) => {
       }
     });
     child.stderr.on('data', (d) => (log += d));
+    // Spawn failure (e.g. tsx/ffmpeg not found) emits 'error' and may never fire 'close',
+    // which would otherwise hang the request forever. Report it and broadcast over SSE.
+    child.on('error', (err: any) => {
+      if (replied) return; replied = true;
+      const error = String(err?.message ?? err);
+      send({ t: 'render', state: 'error', error });
+      json(res, 200, { ok: false, error });
+    });
     child.on('close', (code) => {
+      if (replied) return; replied = true;
       if (code === 0) { const url2 = '/out/studio-render.mp4?t=' + Date.now(); send({ t: 'render', state: 'done', pct: 100, url: url2 }); json(res, 200, { ok: true, url: url2 }); }
       else { send({ t: 'render', state: 'error', error: log.slice(-300) }); json(res, 200, { ok: false, error: log.slice(-300) }); }
     });
@@ -138,7 +154,7 @@ const server = createServer((req, res) => {
 
   // static
   let file = path === '/' ? resolve(root, 'packages/editor/index.html') : resolve(root, '.' + normalize(path));
-  if (!file.startsWith(root)) { res.writeHead(403); return res.end('forbidden'); }
+  if (!withinRoot(file)) { res.writeHead(403); return res.end('forbidden'); }
   if (!existsSync(file) || statSync(file).isDirectory()) { res.writeHead(404); return res.end('not found'); }
   res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' });
   createReadStream(file).pipe(res);

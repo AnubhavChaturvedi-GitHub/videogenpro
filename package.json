@@ -11,10 +11,12 @@
     "preview": "tsx packages/cli/src/preview.ts",
     "studio": "tsx packages/cli/src/serve.ts",
     "manifest": "tsx packages/cli/src/manifest.ts",
+    "check": "tsc --noEmit",
     "demo": "pnpm build:runtime && pnpm render examples/hello.json out/hello.mp4"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/three": "^0.184.1",
     "esbuild": "^0.24.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
