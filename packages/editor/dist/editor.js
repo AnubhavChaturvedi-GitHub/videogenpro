@@ -5218,8 +5218,8 @@
     updateTime();
   }
   var newText = () => ({ type: "text", text: "New Text", style: { fontSize: "72px", color: "#ffffff" }, duration: 2, presets: [{ id: "in.fade" }], transform: {} });
-  var newShape = () => ({ type: "shape", shape: "rect", fill: "#6366f1", rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [{ id: "in.scale" }], transform: {} });
-  var newLine = () => ({ type: "shape", shape: "line", fill: "#6ea8fe", rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: "in.slide-left", params: { distance: 120 } }], transform: {} });
+  var newShape = () => ({ type: "shape", shape: "rect", fill: "#ffffff", rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [{ id: "in.scale" }], transform: {} });
+  var newLine = () => ({ type: "shape", shape: "line", fill: "#ffffff", rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: "in.slide-left", params: { distance: 120 } }], transform: {} });
   var new3D = () => ({ type: "three", scene: "particles", props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
   var newAssetLayer = (a) => ({ type: a.type, src: a.src, fit: "cover", duration: 2.5, presets: a.type === "image" ? [{ id: "image.ken-burns" }] : [], transform: {} });
   function addLayerAtPlayhead(layer2) {
@@ -5666,7 +5666,7 @@
       const head2 = el("div", "sel-head");
       const pill2 = el("span", "pill");
       pill2.innerHTML = icon("audio") + "audio";
-      pill2.style.background = "#1f6e4d";
+      pill2.style.background = "#2b2b2b";
       head2.appendChild(pill2);
       const title2 = el("span");
       title2.textContent = String(a.src).split("/").pop() ?? "audio";
@@ -5788,7 +5788,7 @@
       cf.appendChild(cl);
       const ci = el("input");
       ci.type = "text";
-      ci.value = layer2.fill || "#6366f1";
+      ci.value = layer2.fill || "#ffffff";
       ci.oninput = () => {
         layer2.fill = ci.value;
         structuralEdit();
@@ -5992,7 +5992,7 @@
       m.appendChild(b);
     };
     item("file", "New", "", () => {
-      setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: "scene-1", duration: 5, background: "#0b0e16", layers: [] }] });
+      setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: "scene-1", duration: 5, background: "#0a0a0a", layers: [] }] });
       scheduleSave();
     });
     item("folder", "Open\u2026", "", openProjects);

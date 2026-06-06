@@ -154,8 +154,8 @@ function setDoc(ir: any) { S.ir = ir; S.lastSyncJson = JSON.stringify(ir); S.sel
 
 // ---------- layer factories ----------
 const newText = () => ({ type: 'text', text: 'New Text', style: { fontSize: '72px', color: '#ffffff' }, duration: 2, presets: [{ id: 'in.fade' }], transform: {} });
-const newShape = () => ({ type: 'shape', shape: 'rect', fill: '#6366f1', rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [{ id: 'in.scale' }], transform: {} });
-const newLine = () => ({ type: 'shape', shape: 'line', fill: '#6ea8fe', rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: 'in.slide-left', params: { distance: 120 } }], transform: {} });
+const newShape = () => ({ type: 'shape', shape: 'rect', fill: '#ffffff', rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [{ id: 'in.scale' }], transform: {} });
+const newLine = () => ({ type: 'shape', shape: 'line', fill: '#ffffff', rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: 'in.slide-left', params: { distance: 120 } }], transform: {} });
 const new3D = () => ({ type: 'three', scene: 'particles', props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
 const newAssetLayer = (a: any) => ({ type: a.type, src: a.src, fit: 'cover', duration: 2.5, presets: (a.type === 'image' ? [{ id: 'image.ken-burns' }] : []), transform: {} });
 function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
@@ -378,7 +378,7 @@ function buildProps() {
     const a = S.ir.audio?.[S.selAudio];
     if (!a) { S.selAudio = null; return buildProps(); }
     const head = el('div', 'sel-head');
-    const pill = el('span', 'pill'); pill.innerHTML = icon('audio') + 'audio'; pill.style.background = '#1f6e4d'; head.appendChild(pill);
+    const pill = el('span', 'pill'); pill.innerHTML = icon('audio') + 'audio'; pill.style.background = '#2b2b2b'; head.appendChild(pill);
     const title = el('span'); title.textContent = String(a.src).split('/').pop() ?? 'audio'; title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
     p.appendChild(head);
     const h3 = el('h3'); h3.textContent = 'audio'; p.appendChild(h3);
@@ -409,7 +409,7 @@ function buildProps() {
   if (layer.type === 'image' || layer.type === 'video') {
     const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fit'; cf.appendChild(cl); const sel = el('select') as HTMLSelectElement; ['cover', 'contain'].forEach((o) => { const op = el('option') as HTMLOptionElement; op.value = o; op.textContent = o; if ((layer.fit ?? 'cover') === o) op.selected = true; sel.appendChild(op); }); sel.onchange = () => { layer.fit = sel.value; structuralEdit(); }; cf.appendChild(sel); p.appendChild(cf);
   }
-  if (layer.type === 'shape') { const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fill color'; cf.appendChild(cl); const ci = el('input') as HTMLInputElement; ci.type = 'text'; ci.value = layer.fill || '#6366f1'; ci.oninput = () => { layer.fill = ci.value; structuralEdit(); }; cf.appendChild(ci); p.appendChild(cf); }
+  if (layer.type === 'shape') { const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fill color'; cf.appendChild(cl); const ci = el('input') as HTMLInputElement; ci.type = 'text'; ci.value = layer.fill || '#ffffff'; ci.oninput = () => { layer.fill = ci.value; structuralEdit(); }; cf.appendChild(ci); p.appendChild(cf); }
 
   layer.presets = layer.presets || [];
   h('applied animations');
@@ -493,7 +493,7 @@ function buildFileMenu() {
   const m = $('fileMenu'); m.innerHTML = '';
   const item = (ic: string, label: string, key: string, fn: () => void) => { const b = el('button', 'menu-item'); b.innerHTML = icon(ic) + `<span>${label}</span>` + (key ? `<span class="k">${key}</span>` : ''); b.onclick = () => { closeMenu(); fn(); }; m.appendChild(b); };
   // B20: explicit statements instead of the fragile `setDoc() || scheduleSave()`.
-  item('file', 'New', '', () => { setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: 'scene-1', duration: 5, background: '#0b0e16', layers: [] }] }); scheduleSave(); });
+  item('file', 'New', '', () => { setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: 'scene-1', duration: 5, background: '#0a0a0a', layers: [] }] }); scheduleSave(); });
   item('folder', 'Open…', '', openProjects);
   m.appendChild(el('div', 'menu-sep'));
   item('save', 'Save project (.json)', '⌘S', saveJson);
