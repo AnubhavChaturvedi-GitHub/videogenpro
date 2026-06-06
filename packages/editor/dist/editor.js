@@ -4266,6 +4266,31 @@
         const e = ease("easeOutCubic", p);
         return { scale: prm.from + (1 - prm.from) * e, opacity: e };
       }
+    },
+    {
+      id: "image.sketch",
+      category: "image",
+      description: "Renders the image as a hand-drawn pencil sketch (edge-detected line art), then dissolves to the real photo.",
+      tags: ["stylize", "sketch", "line-art", "reveal"],
+      continuous: true,
+      params: { hold: { default: 0.6, min: 0, max: 1, desc: "fraction held as sketch before dissolving (1 = stays a sketch)" } },
+      defaultDuration: 4,
+      apply: (p, prm) => {
+        const fade = prm.hold >= 1 ? 0 : ease("easeInOutCubic", Math.max(0, (p - prm.hold) / (1 - prm.hold)));
+        return fade >= 1 ? {} : { css: { filter: `url(#vgp-sketch)`, opacity: String(1 - fade * 0) } };
+      }
+    },
+    {
+      id: "image.tilt-3d",
+      category: "image",
+      description: "Gentle 3D perspective tilt that settles flat \u2014 gives a photo physical depth.",
+      tags: ["3d", "depth", "cinematic"],
+      params: { angle: { default: 12, min: 0, max: 40, unit: "deg" } },
+      defaultDuration: 1.2,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { css: { transform: `perspective(1200px) rotateY(${(1 - e) * prm.angle}deg)` }, opacity: ease("easeOut", p) };
+      }
     }
   ];
 
@@ -4331,8 +4356,206 @@
     }
   ];
 
+  // packages/core/src/presets/enter.ts
+  var enterPresets = [
+    {
+      id: "in.fade",
+      category: "in",
+      description: "Simple fade in from transparent.",
+      tags: ["enter", "subtle"],
+      params: {},
+      defaultDuration: 0.6,
+      apply: (p) => ({ opacity: ease("easeOutCubic", p) })
+    },
+    {
+      id: "in.slide-left",
+      category: "in",
+      description: "Slides in from the left while fading in.",
+      tags: ["enter", "directional"],
+      params: { distance: { default: 120, min: 0, max: 800, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { x: -(1 - e) * prm.distance, opacity: e };
+      }
+    },
+    {
+      id: "in.slide-right",
+      category: "in",
+      description: "Slides in from the right while fading in.",
+      tags: ["enter", "directional"],
+      params: { distance: { default: 120, min: 0, max: 800, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { x: (1 - e) * prm.distance, opacity: e };
+      }
+    },
+    {
+      id: "in.slide-up",
+      category: "in",
+      description: "Rises up into place while fading in.",
+      tags: ["enter", "vertical"],
+      params: { distance: { default: 80, min: 0, max: 600, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { y: (1 - e) * prm.distance, opacity: e };
+      }
+    },
+    {
+      id: "in.scale",
+      category: "in",
+      description: "Grows in from small while fading in.",
+      tags: ["enter", "punchy"],
+      params: { from: { default: 0.7, min: 0, max: 1, desc: "start scale" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { scale: prm.from + (1 - prm.from) * e, opacity: e };
+      }
+    },
+    {
+      id: "in.spin",
+      category: "in",
+      description: "Spins and scales into place.",
+      tags: ["enter", "playful"],
+      params: { turns: { default: 0.5, min: 0, max: 3, desc: "rotations" } },
+      defaultDuration: 0.7,
+      apply: (p, prm) => {
+        const e = ease("easeOutBack", p);
+        return { rotate: (1 - e) * prm.turns * 360, scale: 0.4 + 0.6 * e, opacity: ease("easeOut", p) };
+      }
+    }
+  ];
+
+  // packages/core/src/presets/exit.ts
+  var exitPresets = [
+    {
+      id: "out.fade",
+      category: "out",
+      description: "Simple fade out to transparent.",
+      tags: ["exit", "subtle"],
+      params: {},
+      defaultDuration: 0.6,
+      fromEnd: true,
+      apply: (p) => ({ opacity: 1 - ease("easeIn", p) })
+    },
+    {
+      id: "out.slide-right",
+      category: "out",
+      description: "Slides off to the right while fading out.",
+      tags: ["exit", "directional"],
+      params: { distance: { default: 120, min: 0, max: 800, unit: "px" } },
+      defaultDuration: 0.6,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeIn", p);
+        return { x: e * prm.distance, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.slide-down",
+      category: "out",
+      description: "Drops down and out while fading.",
+      tags: ["exit", "vertical"],
+      params: { distance: { default: 80, min: 0, max: 600, unit: "px" } },
+      defaultDuration: 0.6,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeIn", p);
+        return { y: e * prm.distance, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.scale-down",
+      category: "out",
+      description: "Shrinks away while fading out.",
+      tags: ["exit", "punchy"],
+      params: { to: { default: 0.7, min: 0, max: 1, desc: "end scale" } },
+      defaultDuration: 0.6,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeIn", p);
+        return { scale: 1 - (1 - prm.to) * e, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.blur",
+      category: "out",
+      description: "Blurs out of focus while fading.",
+      tags: ["exit", "soft"],
+      params: { blur: { default: 16, min: 0, max: 60, unit: "px" } },
+      defaultDuration: 0.6,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeIn", p);
+        return { blur: e * prm.blur, opacity: 1 - e };
+      }
+    }
+  ];
+
+  // packages/core/src/presets/audio.ts
+  var beat = (time, bpm) => {
+    const phase = time * bpm / 60;
+    const x = phase - Math.floor(phase);
+    return Math.pow(1 - x, 2);
+  };
+  var audioPresets = [
+    {
+      id: "audio.beat-pulse",
+      category: "audio",
+      description: "Scales up on every beat \u2014 punches to the rhythm.",
+      tags: ["reactive", "beat"],
+      continuous: true,
+      params: { bpm: { default: 120, min: 40, max: 220, desc: "beats per minute" }, amount: { default: 0.12, min: 0, max: 0.6, desc: "scale punch" } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => ({ scale: 1 + beat(ctx.time, prm.bpm) * prm.amount })
+    },
+    {
+      id: "audio.bass-glow",
+      category: "audio",
+      description: "Brightness flashes on the beat \u2014 a bass-driven glow.",
+      tags: ["reactive", "glow"],
+      continuous: true,
+      params: { bpm: { default: 120, min: 40, max: 220 }, amount: { default: 0.5, min: 0, max: 1.5 } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => ({ brightness: 1 + beat(ctx.time, prm.bpm) * prm.amount })
+    },
+    {
+      id: "audio.bounce",
+      category: "audio",
+      description: "Bounces vertically in time with the beat.",
+      tags: ["reactive", "bounce"],
+      continuous: true,
+      params: { bpm: { default: 120, min: 40, max: 220 }, height: { default: 24, min: 0, max: 200, unit: "px" } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => ({ y: -beat(ctx.time, prm.bpm) * prm.height })
+    },
+    {
+      id: "audio.shake",
+      category: "audio",
+      description: "Jitters/shakes energetically on each beat.",
+      tags: ["reactive", "energetic"],
+      continuous: true,
+      params: { bpm: { default: 120, min: 40, max: 220 }, amount: { default: 8, min: 0, max: 40, unit: "px" } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => {
+        const b = beat(ctx.time, prm.bpm);
+        return { x: Math.sin(ctx.time * 80) * b * prm.amount, rotate: Math.sin(ctx.time * 60) * b * 2 };
+      }
+    }
+  ];
+
   // packages/core/src/presets/index.ts
-  var ALL = [...textPresets, ...imagePresets, ...transitionPresets];
+  var ALL = [
+    ...textPresets,
+    ...imagePresets,
+    ...enterPresets,
+    ...exitPresets,
+    ...audioPresets,
+    ...transitionPresets
+  ];
   var REGISTRY = new Map(ALL.map((p) => [p.id, p]));
   var allPresets = () => [...REGISTRY.values()];
   var buildManifest = () => allPresets().map((p) => ({
@@ -4349,16 +4572,40 @@
   // packages/editor/src/editor.ts
   var MANIFEST = buildManifest();
   var MAN = new Map(MANIFEST.map((e) => [e.id, e]));
-  var LABELW = 92;
-  var clipColor = {
-    text: "var(--clip-text)",
-    image: "var(--clip-image)",
-    three: "var(--clip-three)",
-    shape: "var(--clip-shape)",
-    html: "var(--clip-html)",
-    video: "var(--clip-video)"
+  var LABELW = 98;
+  var I = {
+    play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+    pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
+    start: '<polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>',
+    back: '<polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/>',
+    fwd: '<polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/>',
+    loop: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+    text: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
+    video: '<rect x="2" y="2" width="20" height="20" rx="2"/><path d="M10 8l6 4-6 4V8z"/>',
+    shape: '<rect x="4" y="4" width="16" height="16" rx="2"/>',
+    cube: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><line x1="12" y1="13" x2="12" y2="21"/>',
+    trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
+    plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+    file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+    folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+    save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+    spark: '<path d="M12 3l1.9 5.8L20 10.7l-5.1 1.9L12 18l-1.9-5.4L5 10.7l6.1-1.9z"/>',
+    sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>'
   };
-  var typeIcon = { text: "T", image: "\u{1F5BC}", three: "\u2726", shape: "\u25FC", video: "\u25B6", html: "</>" };
+  var icon = (n) => `<svg viewBox="0 0 24 24">${I[n] ?? ""}</svg>`;
+  var typeIco = { text: "text", image: "image", video: "video", shape: "shape", three: "cube", html: "text" };
+  var clipColor = { text: "var(--clip-text)", image: "var(--clip-image)", three: "var(--clip-three)", shape: "var(--clip-shape)", html: "var(--clip-html)", video: "var(--clip-video)" };
+  var CATS = [
+    { key: "text", label: "Text", icon: "text" },
+    { key: "image", label: "Video / Image", icon: "video" },
+    { key: "audio", label: "Audio", icon: "spark" },
+    { key: "in", label: "Fade In", icon: "plus" },
+    { key: "out", label: "Fade Out", icon: "plus" },
+    { key: "transition", label: "Transitions", icon: "loop" }
+  ];
   var S = {
     ir: null,
     assetBase: "/",
@@ -4368,9 +4615,12 @@
     playing: true,
     loop: true,
     pxPerSec: 120,
+    scale: 1,
     offsets: [],
     total: 0,
-    lastSyncJson: ""
+    lastSyncJson: "",
+    panel: "props",
+    cat: "text"
   };
   var $ = (id) => document.getElementById(id);
   var el = (tag, cls) => {
@@ -4381,13 +4631,19 @@
   var baseUrl = () => new URL(S.assetBase, location.origin).href;
   var assetUrl = (src) => new URL(src, baseUrl()).href;
   function derive() {
-    S.offsets = [];
-    let acc = 0;
     for (const sc of S.ir.scenes) {
-      S.offsets.push(acc);
-      acc += sc.duration;
+      let maxEnd = 0;
+      for (const l of sc.layers) if (l.duration != null) maxEnd = Math.max(maxEnd, (l.start ?? 0) + l.duration);
+      if (maxEnd > (sc.duration ?? 0)) sc.duration = +maxEnd.toFixed(2);
+      if (!sc.duration || sc.duration < 0.5) sc.duration = 0.5;
     }
-    S.total = acc;
+    S.offsets = [];
+    let a = 0;
+    for (const sc of S.ir.scenes) {
+      S.offsets.push(a);
+      a += sc.duration;
+    }
+    S.total = a;
     if (S.playhead > S.total) S.playhead = 0;
   }
   function sceneAt(t) {
@@ -4400,12 +4656,12 @@
   }
   function fit() {
     const wrap = $("stage").parentElement.parentElement;
-    const pad = 36;
-    const s = Math.min((wrap.clientWidth - pad) / S.ir.width, (wrap.clientHeight - pad) / S.ir.height, 1);
-    const scaler = $("scaler");
-    scaler.style.width = S.ir.width + "px";
-    scaler.style.height = S.ir.height + "px";
-    scaler.style.transform = `scale(${s})`;
+    const s = Math.min((wrap.clientWidth - 40) / S.ir.width, (wrap.clientHeight - 40) / S.ir.height, 1);
+    S.scale = s;
+    const sc = $("scaler");
+    sc.style.width = S.ir.width + "px";
+    sc.style.height = S.ir.height + "px";
+    sc.style.transform = `scale(${s})`;
   }
   function mountPreview() {
     VGP.mount(S.ir, { assetBase: baseUrl() });
@@ -4419,12 +4675,12 @@
     $("syncText").textContent = text ?? state;
   }
   function scheduleSave() {
-    setDot("edited");
+    setDot("edited", "editing");
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
       const body = JSON.stringify(S.ir);
       S.lastSyncJson = body;
-      setDot("saving");
+      setDot("saving", "saving");
       try {
         const r = await fetch("/api/composition", { method: "POST", headers: { "content-type": "application/json" }, body });
         setDot(r.ok ? "saved" : "edited", r.ok ? "synced" : "invalid");
@@ -4445,18 +4701,30 @@
   var structuralEdit = () => {
     mountPreview();
     buildTimeline();
-    buildProps();
+    renderRight();
     scheduleSave();
   };
-  var newText = () => ({ type: "text", text: "New Text", style: { fontSize: "72px", color: "#ffffff" }, duration: 2, presets: [{ id: "text.fade-up" }], transform: {} });
-  var newShape = () => ({ type: "shape", shape: "rect", fill: "#3b82f6", rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [], transform: {} });
+  function setDoc(ir) {
+    S.ir = ir;
+    S.lastSyncJson = JSON.stringify(ir);
+    S.selected = null;
+    derive();
+    autoFit();
+    mountPreview();
+    buildTimeline();
+    renderRight();
+    updateTime();
+  }
+  var newText = () => ({ type: "text", text: "New Text", style: { fontSize: "72px", color: "#ffffff" }, duration: 2, presets: [{ id: "in.fade" }], transform: {} });
+  var newShape = () => ({ type: "shape", shape: "rect", fill: "#6366f1", rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [{ id: "in.scale" }], transform: {} });
   var new3D = () => ({ type: "three", scene: "particles", props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
-  var newAssetLayer = (a) => ({ type: a.type, src: a.src, fit: "cover", duration: 2.5, presets: [a.type === "image" ? { id: "image.ken-burns" } : null].filter(Boolean), transform: {} });
+  var newAssetLayer = (a) => ({ type: a.type, src: a.src, fit: "cover", duration: 2.5, presets: a.type === "image" ? [{ id: "image.ken-burns" }] : [], transform: {} });
   function addLayerAtPlayhead(layer2) {
     const si = sceneAt(S.playhead);
     layer2.start = Math.max(0, +(S.playhead - S.offsets[si]).toFixed(2));
     S.ir.scenes[si].layers.push(layer2);
     S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 };
+    setTab("props");
     structuralEdit();
   }
   function dropLayerAt(clientX, layer2) {
@@ -4466,12 +4734,12 @@
     layer2.start = Math.max(0, +(t - S.offsets[si]).toFixed(2));
     S.ir.scenes[si].layers.push(layer2);
     S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 };
+    setTab("props");
     structuralEdit();
   }
   async function loadAssets() {
     try {
-      const r = await fetch("/api/assets");
-      S.assets = await r.json();
+      S.assets = await (await fetch("/api/assets")).json();
     } catch {
       S.assets = [];
     }
@@ -4481,9 +4749,8 @@
     for (const f of Array.from(files)) {
       const type = f.type.startsWith("video") ? "video" : "image";
       try {
-        const r = await fetch("/api/upload?name=" + encodeURIComponent(f.name) + "&type=" + type, { method: "POST", body: f });
-        const a = await r.json();
-        if (a && a.src) S.assets.unshift(a);
+        const a = await (await fetch("/api/upload?name=" + encodeURIComponent(f.name) + "&type=" + type, { method: "POST", body: f })).json();
+        if (a?.src) S.assets.unshift(a);
       } catch {
       }
     }
@@ -4494,7 +4761,7 @@
     g.innerHTML = "";
     if (!S.assets.length) {
       const e = el("div", "empty");
-      e.style.fontSize = "11px";
+      e.style.cssText = "font-size:11px;padding:14px";
       e.textContent = "No assets yet";
       g.appendChild(e);
       return;
@@ -4502,15 +4769,15 @@
     S.assets.forEach((a) => {
       const d = el("div", "asset");
       d.draggable = true;
-      const url = assetUrl(a.src);
+      const u = assetUrl(a.src);
       if (a.type === "video") {
         const v = el("video");
-        v.src = url;
+        v.src = u;
         v.muted = true;
         d.appendChild(v);
       } else {
         const im = el("img");
-        im.src = url;
+        im.src = u;
         d.appendChild(im);
       }
       const b = el("div", "badge");
@@ -4523,11 +4790,6 @@
       g.appendChild(d);
     });
   }
-  function rows() {
-    const out = [];
-    S.ir.scenes.forEach((scene2, s) => scene2.layers.forEach((layer2, l) => out.push({ s, l, scene: scene2, layer: layer2 })));
-    return out;
-  }
   function buildTimeline() {
     derive();
     const inner = $("tlInner");
@@ -4537,26 +4799,19 @@
     const ruler = el("div", "ruler");
     ruler.style.width = width + "px";
     for (let t = 0; t <= Math.ceil(S.total); t++) {
-      const tick = el("div", "tick");
-      tick.style.left = LABELW + t * S.pxPerSec + "px";
-      tick.textContent = t + "s";
-      ruler.appendChild(tick);
+      const tk = el("div", "tick");
+      tk.style.left = LABELW + t * S.pxPerSec + "px";
+      tk.textContent = t + "s";
+      ruler.appendChild(tk);
     }
-    S.ir.scenes.forEach((sc, i) => {
-      const band = el("div", "scene-band");
-      band.style.left = LABELW + S.offsets[i] * S.pxPerSec + "px";
-      band.style.width = sc.duration * S.pxPerSec + "px";
-      ruler.appendChild(band);
-    });
     ruler.onmousedown = (e) => {
-      const seekFrom = (ev) => {
-        const x = ev.clientX - ruler.getBoundingClientRect().left - LABELW;
-        seekTo(x / S.pxPerSec);
+      const sf = (ev) => {
+        seekTo((ev.clientX - ruler.getBoundingClientRect().left - LABELW) / S.pxPerSec);
         S.playing = false;
-        $("tpPlay").textContent = "\u25B6";
+        setPlayIcon();
       };
-      seekFrom(e);
-      const mv = (ev) => seekFrom(ev);
+      sf(e);
+      const mv = (ev) => sf(ev);
       const up = () => {
         window.removeEventListener("mousemove", mv);
         window.removeEventListener("mouseup", up);
@@ -4565,68 +4820,66 @@
       window.addEventListener("mouseup", up);
     };
     inner.appendChild(ruler);
-    rows().forEach((r) => {
-      const track = el("div", "track");
-      const label = el("div", "track-label");
-      const name = r.layer.type === "text" ? `T: ${String(r.layer.text).slice(0, 9)}` : r.layer.type;
-      label.textContent = name;
-      label.title = name;
-      track.appendChild(label);
-      const offset = S.offsets[r.s] + (r.layer.start ?? 0);
-      const dur = r.layer.duration ?? r.scene.duration;
-      const clip = el("div", "clip");
-      clip.style.left = LABELW + offset * S.pxPerSec + "px";
-      clip.style.width = Math.max(22, dur * S.pxPerSec) + "px";
-      clip.style.background = clipColor[r.layer.type] ?? "#555";
-      const ic = el("span", "dotmark");
-      ic.textContent = typeIcon[r.layer.type] ?? "\u25CF";
-      clip.appendChild(ic);
-      const tx = el("span");
-      tx.textContent = name;
-      clip.appendChild(tx);
-      if (S.selected && S.selected.s === r.s && S.selected.l === r.l) clip.classList.add("sel");
-      const handle = el("div", "handle");
-      clip.appendChild(handle);
-      clip.onmousedown = (e) => {
-        if (e.target === handle) return;
-        e.preventDefault();
-        const startX = e.clientX, origStart = r.layer.start ?? 0;
-        let moved = false;
-        const mv = (ev) => {
-          const dx = ev.clientX - startX;
-          if (Math.abs(dx) > 3) moved = true;
-          let ns = Math.max(0, Math.min(r.scene.duration - 0.1, origStart + dx / S.pxPerSec));
-          r.layer.start = +ns.toFixed(3);
-          clip.style.left = LABELW + (S.offsets[r.s] + r.layer.start) * S.pxPerSec + "px";
+    S.ir.scenes.forEach((scene2, si) => {
+      const sr = el("div", "scene-row");
+      const tag = el("div", "scene-tag");
+      tag.innerHTML = icon("film" in I ? "film" : "video") + `Scene ${si + 1} \xB7 ${scene2.duration}s`;
+      sr.appendChild(tag);
+      inner.appendChild(sr);
+      scene2.layers.forEach((layer2, li) => {
+        const track = el("div", "track");
+        const label = el("div", "track-label");
+        label.innerHTML = icon(typeIco[layer2.type] ?? "shape") + `<span>${layer2.type === "text" ? String(layer2.text).slice(0, 8) : layer2.type}</span>`;
+        track.appendChild(label);
+        const offset = S.offsets[si] + (layer2.start ?? 0);
+        const dur = layer2.duration ?? scene2.duration;
+        const clip = el("div", "clip");
+        clip.style.left = LABELW + offset * S.pxPerSec + "px";
+        clip.style.width = Math.max(24, dur * S.pxPerSec) + "px";
+        clip.style.background = clipColor[layer2.type] ?? "#555";
+        clip.innerHTML = icon(typeIco[layer2.type] ?? "shape") + `<span>${layer2.type === "text" ? String(layer2.text).slice(0, 12) : layer2.type}</span>`;
+        if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add("sel");
+        const handle = el("div", "handle");
+        clip.appendChild(handle);
+        clip.onmousedown = (e) => {
+          if (e.target === handle) return;
+          e.preventDefault();
+          const sx = e.clientX, os = layer2.start ?? 0;
+          let moved = false;
+          const mv = (ev) => {
+            const dx = ev.clientX - sx;
+            if (Math.abs(dx) > 3) moved = true;
+            layer2.start = +Math.max(0, Math.min(scene2.duration - 0.1, os + dx / S.pxPerSec)).toFixed(3);
+            clip.style.left = LABELW + (S.offsets[si] + layer2.start) * S.pxPerSec + "px";
+          };
+          const up = () => {
+            window.removeEventListener("mousemove", mv);
+            window.removeEventListener("mouseup", up);
+            if (moved) timingEdit();
+            else select(si, li);
+          };
+          window.addEventListener("mousemove", mv);
+          window.addEventListener("mouseup", up);
         };
-        const up = () => {
-          window.removeEventListener("mousemove", mv);
-          window.removeEventListener("mouseup", up);
-          if (moved) timingEdit();
-          else select(r.s, r.l);
+        handle.onmousedown = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const sx = e.clientX, od = layer2.duration ?? scene2.duration;
+          const mv = (ev) => {
+            layer2.duration = +Math.max(0.1, Math.min(scene2.duration - (layer2.start ?? 0), od + (ev.clientX - sx) / S.pxPerSec)).toFixed(3);
+            clip.style.width = Math.max(24, layer2.duration * S.pxPerSec) + "px";
+          };
+          const up = () => {
+            window.removeEventListener("mousemove", mv);
+            window.removeEventListener("mouseup", up);
+            timingEdit();
+          };
+          window.addEventListener("mousemove", mv);
+          window.addEventListener("mouseup", up);
         };
-        window.addEventListener("mousemove", mv);
-        window.addEventListener("mouseup", up);
-      };
-      handle.onmousedown = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const startX = e.clientX, origDur = r.layer.duration ?? r.scene.duration;
-        const mv = (ev) => {
-          let nd = Math.max(0.1, Math.min(r.scene.duration - (r.layer.start ?? 0), origDur + (ev.clientX - startX) / S.pxPerSec));
-          r.layer.duration = +nd.toFixed(3);
-          clip.style.width = Math.max(22, r.layer.duration * S.pxPerSec) + "px";
-        };
-        const up = () => {
-          window.removeEventListener("mousemove", mv);
-          window.removeEventListener("mouseup", up);
-          timingEdit();
-        };
-        window.addEventListener("mousemove", mv);
-        window.addEventListener("mouseup", up);
-      };
-      track.appendChild(clip);
-      inner.appendChild(track);
+        track.appendChild(clip);
+        inner.appendChild(track);
+      });
     });
     const ph = el("div", "playhead");
     ph.id = "playhead";
@@ -4639,10 +4892,19 @@
     ph.style.left = LABELW + S.playhead * S.pxPerSec + "px";
     ph.style.height = $("tlInner").scrollHeight + "px";
   }
+  function setTab(t) {
+    S.panel = t;
+    $("tabProps").classList.toggle("on", t === "props");
+    $("tabAnim").classList.toggle("on", t === "anim");
+    renderRight();
+  }
+  function renderRight() {
+    S.panel === "props" ? buildProps() : buildLibrary();
+  }
   function select(s, l) {
     S.selected = { s, l };
+    setTab("props");
     buildTimeline();
-    buildProps();
   }
   function numField(label, value, min, max, step, onIn) {
     const f = el("div", "field");
@@ -4668,11 +4930,67 @@
     f.appendChild(row);
     return f;
   }
+  function kfField(label, prop, value, min, max, step, onIn) {
+    const f = numField(label, value, min, max, step, onIn);
+    const lab = f.querySelector("label");
+    const layer2 = S.selected ? S.ir.scenes[S.selected.s].layers[S.selected.l] : null;
+    const n = layer2?.keyframes?.[prop]?.length ?? 0;
+    const key = el("button", "icon-btn");
+    key.innerHTML = n ? `\u25C6 ${n}` : "\u25C6";
+    key.title = "add keyframe at playhead";
+    key.style.cssText = "float:right;padding:1px 7px;font-size:10px" + (n ? ";color:var(--accent)" : "");
+    key.onclick = () => addKeyframe(prop);
+    lab.appendChild(key);
+    return f;
+  }
+  function addKeyframe(prop) {
+    if (!S.selected) return;
+    const { s, l } = S.selected;
+    const layer2 = S.ir.scenes[s].layers[l];
+    const localT = Math.max(0, +(S.playhead - (S.offsets[s] + (layer2.start ?? 0))).toFixed(2));
+    const cur = layer2.transform?.[prop] ?? (prop === "scale" || prop === "opacity" ? 1 : 0);
+    layer2.keyframes = layer2.keyframes || {};
+    const arr = layer2.keyframes[prop] || (layer2.keyframes[prop] = []);
+    const ex = arr.find((k) => Math.abs(k.t - localT) < 0.04);
+    if (ex) ex.value = cur;
+    else arr.push({ t: localT, value: cur, easing: "easeInOut" });
+    arr.sort((a, b) => a.t - b.t);
+    liveEdit();
+    buildProps();
+  }
+  function splitSelected() {
+    if (!S.selected) return;
+    const { s, l } = S.selected;
+    const scene2 = S.ir.scenes[s];
+    const layer2 = scene2.layers[l];
+    const ls = layer2.start ?? 0, ld = layer2.duration ?? scene2.duration;
+    const local = S.playhead - (S.offsets[s] + ls);
+    if (local <= 0.05 || local >= ld - 0.05) {
+      setDot("edited", "move playhead over clip");
+      return;
+    }
+    const second = JSON.parse(JSON.stringify(layer2));
+    layer2.duration = +local.toFixed(2);
+    second.start = +(ls + local).toFixed(2);
+    second.duration = +(ld - local).toFixed(2);
+    scene2.layers.splice(l + 1, 0, second);
+    structuralEdit();
+  }
+  function duplicateSelected() {
+    if (!S.selected) return;
+    const { s, l } = S.selected;
+    const scene2 = S.ir.scenes[s];
+    const copy = JSON.parse(JSON.stringify(scene2.layers[l]));
+    copy.start = (copy.start ?? 0) + 0.2;
+    scene2.layers.splice(l + 1, 0, copy);
+    S.selected = { s, l: l + 1 };
+    structuralEdit();
+  }
   function buildProps() {
-    const p = $("props");
+    const p = $("rightBody");
     p.innerHTML = "";
     if (!S.selected) {
-      p.innerHTML = '<div class="empty">Select a clip in the timeline to edit it and pick animations.</div>';
+      p.innerHTML = '<div class="empty">Select a clip in the timeline to edit it.<br/><br/>Or open the <b>Animations</b> tab to browse presets.</div>';
       return;
     }
     const { s, l } = S.selected;
@@ -4689,18 +5007,15 @@
     };
     const head = el("div", "sel-head");
     const pill = el("span", "pill");
-    pill.textContent = layer2.type;
+    pill.innerHTML = icon(typeIco[layer2.type] ?? "shape") + layer2.type;
     pill.style.background = clipColor[layer2.type] ?? "#555";
     head.appendChild(pill);
     const title = el("span");
-    title.textContent = layer2.type === "text" ? String(layer2.text).slice(0, 18) : layer2.src ? String(layer2.src).split("/").pop() : layer2.type;
-    title.style.flex = "1";
-    title.style.fontWeight = "600";
+    title.textContent = layer2.type === "text" ? String(layer2.text).slice(0, 16) : layer2.src ? String(layer2.src).split("/").pop() : layer2.type;
+    title.style.cssText = "flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis";
     head.appendChild(title);
-    const del = el("button");
-    del.textContent = "\u{1F5D1}";
-    del.style.background = "#3a2030";
-    del.style.padding = "4px 8px";
+    const del = el("button", "icon-btn");
+    del.innerHTML = icon("trash");
     del.onclick = () => {
       scene2.layers.splice(l, 1);
       S.selected = null;
@@ -4722,7 +5037,7 @@
       f.appendChild(ta);
       p.appendChild(f);
       layer2.style = layer2.style || {};
-      p.appendChild(numField("font size", parseInt(layer2.style.fontSize || "72"), 12, 220, 1, (v) => {
+      p.appendChild(numField("font size", parseInt(layer2.style.fontSize || "72"), 12, 240, 1, (v) => {
         layer2.style.fontSize = Math.round(v) + "px";
         structuralEdit();
       }));
@@ -4767,7 +5082,7 @@
       cf.appendChild(cl);
       const ci = el("input");
       ci.type = "text";
-      ci.value = layer2.fill || "#3b82f6";
+      ci.value = layer2.fill || "#6366f1";
       ci.oninput = () => {
         layer2.fill = ci.value;
         structuralEdit();
@@ -4776,12 +5091,11 @@
       p.appendChild(cf);
     }
     layer2.presets = layer2.presets || [];
-    h("\u2726 applied animations");
+    h("applied animations");
     if (!layer2.presets.length) {
       const e = el("div", "empty");
-      e.style.padding = "6px 0";
-      e.style.fontSize = "11px";
-      e.textContent = "none \u2014 pick one below";
+      e.style.cssText = "padding:8px 0;font-size:11px";
+      e.textContent = "none yet";
       p.appendChild(e);
     }
     layer2.presets.forEach((inst, idx) => {
@@ -4791,8 +5105,8 @@
       const b = el("b");
       b.textContent = inst.id;
       hd.appendChild(b);
-      const rm = el("button");
-      rm.textContent = "\u2715";
+      const rm = el("button", "icon-btn");
+      rm.innerHTML = icon("trash");
       rm.onclick = () => {
         layer2.presets.splice(idx, 1);
         structuralEdit();
@@ -4812,29 +5126,11 @@
       }
       p.appendChild(card);
     });
-    const cat = layer2.type === "text" ? "text" : "image";
-    h(`\uFF0B ${cat} animations`);
-    const grid = el("div", "anim-grid");
-    MANIFEST.filter((e) => e.category === cat).forEach((e) => {
-      const card = el("div", "anim-card");
-      const nm = el("div", "nm");
-      nm.textContent = e.id.split(".")[1];
-      card.appendChild(nm);
-      const ds = el("div", "ds");
-      ds.textContent = e.description;
-      card.appendChild(ds);
-      const pl = el("div", "plus");
-      pl.textContent = "\uFF0B";
-      card.appendChild(pl);
-      card.onclick = () => {
-        layer2.presets.push({ id: e.id, params: {} });
-        S.playhead = S.offsets[s] + (layer2.start ?? 0) + 0.01;
-        structuralEdit();
-        positionPlayhead();
-      };
-      grid.appendChild(card);
-    });
-    p.appendChild(grid);
+    const browse = el("button", "btn");
+    browse.style.cssText = "width:100%;justify-content:center;margin-top:6px";
+    browse.innerHTML = icon("spark") + "Browse animations";
+    browse.onclick = () => setTab("anim");
+    p.appendChild(browse);
     h("timing");
     p.appendChild(numField("start (s)", layer2.start ?? 0, 0, scene2.duration, 0.05, (v) => {
       layer2.start = v;
@@ -4844,29 +5140,87 @@
       layer2.duration = v;
       timingEdit();
     }));
-    h("transform");
+    h("transform  \xB7  \u25C6 = keyframe at playhead");
     layer2.transform = layer2.transform || {};
     const tf = layer2.transform;
-    p.appendChild(numField("x", tf.x ?? 0, -600, 600, 1, (v) => {
+    p.appendChild(kfField("x", "x", tf.x ?? 0, -800, 800, 1, (v) => {
       tf.x = v;
       liveEdit();
     }));
-    p.appendChild(numField("y", tf.y ?? 0, -600, 600, 1, (v) => {
+    p.appendChild(kfField("y", "y", tf.y ?? 0, -800, 800, 1, (v) => {
       tf.y = v;
       liveEdit();
     }));
-    p.appendChild(numField("scale", tf.scale ?? 1, 0, 3, 0.01, (v) => {
+    p.appendChild(kfField("scale (zoom)", "scale", tf.scale ?? 1, 0, 3, 0.01, (v) => {
       tf.scale = v;
       liveEdit();
     }));
-    p.appendChild(numField("rotate", tf.rotate ?? 0, -180, 180, 1, (v) => {
+    p.appendChild(kfField("rotate", "rotate", tf.rotate ?? 0, -180, 180, 1, (v) => {
       tf.rotate = v;
       liveEdit();
     }));
-    p.appendChild(numField("opacity", tf.opacity ?? 1, 0, 1, 0.01, (v) => {
+    p.appendChild(kfField("opacity", "opacity", tf.opacity ?? 1, 0, 1, 0.01, (v) => {
       tf.opacity = v;
       liveEdit();
     }));
+    const tip = el("div");
+    tip.style.cssText = "font-size:10px;color:var(--dim);margin-top:6px;line-height:1.5";
+    tip.innerHTML = "drag on canvas to move \xB7 arrows nudge \xB7 <b>S</b> split \xB7 <b>\u2318D</b> duplicate \xB7 <b>Del</b> remove";
+    p.appendChild(tip);
+  }
+  function buildLibrary() {
+    const p = $("rightBody");
+    p.innerHTML = "";
+    const tabs = el("div", "cat-tabs");
+    CATS.forEach((c) => {
+      const t = el("div", "cat" + (S.cat === c.key ? " on" : ""));
+      t.textContent = c.label;
+      t.onclick = () => {
+        S.cat = c.key;
+        buildLibrary();
+      };
+      tabs.appendChild(t);
+    });
+    p.appendChild(tabs);
+    const sel = S.selected ? S.ir.scenes[S.selected.s].layers[S.selected.l] : null;
+    const note = el("div");
+    note.style.cssText = "font-size:11px;color:var(--dim);margin-bottom:10px";
+    if (S.cat === "transition") note.innerHTML = sel ? `applies to <b>Scene ${S.selected.s + 1}</b>` : "select a clip \u2014 transition applies to its scene";
+    else note.innerHTML = sel ? `click to add to <b>${sel.type}</b> layer` : "\u26A0 select a clip first to apply";
+    p.appendChild(note);
+    const grid = el("div", "anim-grid");
+    MANIFEST.filter((e) => e.category === S.cat).forEach((e) => {
+      const card = el("div", "anim-card");
+      const nm = el("div", "nm");
+      nm.innerHTML = icon("spark") + e.id.split(".")[1];
+      card.appendChild(nm);
+      const ds = el("div", "ds");
+      ds.textContent = e.description;
+      card.appendChild(ds);
+      card.onclick = () => applyFromLibrary(e);
+      grid.appendChild(card);
+    });
+    p.appendChild(grid);
+  }
+  function applyFromLibrary(entry) {
+    if (entry.category === "transition") {
+      const si = S.selected ? S.selected.s : sceneAt(S.playhead);
+      S.ir.scenes[si].transitionIn = { id: entry.id };
+      if (S.selected) S.playhead = Math.max(0, S.offsets[si] - 0.2);
+      structuralEdit();
+      return;
+    }
+    if (!S.selected) {
+      setDot("edited", "select a clip!");
+      return;
+    }
+    const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
+    layer2.presets = layer2.presets || [];
+    layer2.presets.push({ id: entry.id, params: {} });
+    S.playhead = S.offsets[S.selected.s] + (layer2.start ?? 0) + 0.05;
+    setTab("props");
+    structuralEdit();
+    positionPlayhead();
   }
   function updateTime() {
     $("tpTime").textContent = S.playhead.toFixed(2);
@@ -4878,9 +5232,12 @@
     positionPlayhead();
     updateTime();
   }
+  function setPlayIcon() {
+    $("tpPlay").innerHTML = icon(S.playing ? "pause" : "play");
+  }
   function togglePlay() {
     S.playing = !S.playing;
-    $("tpPlay").textContent = S.playing ? "\u23F8" : "\u25B6";
+    setPlayIcon();
     last = performance.now();
   }
   var last = performance.now();
@@ -4901,16 +5258,96 @@
     last = now;
     requestAnimationFrame(loop);
   }
+  function autoFit() {
+    const w = $("tlScroll").clientWidth || 900;
+    S.pxPerSec = Math.max(40, Math.min(220, (w - LABELW - 40) / Math.max(1, S.total)));
+  }
+  function buildFileMenu() {
+    const m = $("fileMenu");
+    m.innerHTML = "";
+    const item = (ic, label, key, fn) => {
+      const b = el("button", "menu-item");
+      b.innerHTML = icon(ic) + `<span>${label}</span>` + (key ? `<span class="k">${key}</span>` : "");
+      b.onclick = () => {
+        closeMenu();
+        fn();
+      };
+      m.appendChild(b);
+    };
+    item("file", "New", "", () => setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: "scene-1", duration: 5, background: "#0b0e16", layers: [] }] }) || scheduleSave());
+    item("folder", "Open\u2026", "", openProjects);
+    m.appendChild(el("div", "menu-sep"));
+    item("save", "Save project (.json)", "\u2318S", saveJson);
+    item("download", "Export MP4", "", runExport);
+  }
+  var menuOpen = false;
+  function closeMenu() {
+    menuOpen = false;
+    $("fileMenu").classList.remove("open");
+  }
+  function saveJson() {
+    const blob = new Blob([JSON.stringify(S.ir, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "composition.json";
+    a.click();
+  }
+  async function openProjects() {
+    const list = await (await fetch("/api/projects")).json();
+    const pl = $("projList");
+    pl.innerHTML = "";
+    list.forEach((pr) => {
+      const d = el("div", "proj" + (pr.active ? " active" : ""));
+      d.innerHTML = icon("file") + pr.name;
+      d.onclick = async () => {
+        const r = await (await fetch("/api/open", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: pr.path }) })).json();
+        if (r.ok) {
+          S.assetBase = r.assetBase;
+          setDoc(r.ir);
+          $("openModal").classList.remove("show");
+        }
+      };
+      pl.appendChild(d);
+    });
+    $("openModal").classList.add("show");
+  }
+  function showRender(show) {
+    $("renderBar").classList.toggle("show", show);
+  }
+  function runExport() {
+    showRender(true);
+    $("renderFill").style.width = "0%";
+    $("renderPct").textContent = "0%";
+    $("renderLabel").textContent = "Starting render\u2026";
+    fetch("/api/render", { method: "POST" }).catch(() => {
+    });
+  }
   async function init() {
+    $("logoIcon").innerHTML = icon("spark");
+    $("fileIcon").innerHTML = icon("file");
+    $("expIcon").innerHTML = icon("download");
+    $("i-text").innerHTML = icon("text");
+    $("i-shape").innerHTML = icon("shape");
+    $("i-3d").innerHTML = icon("cube");
+    $("i-up").innerHTML = icon("upload");
+    $("i-props").innerHTML = icon("sliders");
+    $("i-anim").innerHTML = icon("spark");
+    $("tpStart").innerHTML = icon("start");
+    $("tpBack").innerHTML = icon("back");
+    $("tpFwd").innerHTML = icon("fwd");
+    $("tpLoop").innerHTML = icon("loop");
+    setPlayIcon();
+    buildFileMenu();
     const data = await (await fetch("/api/composition")).json();
     S.ir = data.ir;
     S.assetBase = data.assetBase;
     S.lastSyncJson = JSON.stringify(S.ir);
     derive();
+    autoFit();
     mountPreview();
     await VGP.ready();
     buildTimeline();
-    buildProps();
+    renderRight();
     updateTime();
     await loadAssets();
     requestAnimationFrame((t) => {
@@ -4923,23 +5360,39 @@
     $("tpFwd").onclick = () => seekTo(S.playhead + 1);
     $("tpLoop").onclick = () => {
       S.loop = !S.loop;
-      $("tpLoop").style.opacity = S.loop ? "1" : ".45";
+      $("tpLoop").classList.toggle("on", S.loop);
+      $("tpLoop").style.opacity = S.loop ? "1" : ".5";
     };
-    $("zoomIn").onclick = () => {
-      S.pxPerSec = Math.min(600, S.pxPerSec * 1.3);
-      buildTimeline();
+    $("tabProps").onclick = () => setTab("props");
+    $("tabAnim").onclick = () => setTab("anim");
+    $("fileBtn").onclick = (e) => {
+      e.stopPropagation();
+      menuOpen = !menuOpen;
+      $("fileMenu").classList.toggle("open", menuOpen);
     };
-    $("zoomOut").onclick = () => {
-      S.pxPerSec = Math.max(30, S.pxPerSec / 1.3);
-      buildTimeline();
+    document.addEventListener("click", closeMenu);
+    $("export").onclick = runExport;
+    $("openClose").onclick = () => $("openModal").classList.remove("show");
+    $("importBtn").onclick = () => {
+      const inp = document.createElement("input");
+      inp.type = "file";
+      inp.accept = ".json";
+      inp.onchange = () => {
+        const f = inp.files?.[0];
+        if (!f) return;
+        const rd = new FileReader();
+        rd.onload = () => {
+          try {
+            setDoc(JSON.parse(String(rd.result)));
+            scheduleSave();
+            $("openModal").classList.remove("show");
+          } catch {
+          }
+        };
+        rd.readAsText(f);
+      };
+      inp.click();
     };
-    window.addEventListener("keydown", (e) => {
-      if (e.code === "Space" && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") {
-        e.preventDefault();
-        togglePlay();
-      }
-    });
-    window.addEventListener("resize", fit);
     $("addText").onclick = () => addLayerAtPlayhead(newText());
     $("addShape").onclick = () => addLayerAtPlayhead(newShape());
     $("add3D").onclick = () => addLayerAtPlayhead(new3D());
@@ -4966,50 +5419,132 @@
     tl.addEventListener("drop", async (e) => {
       e.preventDefault();
       tl.classList.remove("over");
-      const data2 = e.dataTransfer?.getData("application/x-vgp-asset");
-      if (data2) {
-        dropLayerAt(e.clientX, newAssetLayer(JSON.parse(data2)));
+      const d = e.dataTransfer?.getData("application/x-vgp-asset");
+      if (d) {
+        dropLayerAt(e.clientX, newAssetLayer(JSON.parse(d)));
         return;
       }
       if (e.dataTransfer?.files.length) {
         const before = S.assets.length;
         await uploadFiles(e.dataTransfer.files);
-        const added = S.assets[0];
-        if (S.assets.length > before && added) dropLayerAt(e.clientX, newAssetLayer(added));
+        if (S.assets.length > before) dropLayerAt(e.clientX, newAssetLayer(S.assets[0]));
       }
     });
-    $("export").onclick = async () => {
-      const b = $("export");
-      const t0 = b.textContent;
-      b.textContent = "\u23F3 Rendering\u2026";
-      b.disabled = true;
-      try {
-        const j = await (await fetch("/api/render", { method: "POST" })).json();
-        if (j.ok) window.open(j.url, "_blank");
-        else alert("render failed: " + (j.error || ""));
-      } catch {
-        alert("render error");
+    tl.addEventListener("wheel", (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const r = $("tlInner").getBoundingClientRect();
+      const curT = (e.clientX - r.left - LABELW) / S.pxPerSec;
+      S.pxPerSec = Math.max(30, Math.min(800, S.pxPerSec * (e.deltaY < 0 ? 1.12 : 0.89)));
+      buildTimeline();
+      tl.scrollLeft = LABELW + curT * S.pxPerSec - (e.clientX - r.left);
+    }, { passive: false });
+    const stage = $("stage");
+    stage.style.cursor = "default";
+    stage.addEventListener("mousedown", (e) => {
+      if (!S.selected) return;
+      e.preventDefault();
+      const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
+      layer2.transform = layer2.transform || {};
+      const sx = e.clientX, sy = e.clientY, ox = layer2.transform.x ?? 0, oy = layer2.transform.y ?? 0, sc = S.scale || 1;
+      const mv = (ev) => {
+        layer2.transform.x = Math.round(ox + (ev.clientX - sx) / sc);
+        layer2.transform.y = Math.round(oy + (ev.clientY - sy) / sc);
+        liveSeek();
+      };
+      const up = () => {
+        window.removeEventListener("mousemove", mv);
+        window.removeEventListener("mouseup", up);
+        scheduleSave();
+        buildProps();
+      };
+      window.addEventListener("mousemove", mv);
+      window.addEventListener("mouseup", up);
+    });
+    window.addEventListener("keydown", (e) => {
+      const tag = e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const meta = e.metaKey || e.ctrlKey;
+      if (e.code === "Space") {
+        e.preventDefault();
+        togglePlay();
+        return;
       }
-      b.textContent = t0;
-      b.disabled = false;
-    };
+      if (meta && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        saveJson();
+        return;
+      }
+      if (meta && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        duplicateSelected();
+        return;
+      }
+      if (!meta && (e.key === "s" || e.key === "S")) {
+        splitSelected();
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && S.selected) {
+        const { s, l } = S.selected;
+        S.ir.scenes[s].layers.splice(l, 1);
+        S.selected = null;
+        structuralEdit();
+        return;
+      }
+      if (S.selected && e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
+        layer2.transform = layer2.transform || {};
+        const step = e.shiftKey ? 1 : 10;
+        if (e.key === "ArrowLeft") layer2.transform.x = (layer2.transform.x ?? 0) - step;
+        if (e.key === "ArrowRight") layer2.transform.x = (layer2.transform.x ?? 0) + step;
+        if (e.key === "ArrowUp") layer2.transform.y = (layer2.transform.y ?? 0) - step;
+        if (e.key === "ArrowDown") layer2.transform.y = (layer2.transform.y ?? 0) + step;
+        liveSeek();
+        scheduleSave();
+        buildProps();
+      }
+    });
+    window.addEventListener("resize", fit);
     const es = new EventSource("/api/events");
     es.onmessage = (ev) => {
-      if (ev.data === S.lastSyncJson) return;
-      let parsed;
+      let m;
       try {
-        parsed = JSON.parse(ev.data);
+        m = JSON.parse(ev.data);
       } catch {
         return;
       }
-      S.ir = parsed;
-      S.lastSyncJson = ev.data;
-      derive();
-      mountPreview();
-      buildTimeline();
-      buildProps();
-      setDot("edited", "agent edit \u2726");
-      setTimeout(() => setDot("saved", "synced"), 1400);
+      if (m.t === "doc") {
+        const j = JSON.stringify(m.ir);
+        if (j === S.lastSyncJson) return;
+        S.ir = m.ir;
+        S.lastSyncJson = j;
+        derive();
+        mountPreview();
+        buildTimeline();
+        renderRight();
+        setDot("edited", "agent edit \u2726");
+        setTimeout(() => setDot("saved", "synced"), 1400);
+      }
+      if (m.t === "render") {
+        showRender(true);
+        if (m.state === "rendering") {
+          $("renderFill").style.width = m.pct + "%";
+          $("renderPct").textContent = m.pct + "%";
+          $("renderLabel").textContent = `Rendering frame ${m.done}/${m.total}`;
+        } else if (m.state === "done") {
+          $("renderFill").style.width = "100%";
+          $("renderPct").textContent = "100%";
+          $("renderLabel").textContent = "\u2713 Export complete";
+          setTimeout(() => {
+            showRender(false);
+            if (m.url) window.open(m.url, "_blank");
+          }, 1e3);
+        } else if (m.state === "error") {
+          $("renderLabel").textContent = "\u2715 Render failed";
+          setTimeout(() => showRender(false), 3e3);
+        }
+      }
     };
   }
   init();

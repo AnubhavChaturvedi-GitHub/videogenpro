@@ -66,6 +66,22 @@ const THREE_SCENES: Record<string, (canvas: HTMLCanvasElement, w: number, h: num
 // ---- helpers ----
 const px = (n: number) => `${n}px`;
 
+// Inject reusable SVG filters (sketch / edge-detect) once per document.
+function ensureSvgFilters() {
+  if (document.getElementById('vgp-svg-filters')) return;
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.id = 'vgp-svg-filters';
+  svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+  svg.style.position = 'absolute';
+  svg.innerHTML = `<defs><filter id="vgp-sketch" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0"/>
+    <feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -1 0 -1 4 -1 0 -1 0"/>
+    <feComponentTransfer><feFuncR type="table" tableValues="1 0"/><feFuncG type="table" tableValues="1 0"/><feFuncB type="table" tableValues="1 0"/></feComponentTransfer>
+  </filter></defs>`;
+  document.body.appendChild(svg);
+}
+
 function sceneOffsets(c: Composition): number[] {
   const offs: number[] = [];
   let acc = 0;
@@ -137,9 +153,10 @@ function applyDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
 // per-element progress for a preset instance on a layer
 function presetProgress(inst: PresetInstance, layerLocalT: number, layerDur: number, continuous: boolean): number {
   if (continuous) return clamp01(layerLocalT / Math.max(0.0001, layerDur));
-  const start = inst.start ?? 0;
   const preset = getPreset(inst.id);
   const dur = inst.duration ?? preset?.defaultDuration ?? 0.6;
+  if (preset?.fromEnd) return clamp01((layerLocalT - (layerDur - dur)) / Math.max(0.0001, dur));
+  const start = inst.start ?? 0;
   return clamp01((layerLocalT - start) / Math.max(0.0001, dur));
 }
 
@@ -252,6 +269,7 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
   stage.style.position = 'relative';
   stage.style.overflow = 'hidden';
   stage.innerHTML = '';
+  ensureSvgFilters();
   sceneNodes = [];
   const offs = sceneOffsets(c);
   c.scenes.forEach((scene, i) => {
@@ -297,7 +315,7 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
     const preset = getPreset(inst.id);
     if (!preset || !preset.apply || preset.split) continue;
     const p = presetProgress(inst, layerLocalT, dur, !!preset.continuous);
-    combine(wholeDelta, preset.apply(p, resolveParams(preset, inst.params), { index: 0, count: 1 }));
+    combine(wholeDelta, preset.apply(p, resolveParams(preset, inst.params), { index: 0, count: 1, time: layerLocalT, dur }));
   }
   applyDelta(ln.el, wholeDelta);
 
@@ -309,7 +327,7 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
       for (const inst of splitInsts) {
         const preset = getPreset(inst.id)!;
         const p = presetProgress(inst, layerLocalT, dur, !!preset.continuous);
-        combine(sd, preset.apply!(p, resolveParams(preset, inst.params), { index: idx, count: ln.spans!.length }));
+        combine(sd, preset.apply!(p, resolveParams(preset, inst.params), { index: idx, count: ln.spans!.length, time: layerLocalT, dur }));
       }
       applyDelta(span, sd);
     });

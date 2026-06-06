@@ -55,7 +55,8 @@ async function main() {
   // ffmpeg reads raw PNGs from stdin -> mp4
   const ff = spawn('ffmpeg', [
     '-y', '-f', 'image2pipe', '-framerate', String(comp.fps), '-i', '-',
-    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '18',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'slow', '-crf', '15',
+    '-profile:v', 'high', '-level', '4.2', '-movflags', '+faststart',
     absOut,
   ], { stdio: ['pipe', 'inherit', 'inherit'] });
 
@@ -67,7 +68,7 @@ async function main() {
     await page.evaluate((tt) => (window as any).VGP.seek(tt), t);
     const buf = await stage.screenshot({ type: 'png' });
     if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once('drain', r));
-    if (f % comp.fps === 0) process.stdout.write(`\r  rendering ${f}/${totalFrames} (${(t).toFixed(1)}s)   `);
+    process.stdout.write(`@P ${f + 1} ${totalFrames}\n`); // machine-readable progress (parsed by the dev server)
   }
   ff.stdin.end();
   process.stdout.write(`\r  rendered ${totalFrames}/${totalFrames} frames        \n`);

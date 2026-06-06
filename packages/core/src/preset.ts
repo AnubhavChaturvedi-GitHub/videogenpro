@@ -28,13 +28,18 @@ export type ParamSpec = {
   desc?: string;
 };
 
-// Context handed to a preset's apply() — enables per-word / per-char stagger.
+// Context handed to a preset's apply() — enables per-word / per-char stagger
+// and real-time effects (audio-reactive, bpm pulses).
 export type ApplyCtx = {
   index: number;   // element index when split (0 for whole)
   count: number;   // total elements (1 for whole)
+  time: number;    // layer-local time in seconds
+  dur: number;     // layer duration in seconds
 };
 
-export type PresetCategory = 'text' | 'image' | 'layer' | 'transition';
+// Categories double as the Animation Library tabs in the editor:
+//   text · image (video) · audio · in (fade-in) · out (fade-out) · transition
+export type PresetCategory = 'text' | 'image' | 'audio' | 'in' | 'out' | 'layer' | 'transition';
 
 export type Preset = {
   id: string;
@@ -45,8 +50,12 @@ export type Preset = {
   defaultDuration: number;    // seconds, used when the instance omits duration
 
   // If set, the preset spans the WHOLE layer (progress = time / layerDuration).
-  // Used by ambient motion like ken-burns, parallax, float.
+  // Used by ambient motion like ken-burns, parallax, float, and audio pulses.
   continuous?: boolean;
+
+  // If set, the preset plays at the END of the layer (exit / fade-out):
+  // progress runs 0->1 over the last `duration` seconds.
+  fromEnd?: boolean;
 
   // For text presets: split the element and animate each piece with stagger.
   split?: 'word' | 'char';

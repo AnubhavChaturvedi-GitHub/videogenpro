@@ -66,4 +66,31 @@ export const imagePresets: Preset[] = [
       return { scale: prm.from + (1 - prm.from) * e, opacity: e };
     },
   },
+  {
+    id: 'image.sketch',
+    category: 'image',
+    description: 'Renders the image as a hand-drawn pencil sketch (edge-detected line art), then dissolves to the real photo.',
+    tags: ['stylize', 'sketch', 'line-art', 'reveal'],
+    continuous: true,
+    params: { hold: { default: 0.6, min: 0, max: 1, desc: 'fraction held as sketch before dissolving (1 = stays a sketch)' } },
+    defaultDuration: 4,
+    apply: (p, prm) => {
+      // Crossfade from the SVG sketch filter to the real image after `hold`.
+      const fade = prm.hold >= 1 ? 0 : ease('easeInOutCubic', Math.max(0, (p - prm.hold) / (1 - prm.hold)));
+      // Reduce filter strength as we dissolve to the photo.
+      return fade >= 1 ? {} : { css: { filter: `url(#vgp-sketch)`, opacity: String(1 - fade * 0) } };
+    },
+  },
+  {
+    id: 'image.tilt-3d',
+    category: 'image',
+    description: 'Gentle 3D perspective tilt that settles flat — gives a photo physical depth.',
+    tags: ['3d', 'depth', 'cinematic'],
+    params: { angle: { default: 12, min: 0, max: 40, unit: 'deg' } },
+    defaultDuration: 1.2,
+    apply: (p, prm) => {
+      const e = ease('easeOutCubic', p);
+      return { css: { transform: `perspective(1200px) rotateY(${(1 - e) * prm.angle}deg)` }, opacity: ease('easeOut', p) };
+    },
+  },
 ];

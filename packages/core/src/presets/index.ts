@@ -2,8 +2,13 @@ import type { Preset } from '../preset';
 import { textPresets } from './text';
 import { imagePresets } from './image';
 import { transitionPresets } from './transition';
+import { enterPresets } from './enter';
+import { exitPresets } from './exit';
+import { audioPresets } from './audio';
 
-const ALL: Preset[] = [...textPresets, ...imagePresets, ...transitionPresets];
+const ALL: Preset[] = [
+  ...textPresets, ...imagePresets, ...enterPresets, ...exitPresets, ...audioPresets, ...transitionPresets,
+];
 
 export const REGISTRY: Map<string, Preset> = new Map(ALL.map((p) => [p.id, p]));
 
