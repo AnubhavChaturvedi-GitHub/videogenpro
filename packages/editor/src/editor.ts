@@ -19,6 +19,8 @@ const I: Record<string, string> = {
   image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
   video: '<rect x="2" y="2" width="20" height="20" rx="2"/><path d="M10 8l6 4-6 4V8z"/>',
   shape: '<rect x="4" y="4" width="16" height="16" rx="2"/>',
+  line: '<line x1="4" y1="12" x2="20" y2="12"/>',
+  undo: '<path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7L3 9"/>',
   cube: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><line x1="12" y1="13" x2="12" y2="21"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
@@ -50,10 +52,12 @@ type State = {
   playhead: number; playing: boolean; loop: boolean; pxPerSec: number; scale: number;
   offsets: number[]; total: number; lastSyncJson: string;
   panel: 'props' | 'anim'; cat: string;
+  history: string[]; histIndex: number;
 };
 const S: State = {
   ir: null, assetBase: '/', assets: [], selected: null, playhead: 0, playing: false, loop: true,
   pxPerSec: 120, scale: 1, offsets: [], total: 0, lastSyncJson: '', panel: 'props', cat: 'text',
+  history: [], histIndex: -1,
 };
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -92,19 +96,36 @@ function scheduleSave() {
   setDot('edited', 'editing');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
-    const body = JSON.stringify(S.ir); S.lastSyncJson = body; setDot('saving', 'saving');
+    const body = JSON.stringify(S.ir); S.lastSyncJson = body; pushHistory(body); setDot('saving', 'saving');
     try { const r = await fetch('/api/composition', { method: 'POST', headers: { 'content-type': 'application/json' }, body }); setDot(r.ok ? 'saved' : 'edited', r.ok ? 'synced' : 'invalid'); }
     catch { setDot('edited', 'offline'); }
   }, 250);
 }
+// undo/redo history — one entry per committed edit (debounced save)
+function pushHistory(json: string) {
+  if (json === S.history[S.histIndex]) return;
+  S.history = S.history.slice(0, S.histIndex + 1);
+  S.history.push(json);
+  if (S.history.length > 120) S.history.shift();
+  S.histIndex = S.history.length - 1;
+}
+function applyHistory() {
+  const json = S.history[S.histIndex]; if (!json) return;
+  S.ir = JSON.parse(json); S.lastSyncJson = json; S.selected = null;
+  derive(); mountPreview(); buildTimeline(); renderRight(); updateTime();
+  fetch('/api/composition', { method: 'POST', headers: { 'content-type': 'application/json' }, body: json }).catch(() => {});
+}
+function undo() { if (S.histIndex > 0) { S.histIndex--; applyHistory(); setDot('saved', 'undo ↶'); } else setDot('saved', 'nothing to undo'); }
+function redo() { if (S.histIndex < S.history.length - 1) { S.histIndex++; applyHistory(); setDot('saved', 'redo ↷'); } }
 const liveEdit = () => { liveSeek(); scheduleSave(); };
 const timingEdit = () => { liveSeek(); buildTimeline(); scheduleSave(); };
 const structuralEdit = () => { mountPreview(); buildTimeline(); renderRight(); scheduleSave(); };
-function setDoc(ir: any) { S.ir = ir; S.lastSyncJson = JSON.stringify(ir); S.selected = null; derive(); autoFit(); mountPreview(); buildTimeline(); renderRight(); updateTime(); }
+function setDoc(ir: any) { S.ir = ir; S.lastSyncJson = JSON.stringify(ir); S.selected = null; S.history = [S.lastSyncJson]; S.histIndex = 0; derive(); autoFit(); mountPreview(); buildTimeline(); renderRight(); updateTime(); }
 
 // ---------- layer factories ----------
 const newText = () => ({ type: 'text', text: 'New Text', style: { fontSize: '72px', color: '#ffffff' }, duration: 2, presets: [{ id: 'in.fade' }], transform: {} });
 const newShape = () => ({ type: 'shape', shape: 'rect', fill: '#6366f1', rect: { x: 440, y: 290, w: 400, h: 140 }, duration: 2, presets: [{ id: 'in.scale' }], transform: {} });
+const newLine = () => ({ type: 'shape', shape: 'line', fill: '#6ea8fe', rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: 'in.slide-left', params: { distance: 120 } }], transform: {} });
 const new3D = () => ({ type: 'three', scene: 'particles', props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
 const newAssetLayer = (a: any) => ({ type: a.type, src: a.src, fit: 'cover', duration: 2.5, presets: (a.type === 'image' ? [{ id: 'image.ken-burns' }] : []), transform: {} });
 function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); layer.start = Math.max(0, +(S.playhead - S.offsets[si]).toFixed(2)); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
@@ -352,12 +373,13 @@ async function init() {
   // static icons
   $('logoIcon').innerHTML = icon('spark'); $('fileIcon').innerHTML = icon('file'); $('expIcon').innerHTML = icon('download');
   $('i-text').innerHTML = icon('text'); $('i-shape').innerHTML = icon('shape'); $('i-3d').innerHTML = icon('cube'); $('i-up').innerHTML = icon('upload');
-  $('i-props').innerHTML = icon('sliders'); $('i-anim').innerHTML = icon('spark');
+  $('i-props').innerHTML = icon('sliders'); $('i-anim').innerHTML = icon('spark'); $('i-line').innerHTML = icon('line');
   $('tpStart').innerHTML = icon('start'); $('tpBack').innerHTML = icon('back'); $('tpFwd').innerHTML = icon('fwd'); $('tpLoop').innerHTML = icon('loop'); setPlayIcon();
   buildFileMenu();
 
   const data = await (await fetch('/api/composition')).json();
   S.ir = data.ir; S.assetBase = data.assetBase; S.lastSyncJson = JSON.stringify(S.ir);
+  S.history = [S.lastSyncJson]; S.histIndex = 0;
   derive(); autoFit(); mountPreview(); await VGP.ready();
   buildTimeline(); renderRight(); updateTime(); await loadAssets();
   requestAnimationFrame((t) => { last = t; loop(t); });
@@ -377,7 +399,7 @@ async function init() {
   $('importBtn').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json'; inp.onchange = () => { const f = inp.files?.[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { try { setDoc(JSON.parse(String(rd.result))); scheduleSave(); $('openModal').classList.remove('show'); } catch {} }; rd.readAsText(f); }; inp.click(); };
 
   // add-layer
-  $('addText').onclick = () => addLayerAtPlayhead(newText()); $('addShape').onclick = () => addLayerAtPlayhead(newShape()); $('add3D').onclick = () => addLayerAtPlayhead(new3D());
+  $('addText').onclick = () => addLayerAtPlayhead(newText()); $('addShape').onclick = () => addLayerAtPlayhead(newShape()); $('addLine').onclick = () => addLayerAtPlayhead(newLine()); $('add3D').onclick = () => addLayerAtPlayhead(new3D());
 
   // upload
   const fi = $('fileInput') as HTMLInputElement; $('drop').onclick = () => fi.click(); fi.onchange = () => fi.files && uploadFiles(fi.files);
@@ -414,6 +436,8 @@ async function init() {
     const tag = (e.target as HTMLElement).tagName; if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     const meta = e.metaKey || e.ctrlKey;
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); return; }
+    if (meta && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+    if (meta && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return; }
     if (meta && e.key.toLowerCase() === 's') { e.preventDefault(); saveJson(); return; }
     if (meta && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); return; }
     if (!meta && (e.key === 's' || e.key === 'S')) { splitSelected(); return; }
@@ -437,7 +461,7 @@ async function init() {
   const es = new EventSource('/api/events');
   es.onmessage = (ev) => {
     let m: any; try { m = JSON.parse(ev.data); } catch { return; }
-    if (m.t === 'doc') { const j = JSON.stringify(m.ir); if (j === S.lastSyncJson) return; S.ir = m.ir; S.lastSyncJson = j; derive(); mountPreview(); buildTimeline(); renderRight(); setDot('edited', 'agent edit ✦'); setTimeout(() => setDot('saved', 'synced'), 1400); }
+    if (m.t === 'doc') { const j = JSON.stringify(m.ir); if (j === S.lastSyncJson) return; S.ir = m.ir; S.lastSyncJson = j; pushHistory(j); derive(); mountPreview(); buildTimeline(); renderRight(); setDot('edited', 'agent edit ✦'); setTimeout(() => setDot('saved', 'synced'), 1400); }
     if (m.t === 'render') {
       showRender(true);
       if (m.state === 'rendering') { $('renderFill').style.width = m.pct + '%'; $('renderPct').textContent = m.pct + '%'; $('renderLabel').textContent = `Rendering frame ${m.done}/${m.total}`; }

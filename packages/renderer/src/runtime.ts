@@ -256,6 +256,7 @@ function buildLayer(layer: Layer, sceneDur: number): LayerNode {
     case 'shape': {
       el.style.background = layer.fill ?? '#fff';
       if (layer.shape === 'circle') el.style.borderRadius = '50%';
+      else if (layer.shape === 'line') el.style.borderRadius = '999px';
       else if (layer.radius) el.style.borderRadius = px(layer.radius);
       break;
     }

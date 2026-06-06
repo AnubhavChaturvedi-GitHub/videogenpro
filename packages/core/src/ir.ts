@@ -76,7 +76,7 @@ export interface ThreeLayer extends BaseLayer {
 
 export interface ShapeLayer extends BaseLayer {
   type: 'shape';
-  shape: 'rect' | 'circle';
+  shape: 'rect' | 'circle' | 'line';
   fill?: string;
   radius?: number;
 }
