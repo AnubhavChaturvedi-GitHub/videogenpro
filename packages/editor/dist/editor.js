@@ -4198,6 +4198,108 @@
         const e = ease("easeOutCubic", p);
         return { blur: (1 - e) * prm.blur, opacity: e };
       }
+    },
+    {
+      id: "text.drop",
+      category: "text",
+      description: "Text drops in from above and settles with a soft bounce.",
+      tags: ["enter", "vertical", "bouncy"],
+      params: { distance: { default: 80, min: 0, max: 400, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutBack", p);
+        return { y: -(1 - e) * prm.distance, opacity: ease("easeOut", p) };
+      }
+    },
+    {
+      id: "text.slam",
+      category: "text",
+      description: "Headline slams in from oversized with an impact blur \u2014 high energy.",
+      tags: ["enter", "impact", "bold"],
+      params: { from: { default: 1.8, min: 1, max: 4, desc: "start scale" } },
+      defaultDuration: 0.5,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { scale: prm.from - (prm.from - 1) * e, opacity: ease("easeOut", p), blur: (1 - e) * 12 };
+      }
+    },
+    {
+      id: "text.expand",
+      category: "text",
+      description: "Letters spread apart from tight tracking while fading in.",
+      tags: ["enter", "elegant", "tracking"],
+      params: { spacing: { default: 24, min: 0, max: 80, unit: "px" } },
+      defaultDuration: 0.7,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { opacity: e, css: { letterSpacing: `${(1 - e) * -prm.spacing}px` } };
+      }
+    },
+    {
+      id: "text.glitch",
+      category: "text",
+      description: "Digital glitch with RGB split that snaps into clean text.",
+      tags: ["enter", "glitch", "tech"],
+      params: { amount: { default: 6, min: 0, max: 24, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm, ctx) => {
+        const e = ease("easeOutCubic", p);
+        const j = (1 - e) * prm.amount;
+        return { x: Math.sin(ctx.time * 60) * j, opacity: ease("easeOut", p), css: { textShadow: `${j}px 0 #ff00d4, ${-j}px 0 #00e5ff` } };
+      }
+    },
+    {
+      id: "text.char-wave",
+      category: "text",
+      description: "Characters ripple up and down in a continuous wave.",
+      split: "char",
+      tags: ["ambient", "loop", "playful"],
+      continuous: true,
+      params: { amplitude: { default: 14, min: 0, max: 60, unit: "px" }, speed: { default: 3, min: 0.5, max: 10 } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => ({ y: Math.sin(ctx.time * prm.speed + ctx.index * 0.5) * prm.amplitude })
+    },
+    {
+      id: "text.gradient-sweep",
+      category: "text",
+      description: "A color gradient sweeps continuously across the letters.",
+      tags: ["ambient", "loop", "vibrant"],
+      continuous: true,
+      params: { speed: { default: 0.4, min: 0.1, max: 2 } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => ({
+        css: {
+          backgroundImage: "linear-gradient(90deg,#fff,#a78bfa,#6ea8fe,#34d399,#fff)",
+          backgroundSize: "200% 100%",
+          backgroundRepeat: "no-repeat",
+          backgroundPosition: `${-(ctx.time * prm.speed) % 1 * 200}% 0`,
+          webkitBackgroundClip: "text",
+          backgroundClip: "text",
+          color: "transparent"
+        }
+      })
+    },
+    {
+      id: "text.neon-glow",
+      category: "text",
+      description: "Soft neon glow that pulses around the text.",
+      tags: ["ambient", "loop", "neon"],
+      continuous: true,
+      params: { intensity: { default: 14, min: 0, max: 40, unit: "px" } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => ({ css: { textShadow: `0 0 ${prm.intensity * (0.6 + 0.4 * Math.sin(ctx.time * 3))}px currentColor` } })
+    },
+    {
+      id: "text.highlight",
+      category: "text",
+      description: "A marker sweeps a highlight bar behind the text (best on a fitted box).",
+      tags: ["emphasis", "marker"],
+      params: { color: { default: 0, desc: "0=violet 1=lime 2=pink (visual)" } },
+      defaultDuration: 0.8,
+      apply: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return { css: { backgroundImage: "linear-gradient(transparent 58%, rgba(167,139,250,.55) 58%)", backgroundRepeat: "no-repeat", backgroundSize: `${e * 100}% 100%` } };
+      }
     }
   ];
 
@@ -4291,6 +4393,73 @@
         const e = ease("easeOutCubic", p);
         return { css: { transform: `perspective(1200px) rotateY(${(1 - e) * prm.angle}deg)` }, opacity: ease("easeOut", p) };
       }
+    },
+    {
+      id: "image.zoom-out",
+      category: "image",
+      description: "Slow continuous zoom OUT \u2014 starts close, pulls back.",
+      tags: ["ambient", "cinematic"],
+      continuous: true,
+      params: { from: { default: 1.3, min: 1, max: 2, desc: "start scale" } },
+      defaultDuration: 5,
+      apply: (p, prm) => ({ scale: prm.from - (prm.from - 1) * ease("easeInOut", p) })
+    },
+    {
+      id: "image.breathe",
+      category: "image",
+      description: "Gentle continuous scale pulse, like a slow breath.",
+      tags: ["ambient", "loop", "subtle"],
+      continuous: true,
+      params: { amount: { default: 0.04, min: 0, max: 0.2 }, speed: { default: 1, min: 0.2, max: 4 } },
+      defaultDuration: 5,
+      apply: (_p, prm, ctx) => ({ scale: 1 + Math.sin(ctx.time * prm.speed) * prm.amount })
+    },
+    {
+      id: "image.grayscale-reveal",
+      category: "image",
+      description: "Image starts grayscale and blooms into full color.",
+      tags: ["stylize", "reveal", "color"],
+      continuous: true,
+      params: { hold: { default: 0.3, min: 0, max: 1, desc: "fraction held gray before color" } },
+      defaultDuration: 4,
+      apply: (p, prm) => {
+        const e = ease("easeInOutCubic", prm.hold >= 1 ? 0 : Math.max(0, (p - prm.hold) / (1 - prm.hold)));
+        return { css: { filter: `saturate(${e}) contrast(${1 + (1 - e) * 0.1})` } };
+      }
+    },
+    {
+      id: "image.blur-reveal",
+      category: "image",
+      description: "Image sharpens from a heavy blur while fading in.",
+      tags: ["enter", "soft", "cinematic"],
+      params: { blur: { default: 24, min: 0, max: 80, unit: "px" } },
+      defaultDuration: 0.8,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { blur: (1 - e) * prm.blur, opacity: e };
+      }
+    },
+    {
+      id: "image.swing",
+      category: "image",
+      description: "Image swings in on a slight tilt and settles upright.",
+      tags: ["enter", "playful"],
+      params: { angle: { default: 8, min: 0, max: 30, unit: "deg" } },
+      defaultDuration: 0.7,
+      apply: (p, prm) => {
+        const e = ease("easeOutBack", p);
+        return { rotate: -(1 - e) * prm.angle, scale: 0.85 + 0.15 * e, opacity: ease("easeOut", p) };
+      }
+    },
+    {
+      id: "image.duotone",
+      category: "image",
+      description: "Stylized duotone color grade applied to the image.",
+      tags: ["stylize", "grade"],
+      continuous: true,
+      params: { hue: { default: 200, min: 0, max: 360, unit: "deg" } },
+      defaultDuration: 4,
+      apply: (_p, prm) => ({ css: { filter: `grayscale(1) contrast(1.1) sepia(.5) hue-rotate(${prm.hue}deg) saturate(2.2)` } })
     }
   ];
 
@@ -4352,6 +4521,106 @@
           from: { opacity: 1 },
           to: { clipInset: [0, (1 - e) * 100, 0, 0], opacity: 1 }
         };
+      }
+    },
+    {
+      id: "transition.dissolve",
+      category: "transition",
+      description: "Soft blurred crossfade \u2014 dreamy dissolve between scenes.",
+      tags: ["soft", "blur"],
+      params: { blur: { default: 12, min: 0, max: 40, unit: "px" } },
+      defaultDuration: 0.7,
+      transition: (p, prm) => {
+        const e = ease("easeInOut", p);
+        return { from: { opacity: 1 - e, blur: e * prm.blur }, to: { opacity: e, blur: (1 - e) * prm.blur } };
+      }
+    },
+    {
+      id: "transition.push-up",
+      category: "transition",
+      description: "Incoming scene pushes the old one upward off-screen.",
+      tags: ["directional", "energetic"],
+      params: {},
+      defaultDuration: 0.6,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return { from: { css: { transform: `translateY(${-e * 100}%)` } }, to: { css: { transform: `translateY(${(1 - e) * 100}%)` } } };
+      }
+    },
+    {
+      id: "transition.circle-iris",
+      category: "transition",
+      description: "New scene irises open through an expanding circle.",
+      tags: ["shape", "reveal"],
+      params: {},
+      defaultDuration: 0.7,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return { from: { opacity: 1 }, to: { opacity: 1, css: { clipPath: `circle(${e * 75}% at 50% 50%)` } } };
+      }
+    },
+    {
+      id: "transition.flip-3d",
+      category: "transition",
+      description: "Scenes flip like the two faces of a rotating card.",
+      tags: ["3d", "modern"],
+      params: {},
+      defaultDuration: 0.7,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return {
+          from: { opacity: e < 0.5 ? 1 : 0, css: { transform: `perspective(1400px) rotateY(${-e * 90}deg)` } },
+          to: { opacity: e < 0.5 ? 0 : 1, css: { transform: `perspective(1400px) rotateY(${(1 - e) * 90}deg)` } }
+        };
+      }
+    },
+    {
+      id: "transition.zoom-blur",
+      category: "transition",
+      description: "Old scene rushes forward with motion blur as the new one zooms in.",
+      tags: ["punchy", "cinematic"],
+      params: {},
+      defaultDuration: 0.6,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return { from: { scale: 1 + 0.5 * e, opacity: 1 - e, blur: e * 14 }, to: { scale: 0.75 + 0.25 * e, opacity: e, blur: (1 - e) * 14 } };
+      }
+    },
+    {
+      id: "transition.dip-black",
+      category: "transition",
+      description: "Dips through black between scenes (classic film cut).",
+      tags: ["classic", "dramatic"],
+      params: {},
+      defaultDuration: 0.7,
+      transition: (p) => {
+        const e = ease("easeInOut", p);
+        return { from: { opacity: e < 0.5 ? 1 : 0, brightness: Math.max(0, 1 - 2 * e) }, to: { opacity: e < 0.5 ? 0 : 1, brightness: Math.max(0, 2 * e - 1) } };
+      }
+    },
+    {
+      id: "transition.glitch",
+      category: "transition",
+      description: "Glitchy digital tear between scenes.",
+      tags: ["glitch", "tech"],
+      params: { amount: { default: 16, min: 0, max: 60, unit: "px" } },
+      defaultDuration: 0.5,
+      transition: (p, prm) => {
+        const e = ease("easeInOut", p);
+        const j = Math.sin(p * 90) * prm.amount;
+        return { from: { opacity: 1 - e, x: j * (1 - e), css: { filter: `hue-rotate(${(1 - e) * 60}deg)` } }, to: { opacity: e, x: j * e } };
+      }
+    },
+    {
+      id: "transition.spin",
+      category: "transition",
+      description: "Scenes whirl out and in with a rotating zoom.",
+      tags: ["playful", "dynamic"],
+      params: {},
+      defaultDuration: 0.7,
+      transition: (p) => {
+        const e = ease("easeInOutCubic", p);
+        return { from: { rotate: e * 35, scale: 1 - 0.5 * e, opacity: 1 - e }, to: { rotate: -(1 - e) * 35, scale: 0.5 + 0.5 * e, opacity: e } };
       }
     }
   ];
@@ -4426,6 +4695,78 @@
         const e = ease("easeOutBack", p);
         return { rotate: (1 - e) * prm.turns * 360, scale: 0.4 + 0.6 * e, opacity: ease("easeOut", p) };
       }
+    },
+    {
+      id: "in.blur",
+      category: "in",
+      description: "Sharpens into focus from a soft blur while fading in.",
+      tags: ["enter", "soft", "cinematic"],
+      params: { blur: { default: 18, min: 0, max: 60, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { blur: (1 - e) * prm.blur, opacity: e };
+      }
+    },
+    {
+      id: "in.zoom",
+      category: "in",
+      description: "Zooms in from larger than life and settles to size.",
+      tags: ["enter", "punchy"],
+      params: { from: { default: 1.4, min: 1, max: 3, desc: "start scale" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { scale: prm.from - (prm.from - 1) * e, opacity: ease("easeOut", p) };
+      }
+    },
+    {
+      id: "in.drop",
+      category: "in",
+      description: "Drops in from above with a soft bounce.",
+      tags: ["enter", "vertical", "bouncy"],
+      params: { distance: { default: 120, min: 0, max: 600, unit: "px" } },
+      defaultDuration: 0.6,
+      apply: (p, prm) => {
+        const e = ease("easeOutBack", p);
+        return { y: -(1 - e) * prm.distance, opacity: ease("easeOut", p) };
+      }
+    },
+    {
+      id: "in.flip-x",
+      category: "in",
+      description: "Flips in around the horizontal axis (3D card flip).",
+      tags: ["enter", "3d"],
+      params: {},
+      defaultDuration: 0.6,
+      apply: (p) => {
+        const e = ease("easeOutCubic", p);
+        return { opacity: ease("easeOut", p), css: { transform: `perspective(1000px) rotateX(${(1 - e) * 90}deg)` } };
+      }
+    },
+    {
+      id: "in.flip-y",
+      category: "in",
+      description: "Flips in around the vertical axis (3D card flip).",
+      tags: ["enter", "3d"],
+      params: {},
+      defaultDuration: 0.6,
+      apply: (p) => {
+        const e = ease("easeOutCubic", p);
+        return { opacity: ease("easeOut", p), css: { transform: `perspective(1000px) rotateY(${(1 - e) * 90}deg)` } };
+      }
+    },
+    {
+      id: "in.skew",
+      category: "in",
+      description: "Slides in with a dynamic skew that straightens out.",
+      tags: ["enter", "energetic"],
+      params: { skew: { default: 20, min: 0, max: 60, unit: "deg" }, distance: { default: 80, min: 0, max: 400, unit: "px" } },
+      defaultDuration: 0.55,
+      apply: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        return { x: (1 - e) * prm.distance, opacity: ease("easeOut", p), css: { transform: `skewX(${(1 - e) * -prm.skew}deg)` } };
+      }
     }
   ];
 
@@ -4491,6 +4832,71 @@
       apply: (p, prm) => {
         const e = ease("easeIn", p);
         return { blur: e * prm.blur, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.zoom-out",
+      category: "out",
+      description: "Pushes toward the viewer and fades away.",
+      tags: ["exit", "punchy"],
+      params: { to: { default: 1.4, min: 1, max: 3, desc: "end scale" } },
+      defaultDuration: 0.5,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeIn", p);
+        return { scale: 1 + (prm.to - 1) * e, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.slide-left",
+      category: "out",
+      description: "Slides off to the left while fading out.",
+      tags: ["exit", "directional"],
+      params: { distance: { default: 120, min: 0, max: 800, unit: "px" } },
+      defaultDuration: 0.6,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeIn", p);
+        return { x: -e * prm.distance, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.slide-up",
+      category: "out",
+      description: "Lifts up and out while fading.",
+      tags: ["exit", "vertical"],
+      params: { distance: { default: 90, min: 0, max: 600, unit: "px" } },
+      defaultDuration: 0.6,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeIn", p);
+        return { y: -e * prm.distance, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.spin",
+      category: "out",
+      description: "Spins and shrinks away.",
+      tags: ["exit", "playful"],
+      params: { turns: { default: 0.6, min: 0, max: 3 } },
+      defaultDuration: 0.6,
+      fromEnd: true,
+      apply: (p, prm) => {
+        const e = ease("easeIn", p);
+        return { rotate: e * prm.turns * 360, scale: 1 - 0.6 * e, opacity: 1 - e };
+      }
+    },
+    {
+      id: "out.pop",
+      category: "out",
+      description: "Quick scale-up flicker then vanishes.",
+      tags: ["exit", "snappy"],
+      params: {},
+      defaultDuration: 0.4,
+      fromEnd: true,
+      apply: (p) => {
+        const e = ease("easeIn", p);
+        return { scale: 1 + 0.25 * Math.sin(e * Math.PI), opacity: 1 - e };
       }
     }
   ];
@@ -4612,7 +5018,7 @@
     assets: [],
     selected: null,
     playhead: 0,
-    playing: true,
+    playing: false,
     loop: true,
     pxPerSec: 120,
     scale: 1,

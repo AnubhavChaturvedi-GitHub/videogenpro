@@ -130,9 +130,14 @@ function applySceneDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
   el.style.transformOrigin = 'center center';
   el.style.transform = d.css.transform ? `${t} ${d.css.transform}` : t;
   el.style.opacity = String(clamp01(d.opacity));
+  const filters: string[] = [];
+  if (d.blur > 0.01) filters.push(`blur(${px(d.blur)})`);
+  if (Math.abs(d.brightness - 1) > 0.01) filters.push(`brightness(${d.brightness})`);
+  el.style.filter = d.css.filter ?? filters.join(' ');
   el.style.clipPath = d.clipInset
     ? `inset(${d.clipInset[0]}% ${d.clipInset[1]}% ${d.clipInset[2]}% ${d.clipInset[3]}%)`
-    : '';
+    : (d.css.clipPath ?? '');
+  for (const [k, v] of Object.entries(d.css)) { if (k !== 'transform' && k !== 'clipPath' && k !== 'filter') (el.style as any)[k] = v; }
 }
 
 function applyDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
@@ -262,6 +267,7 @@ function buildLayer(layer: Layer, sceneDur: number): LayerNode {
 function mount(c: Composition, opts?: { assetBase?: string }) {
   comp = c;
   assetBase = opts?.assetBase;
+  (window as any).__vgpMounts = ((window as any).__vgpMounts || 0) + 1;
   // dispose previous WebGL contexts before rebuilding (avoid context-limit leaks on live edit)
   for (const sn of sceneNodes) for (const ln of sn.layers) ln.three?.dispose?.();
   for (const a of audioEls) { a.el.pause(); a.el.remove(); }
@@ -358,9 +364,12 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
 async function seekVideo(v: HTMLVideoElement, time: number): Promise<void> {
   if (Math.abs(v.currentTime - time) < 0.001) return;
   await new Promise<void>((res) => {
-    const onSeeked = () => { v.removeEventListener('seeked', onSeeked); res(); };
-    v.addEventListener('seeked', onSeeked);
-    v.currentTime = time;
+    let done = false;
+    const finish = () => { if (done) return; done = true; v.removeEventListener('seeked', finish); res(); };
+    v.addEventListener('seeked', finish);
+    try { v.currentTime = time; } catch { finish(); }
+    // never hang the render if 'seeked' doesn't fire (headless decode stalls)
+    setTimeout(finish, 400);
   });
 }
 
@@ -375,10 +384,13 @@ function syncAudio(t: number, playing: boolean) {
     const target = (track.trimStart ?? 0) + Math.max(0, local);
     if (!active) { if (!el.paused) el.pause(); continue; }
     el.volume = track.volume ?? 1;
+    const e = el as any;
     if (playing) {
-      if (el.paused) { try { el.currentTime = target; } catch {} el.play().catch(() => {}); }
-      else if (Math.abs(el.currentTime - target) > 0.34) { try { el.currentTime = target; } catch {} }
+      // start once at the right offset, then let it play freely (its own clock stays
+      // in sync with the rAF playhead — re-seeking every frame causes stutter/silence)
+      if (el.paused && !e.__req) { e.__req = true; const tgt = target; try { el.currentTime = tgt; } catch {} el.play().then(() => { e.__req = false; if (Math.abs(el.currentTime - tgt) > 0.25) { try { el.currentTime = tgt; } catch {} } }).catch(() => { e.__req = false; }); }
     } else {
+      e.__req = false;
       if (!el.paused) el.pause();
       if (Math.abs(el.currentTime - target) > 0.05) { try { el.currentTime = target; } catch {} }
     }
@@ -399,7 +411,7 @@ async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
   const sceneLocalT = t - cur.offset;
 
   // reset visibility
-  sceneNodes.forEach((n) => { n.el.style.display = 'none'; n.el.style.transform = ''; n.el.style.opacity = '1'; n.el.style.clipPath = ''; });
+  sceneNodes.forEach((n) => { n.el.style.display = 'none'; n.el.style.transform = ''; n.el.style.opacity = '1'; n.el.style.clipPath = ''; n.el.style.filter = ''; });
 
   // transition handling (from previous scene into current)
   const transInst: PresetInstance | undefined = cur.scene.transitionIn ?? (i > 0 ? comp.defaultTransition : undefined);
@@ -423,7 +435,7 @@ async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
   }
   if (!inTransition) {
     cur.el.style.display = 'block';
-    cur.el.style.transform = ''; cur.el.style.opacity = '1'; cur.el.style.clipPath = '';
+    cur.el.style.transform = ''; cur.el.style.opacity = '1'; cur.el.style.clipPath = ''; cur.el.style.filter = '';
   }
 
   // render current scene layers
@@ -440,10 +452,11 @@ async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
     if (ln.el.style.display === 'none') { if (!v.paused) v.pause(); continue; }
     const vstart = ln.layer.start ?? 0;
     const target = Math.max(0, (ln.layer.type === 'video' ? (ln.layer.trimStart ?? 0) : 0) + (sceneLocalT - vstart));
+    const vv = v as any;
     if (playing) {
-      if (v.paused) { try { v.currentTime = target; } catch {} v.play().catch(() => {}); }
-      else if (Math.abs(v.currentTime - target) > 0.34) { try { v.currentTime = target; } catch {} }
+      if (v.paused && !vv.__req) { vv.__req = true; try { v.currentTime = target; } catch {} v.play().then(() => { vv.__req = false; }).catch(() => { vv.__req = false; }); }
     } else {
+      vv.__req = false;
       if (!v.paused) v.pause();
       pending.push(seekVideo(v, target));
     }

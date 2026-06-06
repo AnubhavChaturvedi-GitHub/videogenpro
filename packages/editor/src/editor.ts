@@ -52,7 +52,7 @@ type State = {
   panel: 'props' | 'anim'; cat: string;
 };
 const S: State = {
-  ir: null, assetBase: '/', assets: [], selected: null, playhead: 0, playing: true, loop: true,
+  ir: null, assetBase: '/', assets: [], selected: null, playhead: 0, playing: false, loop: true,
   pxPerSec: 120, scale: 1, offsets: [], total: 0, lastSyncJson: '', panel: 'props', cat: 'text',
 };
 

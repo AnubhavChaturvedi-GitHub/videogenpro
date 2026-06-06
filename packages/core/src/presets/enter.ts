@@ -33,4 +33,34 @@ export const enterPresets: Preset[] = [
     tags: ['enter', 'playful'], params: { turns: { default: 0.5, min: 0, max: 3, desc: 'rotations' } },
     defaultDuration: 0.7, apply: (p, prm) => { const e = ease('easeOutBack', p); return { rotate: (1 - e) * prm.turns * 360, scale: 0.4 + 0.6 * e, opacity: ease('easeOut', p) }; },
   },
+  {
+    id: 'in.blur', category: 'in', description: 'Sharpens into focus from a soft blur while fading in.',
+    tags: ['enter', 'soft', 'cinematic'], params: { blur: { default: 18, min: 0, max: 60, unit: 'px' } },
+    defaultDuration: 0.6, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { blur: (1 - e) * prm.blur, opacity: e }; },
+  },
+  {
+    id: 'in.zoom', category: 'in', description: 'Zooms in from larger than life and settles to size.',
+    tags: ['enter', 'punchy'], params: { from: { default: 1.4, min: 1, max: 3, desc: 'start scale' } },
+    defaultDuration: 0.6, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { scale: prm.from - (prm.from - 1) * e, opacity: ease('easeOut', p) }; },
+  },
+  {
+    id: 'in.drop', category: 'in', description: 'Drops in from above with a soft bounce.',
+    tags: ['enter', 'vertical', 'bouncy'], params: { distance: { default: 120, min: 0, max: 600, unit: 'px' } },
+    defaultDuration: 0.6, apply: (p, prm) => { const e = ease('easeOutBack', p); return { y: -(1 - e) * prm.distance, opacity: ease('easeOut', p) }; },
+  },
+  {
+    id: 'in.flip-x', category: 'in', description: 'Flips in around the horizontal axis (3D card flip).',
+    tags: ['enter', '3d'], params: {}, defaultDuration: 0.6,
+    apply: (p) => { const e = ease('easeOutCubic', p); return { opacity: ease('easeOut', p), css: { transform: `perspective(1000px) rotateX(${(1 - e) * 90}deg)` } }; },
+  },
+  {
+    id: 'in.flip-y', category: 'in', description: 'Flips in around the vertical axis (3D card flip).',
+    tags: ['enter', '3d'], params: {}, defaultDuration: 0.6,
+    apply: (p) => { const e = ease('easeOutCubic', p); return { opacity: ease('easeOut', p), css: { transform: `perspective(1000px) rotateY(${(1 - e) * 90}deg)` } }; },
+  },
+  {
+    id: 'in.skew', category: 'in', description: 'Slides in with a dynamic skew that straightens out.',
+    tags: ['enter', 'energetic'], params: { skew: { default: 20, min: 0, max: 60, unit: 'deg' }, distance: { default: 80, min: 0, max: 400, unit: 'px' } },
+    defaultDuration: 0.55, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { x: (1 - e) * prm.distance, opacity: ease('easeOut', p), css: { transform: `skewX(${(1 - e) * -prm.skew}deg)` } }; },
+  },
 ];
