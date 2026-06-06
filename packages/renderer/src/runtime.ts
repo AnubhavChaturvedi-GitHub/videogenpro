@@ -428,16 +428,13 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
       if (L.type !== 'fx') return;
       for (let j = idx - 1; j >= 0; j--) { const ty = (scene.layers[j] as any).type; if (ty !== 'fx' && ty !== 'overlay') { (fxByTarget[j] = fxByTarget[j] || []).push(L); break; } }
     });
-    // Build in source order (so fxByTarget index mapping stays valid). Overlays are
-    // kept composited on top by their high zIndex sentinel (the editor stamps overlays
-    // with zIndex 9000+i, which buildLayer applies to el.style.zIndex like every other
-    // layer). Since all layers are position:absolute siblings with explicit z-index,
-    // z-index is the load-bearing mechanism for content-vs-overlay stacking. The
-    // append-overlays-last loop below is a redundant safety net / tiebreaker only (it
-    // would matter solely if two layers shared an equal z-index).
+    // Build and append in source/array order, which equals z-order (the editor stamps
+    // zIndex = array index via normalizeZ). All layers are position:absolute siblings
+    // with explicit z-index, so z-index governs paint order; overlays are normal
+    // participants (no 9000+ band), so a backdrop-filter overlay filters exactly the
+    // layers painted below its z. Keeping DOM order == z-order keeps that correct.
     const layers = scene.layers.map((l, idx) => buildLayer(l, scene.duration, fxByTarget[idx] || []));
-    for (const ln of layers) if (ln.layer.type !== 'overlay') sEl.appendChild(ln.el);
-    for (const ln of layers) if (ln.layer.type === 'overlay') sEl.appendChild(ln.el);
+    for (const ln of layers) sEl.appendChild(ln.el);
     sceneNodes.push({ el: sEl, scene, layers, offset: offs[i] });
   });
 }

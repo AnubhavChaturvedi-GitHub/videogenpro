@@ -5388,7 +5388,7 @@
     const arr = S.ir.scenes[sceneIdx]?.layers;
     if (!arr) return;
     arr.forEach((L, i) => {
-      L.zIndex = L.type === "overlay" ? 9e3 + i : i;
+      L.zIndex = i;
     });
   }
   function timeAtClientX(clientX, rectLeft) {
@@ -5705,7 +5705,7 @@
       tag.innerHTML = icon("film" in I ? "film" : "video") + `Scene ${si + 1} \xB7 ${fmtClock(scene2.duration)}`;
       sr.appendChild(tag);
       inner.appendChild(sr);
-      const effZ = (layer2, i) => layer2.type === "overlay" ? 9e3 + i : i;
+      const effZ = (layer2, i) => layer2.zIndex ?? i;
       scene2.layers.map((layer2, li) => ({ layer: layer2, li, z: effZ(layer2, li) })).sort((a, b) => b.z - a.z).forEach(({ layer: layer2, li }) => {
         const track = el("div", "track");
         const label = el("div", "track-label");
@@ -5796,9 +5796,30 @@
           if (e.target === handle || e.button !== 0) return;
           e.preventDefault();
           const rectLeft = $("tlInner").getBoundingClientRect().left;
-          const sx = e.clientX, sy = e.clientY, os = layer2.start ?? 0;
+          const tl = $("tlScroll");
+          const sx = e.clientX, sy = e.clientY, os = layer2.start ?? 0, scrollStart = tl.scrollTop;
           let cand = os;
           let dyFinal = 0;
+          let lastY = sy;
+          let autoT = null;
+          const refreshReorder = () => {
+            dyFinal = lastY - sy + (tl.scrollTop - scrollStart);
+            clip.style.transform = `translateY(${dyFinal}px)`;
+            clip.style.zIndex = "60";
+            clip.style.opacity = ".85";
+          };
+          const autoTick = () => {
+            const r = tl.getBoundingClientRect();
+            const EDGE = 32, max = tl.scrollHeight - tl.clientHeight;
+            let d = 0;
+            if (lastY < r.top + EDGE) d = -Math.ceil((r.top + EDGE - lastY) / 4);
+            else if (lastY > r.bottom - EDGE) d = Math.ceil((lastY - (r.bottom - EDGE)) / 4);
+            const next = Math.max(0, Math.min(max, tl.scrollTop + d));
+            if (d && next !== tl.scrollTop) {
+              tl.scrollTop = next;
+              refreshReorder();
+            }
+          };
           let gesture = "";
           const trackH = clip.closest(".track")?.getBoundingClientRect().height || clip.getBoundingClientRect().height || 28;
           const isFullScene = layer2.duration == null && layer2.type !== "fx";
@@ -5810,23 +5831,29 @@
           }
           const sceneOff = S.offsets[si] ?? 0;
           const mv = (ev) => {
+            lastY = ev.clientY;
             const dx = ev.clientX - sx, dy = ev.clientY - sy;
-            if (!gesture && (Math.abs(dx) > 4 || Math.abs(dy) > 6)) gesture = Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6 ? "reorder" : "time";
+            if (!gesture && (Math.abs(dx) > 4 || Math.abs(dy) > 6)) {
+              gesture = Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6 ? "reorder" : "time";
+              if (gesture === "reorder" && !autoT) autoT = setInterval(autoTick, 16);
+            }
             if (gesture === "time") {
               const rawAbs = sceneOff + os + dx / S.pxPerSec;
               const snappedAbs = snapTime(rawAbs, sceneSnapTargets(si, scene2, li), ev.altKey);
               cand = clampStart(snappedAbs - sceneOff, maxStart);
               clip.style.left = LABELW + (sceneOff + cand) * S.pxPerSec + "px";
             } else if (gesture === "reorder") {
-              dyFinal = dy;
-              clip.style.transform = `translateY(${dy}px)`;
-              clip.style.zIndex = "60";
-              clip.style.opacity = ".85";
+              refreshReorder();
             }
           };
           const up = () => {
             window.removeEventListener("mousemove", mv);
             window.removeEventListener("mouseup", up);
+            window.removeEventListener("blur", up);
+            if (autoT) {
+              clearInterval(autoT);
+              autoT = null;
+            }
             if (gesture === "time") {
               layer2.start = clampStart(cand, maxStart);
               timingEdit();
@@ -5842,6 +5869,7 @@
           };
           window.addEventListener("mousemove", mv);
           window.addEventListener("mouseup", up);
+          window.addEventListener("blur", up, { once: true });
         };
         clip.ondblclick = (e) => {
           e.stopPropagation();
@@ -6482,59 +6510,32 @@
     const arr = S.ir.scenes[s].layers;
     const moved = arr[l];
     if (!moved) return;
-    const isOverlay = moved.type === "overlay";
-    const overlaySlots = [];
-    const contentSlots = [];
-    arr.forEach((L, i) => {
-      (L.type === "overlay" ? overlaySlots : contentSlots).push(i);
-    });
-    if (isOverlay) {
-      if (overlaySlots.length < 2) {
-        showToast("Only one overlay \u2014 nothing to reorder. Add another overlay to restack.");
-        return;
+    const units = [];
+    let cur = null;
+    arr.forEach((L) => {
+      if (L.type === "fx" && cur && cur[0].type !== "overlay") cur.push(L);
+      else {
+        cur = [L];
+        units.push(cur);
       }
-      const overlays = overlaySlots.map((i) => arr[i]);
-      let oi = overlays.indexOf(moved);
-      if (oi < 0) return;
-      let ni = oi;
-      if (mode === "top") ni = overlays.length - 1;
-      else if (mode === "bottom") ni = 0;
-      else if (mode === "up") ni = Math.min(overlays.length - 1, oi + 1);
-      else ni = Math.max(0, oi - 1);
-      if (ni === oi) return;
-      const [u] = overlays.splice(oi, 1);
-      overlays.splice(ni, 0, u);
-      overlaySlots.forEach((slot, k) => {
-        arr[slot] = overlays[k];
-      });
-    } else {
-      const contentArr = contentSlots.map((i) => arr[i]);
-      const units = [];
-      let curContent = null;
-      contentArr.forEach((L) => {
-        if (L.type === "fx" && curContent) curContent.push(L);
-        else {
-          curContent = [L];
-          units.push(curContent);
-        }
-      });
-      let ui = units.findIndex((u2) => u2.includes(moved));
-      if (ui < 0 || units.length < 2) return;
-      let ni = ui;
-      if (mode === "top") ni = units.length - 1;
-      else if (mode === "bottom") ni = 0;
-      else if (mode === "up") ni = Math.min(units.length - 1, ui + 1);
-      else ni = Math.max(0, ui - 1);
-      if (ni === ui) return;
-      const [u] = units.splice(ui, 1);
-      units.splice(ni, 0, u);
-      const flat = units.flat();
-      contentSlots.forEach((slot, k) => {
-        arr[slot] = flat[k];
-      });
+    });
+    const ui = units.findIndex((u2) => u2.includes(moved));
+    if (ui < 0) return;
+    if (units.length < 2) {
+      showToast("Nothing to reorder \u2014 only one layer in this scene.");
+      return;
     }
+    let ni = ui;
+    if (mode === "top") ni = units.length - 1;
+    else if (mode === "bottom") ni = 0;
+    else if (mode === "up") ni = Math.min(units.length - 1, ui + 1);
+    else ni = Math.max(0, ui - 1);
+    if (ni === ui) return;
+    const [u] = units.splice(ui, 1);
+    units.splice(ni, 0, u);
+    S.ir.scenes[s].layers = units.flat();
     normalizeZ(s);
-    S.selected = { s, l: arr.indexOf(moved) };
+    S.selected = { s, l: S.ir.scenes[s].layers.indexOf(moved) };
     structuralEdit();
   }
   var projTab = "comp";
@@ -6758,31 +6759,19 @@
     head.appendChild(del);
     p.appendChild(head);
     if (layer2.type === "overlay") {
-      const overlayCount = scene2.layers.filter((L) => L.type === "overlay").length;
       const note = el("div");
       note.style.cssText = "font-size:11px;color:var(--dim);margin-bottom:8px";
-      note.textContent = overlayCount > 1 ? "Overlays sit above all content; arrange restacks this overlay relative to other overlays." : "Overlays sit above all content. Add another overlay to restack them.";
+      note.textContent = "Adjustment layer \u2014 filters everything below it. Move it up/down to change which layers it affects.";
       p.appendChild(note);
-      if (overlayCount > 1) {
-        const arrange = el("div", "arrange");
-        [["arrTop", "To front", "top"], ["arrUp", "Forward", "up"], ["arrDown", "Backward", "down"], ["arrBot", "To back", "bottom"]].forEach(([ic, lbl, mode]) => {
-          const bn = el("button");
-          bn.innerHTML = icon(ic) + `<span>${lbl}</span>`;
-          bn.onclick = () => arrangeLayer(mode);
-          arrange.appendChild(bn);
-        });
-        p.appendChild(arrange);
-      }
-    } else {
-      const arrange = el("div", "arrange");
-      [["arrTop", "To front", "top"], ["arrUp", "Forward", "up"], ["arrDown", "Backward", "down"], ["arrBot", "To back", "bottom"]].forEach(([ic, lbl, mode]) => {
-        const bn = el("button");
-        bn.innerHTML = icon(ic) + `<span>${lbl}</span>`;
-        bn.onclick = () => arrangeLayer(mode);
-        arrange.appendChild(bn);
-      });
-      p.appendChild(arrange);
     }
+    const arrange = el("div", "arrange");
+    [["arrTop", "To front", "top"], ["arrUp", "Forward", "up"], ["arrDown", "Backward", "down"], ["arrBot", "To back", "bottom"]].forEach(([ic, lbl, mode]) => {
+      const bn = el("button");
+      bn.innerHTML = icon(ic) + `<span>${lbl}</span>`;
+      bn.onclick = () => arrangeLayer(mode);
+      arrange.appendChild(bn);
+    });
+    p.appendChild(arrange);
     if (layer2.type === "text") {
       const f = el("div", "field");
       const lab = el("label");

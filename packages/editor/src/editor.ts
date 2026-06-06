@@ -267,11 +267,13 @@ function resolveFxTarget(scene: any, idx: number): { layer: any; index: number }
 }
 // renormalise zIndex to match array (== paint) order across a scene's layers.
 // Single source of truth — called by every order-changing operation so paint
-// order and z-order never diverge. Overlays keep a high sentinel so they stay on
-// top, but ordered by array index among themselves.
+// order and z-order never diverge. Overlays are normal z-stack participants now
+// (no 9000+ band): an overlay's backdrop-filter affects only the layers painted
+// below its z, so moving it up/down changes what it filters. New overlays are
+// pushed to the end of the array, so they still default to the top of the stack.
 function normalizeZ(sceneIdx: number) {
   const arr = S.ir.scenes[sceneIdx]?.layers; if (!arr) return;
-  arr.forEach((L: any, i: number) => { L.zIndex = L.type === 'overlay' ? 9000 + i : i; });
+  arr.forEach((L: any, i: number) => { L.zIndex = i; });
 }
 // single source of truth for client-X -> timeline-time conversion (clip-click
 // seek and background scrub must stay mathematically identical). Optional cached
@@ -375,7 +377,7 @@ const newShape = () => ({ type: 'shape', shape: 'rect', fill: '#ffffff', rect: {
 const newLine = () => ({ type: 'shape', shape: 'line', fill: '#ffffff', rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: 'in.slide-left', params: { distance: 120 } }], transform: {} });
 const new3D = () => ({ type: 'three', scene: 'particles', props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
 // overlay duration comes from the preset's authored defaultDuration (B-overlay-dur);
-// zIndex is owned solely by normalizeZ (9000+i) so we don't stamp a transient
+// zIndex is owned solely by normalizeZ (= array index) so we don't stamp a transient
 // sentinel here that would diverge if normalizeZ were ever bypassed (B-overlay-z).
 const overlayLayerFromId = (id: string) => { const entry = MAN.get(id) as any; const effect = id.split('.')[1]; return { type: 'overlay', effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: entry?.defaultDuration ?? 5, presets: [{ id: 'in.fade' }], transform: {} }; };
 // an fx control-layer drives an effect (preset) onto the content layer below it
@@ -486,12 +488,11 @@ function buildTimeline() {
     const sr = el('div', 'scene-row');
     const tag = el('div', 'scene-tag'); tag.innerHTML = icon('film' in I ? 'film' : 'video') + `Scene ${si + 1} · ${fmtClock(scene.duration)}`; sr.appendChild(tag);
     inner.appendChild(sr);
-    // display front-most layer on top. Order rows by EFFECTIVE paint z, not raw
-    // array order: overlays paint at 9000+i so they ALWAYS sit above content
-    // regardless of array index (B-overlay-stack). Sorting by effective z (desc)
-    // makes the row order match what the runtime actually paints; li stays the
-    // real array index. Stable sort keeps array order among equal-class layers.
-    const effZ = (layer: any, i: number) => layer.type === 'overlay' ? 9000 + i : i;
+    // display front-most layer on top: order rows by paint z (descending), which now
+    // equals array index for EVERY layer (overlays included — no 9000+ band). li stays
+    // the real array index; stable sort keeps array order among any equal z. Keeping the
+    // row order == runtime paint order means moving an overlay up/down moves its row too.
+    const effZ = (layer: any, i: number) => layer.zIndex ?? i;
     scene.layers.map((layer: any, li: number) => ({ layer, li, z: effZ(layer, li) }))
       .sort((a: any, b: any) => b.z - a.z)
       .forEach(({ layer, li }: any) => {
@@ -549,7 +550,22 @@ function buildTimeline() {
       clip.onmousedown = (e: MouseEvent) => {
         if (e.target === handle || e.button !== 0) return; e.preventDefault();
         const rectLeft = $('tlInner').getBoundingClientRect().left; // cache before any rebuild (B-clip-click)
-        const sx = e.clientX, sy = e.clientY, os = layer.start ?? 0; let cand = os; let dyFinal = 0;
+        const tl = $('tlScroll');
+        const sx = e.clientX, sy = e.clientY, os = layer.start ?? 0, scrollStart = tl.scrollTop;
+        let cand = os; let dyFinal = 0; let lastY = sy; let autoT: any = null;
+        // reorder distance is measured in CONTENT space (pointerΔ + scrollΔ) so it keeps
+        // growing while the timeline auto-scrolls under a pinned cursor.
+        const refreshReorder = () => { dyFinal = (lastY - sy) + (tl.scrollTop - scrollStart); clip.style.transform = `translateY(${dyFinal}px)`; clip.style.zIndex = '60'; clip.style.opacity = '.85'; };
+        // while reordering with the cursor near the top/bottom edge, auto-scroll so
+        // off-screen tracks become reachable, then recompute the drag distance.
+        const autoTick = () => {
+          const r = tl.getBoundingClientRect(); const EDGE = 32, max = tl.scrollHeight - tl.clientHeight;
+          let d = 0;
+          if (lastY < r.top + EDGE) d = -Math.ceil((r.top + EDGE - lastY) / 4);
+          else if (lastY > r.bottom - EDGE) d = Math.ceil((lastY - (r.bottom - EDGE)) / 4);
+          const next = Math.max(0, Math.min(max, tl.scrollTop + d));
+          if (d && next !== tl.scrollTop) { tl.scrollTop = next; refreshReorder(); }
+        };
         // The gesture is decided on the first significant movement, then locked:
         //  - mostly-HORIZONTAL drag  -> MOVE the clip in time (start).
         //  - mostly-VERTICAL drag    -> REORDER the layer's z (up = toward front /
@@ -570,8 +586,12 @@ function buildTimeline() {
         if (layer.type === 'fx') { const tgt = resolveFxTarget(scene, li); const winMax = (tgt?.layer.start ?? 0) + (tgt?.layer.duration ?? scene.duration); maxStart = Math.max(0, winMax - 0.1); }
         const sceneOff = S.offsets[si] ?? 0;
         const mv = (ev: MouseEvent) => {
+          lastY = ev.clientY;
           const dx = ev.clientX - sx, dy = ev.clientY - sy;
-          if (!gesture && (Math.abs(dx) > 4 || Math.abs(dy) > 6)) gesture = (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6) ? 'reorder' : 'time';
+          if (!gesture && (Math.abs(dx) > 4 || Math.abs(dy) > 6)) {
+            gesture = (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6) ? 'reorder' : 'time';
+            if (gesture === 'reorder' && !autoT) autoT = setInterval(autoTick, 16); // edge auto-scroll while reordering
+          }
           if (gesture === 'time') {
             // B-snap: snap the clip's absolute START to nearby significant times
             // (playhead/scene seams/0/neighbour edges); Alt bypasses.
@@ -580,22 +600,21 @@ function buildTimeline() {
             cand = clampStart(snappedAbs - sceneOff, maxStart);
             clip.style.left = (LABELW + (sceneOff + cand) * S.pxPerSec) + 'px'; // visual only until commit
           } else if (gesture === 'reorder') {
-            dyFinal = dy;
-            clip.style.transform = `translateY(${dy}px)`; clip.style.zIndex = '60'; clip.style.opacity = '.85'; // drag feedback
+            refreshReorder();
           }
         };
         const up = () => {
-          window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up);
+          window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); window.removeEventListener('blur', up);
+          if (autoT) { clearInterval(autoT); autoT = null; }
           if (gesture === 'time') {
             // B-commit-reclamp: re-clamp against freshly-derived bounds so a stale
             // gesture basis can never commit an out-of-range start.
             layer.start = clampStart(cand, maxStart); timingEdit();
           } else if (gesture === 'reorder') {
-            // reorder by the number of track-rows dragged (drag up = Forward/front,
-            // down = Backward/back). select() first so arrangeLayer targets this layer;
-            // arrangeLayer keeps fx units + overlay banding correct and re-follows the
-            // moved layer in S.selected. buildTimeline() (via structuralEdit) replaces
-            // this element, clearing the inline drag feedback.
+            // reorder by the number of track-rows dragged in CONTENT space (includes any
+            // auto-scroll). select() first so arrangeLayer targets this layer; it keeps
+            // fx grouped with their content and re-follows the moved layer in S.selected.
+            // structuralEdit() rebuilds the timeline, clearing the inline drag feedback.
             select(si, li);
             const steps = Math.round(Math.abs(dyFinal) / trackH);
             const mode: 'up' | 'down' = dyFinal < 0 ? 'up' : 'down';
@@ -607,6 +626,7 @@ function buildTimeline() {
           }
         };
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+        window.addEventListener('blur', up, { once: true }); // safety: end the drag if mouseup lands off-window (also clears the auto-scroll timer)
       };
       // double-click also selects (kept for muscle memory; a plain click selects too now).
       clip.ondblclick = (e: MouseEvent) => { e.stopPropagation(); select(si, li); };
@@ -1097,54 +1117,25 @@ function arrangeLayer(mode: 'top' | 'up' | 'down' | 'bottom') {
   const { s, l } = S.selected; const arr = S.ir.scenes[s].layers;
   const moved = arr[l];
   if (!moved) return;
-  // B-overlay-arrange: an overlay's backdrop-filter affects everything painted below
-  // it (z 9000+arrayIndex). With ONE overlay, order is fixed (nothing to reorder).
-  // With TWO+ overlays the stacking order genuinely changes the output (a higher
-  // overlay filters the OUTPUT of a lower one — runtime maps overlay -> backdrop-
-  // filter), so the user must be able to reorder overlays WITHIN the overlay band.
-  // Overlays always stay above all content; only their relative order changes.
-  //
-  // B-overlay-noside-effect: reorder ONLY within the relevant category and keep
-  // every OTHER layer in its original array slot, so arranging content never moves
-  // an overlay (and vice versa) and the flatten can't reorder an overlay relative to
-  // a neighbouring fx as a side effect.
-  const isOverlay = moved.type === 'overlay';
-  // index slots in the original array that belong to each category
-  const overlaySlots: number[] = []; const contentSlots: number[] = [];
-  arr.forEach((L: any, i: number) => { (L.type === 'overlay' ? overlaySlots : contentSlots).push(i); });
-
-  if (isOverlay) {
-    if (overlaySlots.length < 2) { showToast('Only one overlay — nothing to reorder. Add another overlay to restack.'); return; }
-    // ordered list of overlay layers (by current array order)
-    const overlays = overlaySlots.map((i) => arr[i]);
-    let oi = overlays.indexOf(moved); if (oi < 0) return;
-    let ni = oi;
-    if (mode === 'top') ni = overlays.length - 1; else if (mode === 'bottom') ni = 0; else if (mode === 'up') ni = Math.min(overlays.length - 1, oi + 1); else ni = Math.max(0, oi - 1);
-    if (ni === oi) return;
-    const [u] = overlays.splice(oi, 1); overlays.splice(ni, 0, u);
-    // write the reordered overlays back into ONLY the overlay slots; content stays put
-    overlaySlots.forEach((slot, k) => { arr[slot] = overlays[k]; });
-  } else {
-    // group content layers into units so an fx travels with EXACTLY the content layer
-    // the runtime drives it onto (nearest non-fx, non-overlay below — runtime.ts:353).
-    // Overlays are excluded entirely here so they're never moved as a side effect.
-    const contentArr = contentSlots.map((i) => arr[i]);
-    const units: any[][] = []; let curContent: any[] | null = null;
-    contentArr.forEach((L: any) => {
-      if (L.type === 'fx' && curContent) curContent.push(L);
-      else { curContent = [L]; units.push(curContent); }
-    });
-    let ui = units.findIndex((u) => u.includes(moved)); if (ui < 0 || units.length < 2) return;
-    let ni = ui;
-    if (mode === 'top') ni = units.length - 1; else if (mode === 'bottom') ni = 0; else if (mode === 'up') ni = Math.min(units.length - 1, ui + 1); else ni = Math.max(0, ui - 1);
-    if (ni === ui) return;
-    const [u] = units.splice(ui, 1); units.splice(ni, 0, u);
-    const flat = units.flat();
-    // write the reordered content back into ONLY the content slots; overlays stay put
-    contentSlots.forEach((slot, k) => { arr[slot] = flat[k]; });
-  }
+  // Group layers into UNITS, then move the selected layer's unit up/down through the
+  // WHOLE stack. An fx travels with the content layer it sits on (so it's never split
+  // from its runtime target). Content layers and overlays are each their own unit head.
+  // Overlays are full z-stack participants now (no 9000+ band): an overlay sitting
+  // lower filters only the layers below it, so the user can place it anywhere.
+  const units: any[][] = []; let cur: any[] | null = null;
+  arr.forEach((L: any) => {
+    if (L.type === 'fx' && cur && cur[0].type !== 'overlay') cur.push(L);
+    else { cur = [L]; units.push(cur); }
+  });
+  const ui = units.findIndex((u) => u.includes(moved)); if (ui < 0) return;
+  if (units.length < 2) { showToast('Nothing to reorder — only one layer in this scene.'); return; }
+  let ni = ui;
+  if (mode === 'top') ni = units.length - 1; else if (mode === 'bottom') ni = 0; else if (mode === 'up') ni = Math.min(units.length - 1, ui + 1); else ni = Math.max(0, ui - 1);
+  if (ni === ui) return;
+  const [u] = units.splice(ui, 1); units.splice(ni, 0, u);
+  S.ir.scenes[s].layers = units.flat();
   normalizeZ(s); // single source of truth for z-order == paint order
-  S.selected = { s, l: arr.indexOf(moved) };
+  S.selected = { s, l: S.ir.scenes[s].layers.indexOf(moved) };
   structuralEdit();
 }
 // project views: Compositions (scenes) / Assets / Code
@@ -1243,31 +1234,20 @@ function buildProps() {
   const title = el('span'); title.textContent = layer.type === 'text' ? String(layer.text).slice(0, 16) : (layer.src ? String(layer.src).split('/').pop() : layer.type); title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
   const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => { scene.layers.splice(l, 1); normalizeZ(s); S.selected = null; structuralEdit(); }; head.appendChild(del); p.appendChild(head);
 
-  // arrange / z-order. Overlays always paint above all content (backdrop-filter), but
-  // when a scene has 2+ overlays their RELATIVE order is load-bearing (a higher
-  // overlay filters the output of a lower one), so arrange is enabled for overlays
-  // too — it restacks them WITHIN the overlay band (B-overlay-arrange).
+  // arrange / z-order. Every layer — content AND overlays — lives in one z-stack now:
+  // use these (or drag the clip vertically) to move it up/down. An overlay is an
+  // adjustment layer that filters everything BELOW it, so moving it changes what it
+  // affects (it defaults to the top of the stack when first added).
   if (layer.type === 'overlay') {
-    const overlayCount = scene.layers.filter((L: any) => L.type === 'overlay').length;
     const note = el('div'); note.style.cssText = 'font-size:11px;color:var(--dim);margin-bottom:8px';
-    note.textContent = overlayCount > 1
-      ? 'Overlays sit above all content; arrange restacks this overlay relative to other overlays.'
-      : 'Overlays sit above all content. Add another overlay to restack them.';
+    note.textContent = 'Adjustment layer — filters everything below it. Move it up/down to change which layers it affects.';
     p.appendChild(note);
-    if (overlayCount > 1) {
-      const arrange = el('div', 'arrange');
-      ([['arrTop', 'To front', 'top'], ['arrUp', 'Forward', 'up'], ['arrDown', 'Backward', 'down'], ['arrBot', 'To back', 'bottom']] as const).forEach(([ic, lbl, mode]) => {
-        const bn = el('button'); bn.innerHTML = icon(ic) + `<span>${lbl}</span>`; bn.onclick = () => arrangeLayer(mode as any); arrange.appendChild(bn);
-      });
-      p.appendChild(arrange);
-    }
-  } else {
-    const arrange = el('div', 'arrange');
-    ([['arrTop', 'To front', 'top'], ['arrUp', 'Forward', 'up'], ['arrDown', 'Backward', 'down'], ['arrBot', 'To back', 'bottom']] as const).forEach(([ic, lbl, mode]) => {
-      const bn = el('button'); bn.innerHTML = icon(ic) + `<span>${lbl}</span>`; bn.onclick = () => arrangeLayer(mode as any); arrange.appendChild(bn);
-    });
-    p.appendChild(arrange);
   }
+  const arrange = el('div', 'arrange');
+  ([['arrTop', 'To front', 'top'], ['arrUp', 'Forward', 'up'], ['arrDown', 'Backward', 'down'], ['arrBot', 'To back', 'bottom']] as const).forEach(([ic, lbl, mode]) => {
+    const bn = el('button'); bn.innerHTML = icon(ic) + `<span>${lbl}</span>`; bn.onclick = () => arrangeLayer(mode as any); arrange.appendChild(bn);
+  });
+  p.appendChild(arrange);
 
   if (layer.type === 'text') {
     const f = el('div', 'field'); const lab = el('label'); lab.textContent = 'text'; f.appendChild(lab);
