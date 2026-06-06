@@ -58,6 +58,7 @@ const CATS = [
   { key: 'audio', label: 'Audio', icon: 'spark' },
   { key: 'in', label: 'Fade In', icon: 'plus' },
   { key: 'out', label: 'Fade Out', icon: 'plus' },
+  { key: 'overlay', label: 'Overlays', icon: 'sliders' },
   { key: 'transition', label: 'Transitions', icon: 'loop' },
 ];
 
@@ -221,6 +222,10 @@ function buildTimeline() {
       clip.innerHTML = icon(typeIco[layer.type] ?? 'shape') + `<span>${layer.type === 'text' ? String(layer.text).slice(0, 12) : layer.type}</span>`;
       if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add('sel');
       const handle = el('div', 'handle'); clip.appendChild(handle);
+      // drop an effect/overlay preset card directly onto this clip's layer
+      clip.addEventListener('dragover', (e: DragEvent) => { if (e.dataTransfer?.types.includes('application/x-vgp-preset')) { e.preventDefault(); clip.style.outline = '2px solid #fff'; } });
+      clip.addEventListener('dragleave', () => { clip.style.outline = ''; });
+      clip.addEventListener('drop', (e: DragEvent) => { e.preventDefault(); clip.style.outline = ''; const id = e.dataTransfer?.getData('application/x-vgp-preset'); if (id) { layer.presets = layer.presets || []; layer.presets.push({ id, params: {} }); S.selected = { s: si, l: li }; S.playhead = S.offsets[si] + (layer.start ?? 0) + 0.05; structuralEdit(); showToast('Added ' + id.split('.')[1].replace(/-/g, ' ')); } });
       clip.onmousedown = (e: MouseEvent) => {
         if (e.target === handle) return; e.preventDefault();
         const sx = e.clientX, os = layer.start ?? 0; let moved = false;
@@ -531,10 +536,10 @@ function buildLibrary() {
   const grid = el('div', 'anim-grid');
   MANIFEST.filter((e) => e.category === S.cat).forEach((e) => {
     const card = el('div', 'anim-card');
-    const nm = el('div', 'nm'); nm.innerHTML = icon('spark') + e.id.split('.')[1]; card.appendChild(nm);
-    const ds = el('div', 'ds'); ds.textContent = e.description + (e.category === 'transition' ? ' · drag onto a scene seam ◆' : ''); card.appendChild(ds);
+    const nm = el('div', 'nm'); nm.innerHTML = icon('spark') + e.id.split('.')[1].replace(/-/g, ' '); card.appendChild(nm);
     card.onclick = () => applyFromLibrary(e);
-    if (e.category === 'transition') { card.draggable = true; card.ondragstart = (ev: any) => ev.dataTransfer.setData('application/x-vgp-transition', e.id); }
+    card.draggable = true;
+    card.ondragstart = (ev: any) => ev.dataTransfer.setData(e.category === 'transition' ? 'application/x-vgp-transition' : 'application/x-vgp-preset', e.id);
     grid.appendChild(card);
   });
   p.appendChild(grid);
@@ -603,7 +608,7 @@ async function runExport() {
 // ---------- init ----------
 async function init() {
   // static icons
-  $('logoIcon').innerHTML = icon('spark'); $('fileIcon').innerHTML = icon('file'); $('expIcon').innerHTML = icon('download');
+  $('fileIcon').innerHTML = icon('file'); $('expIcon').innerHTML = icon('download'); // logo is the inline animated SVG
   $('i-text').innerHTML = icon('text'); $('i-shape').innerHTML = icon('shape'); $('i-3d').innerHTML = icon('cube'); $('i-up').innerHTML = icon('upload');
   $('i-props').innerHTML = icon('sliders'); $('i-anim').innerHTML = icon('spark'); $('i-line').innerHTML = icon('line');
   $('i-undo').innerHTML = icon('undo'); $('i-redo').innerHTML = icon('redo'); $('i-split').innerHTML = icon('split'); $('i-dup').innerHTML = icon('copy'); $('i-del').innerHTML = icon('trash'); $('i-fit').innerHTML = icon('fit');

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>VideoGenPro Studio</title>
+  <link rel="icon" type="image/svg+xml" href="/packages/editor/logo.svg" />
   <style>
     @font-face { font-family:'Bree Serif'; src:url('/packages/editor/BreeSerif.woff2') format('woff2'); font-weight:400; font-display:block; }
     :root {
@@ -55,8 +56,8 @@
 
     .topbar { display:flex; align-items:center; gap:13px; padding:0 18px; background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-bottom:1px solid var(--border); position:relative; z-index:50; box-shadow:var(--hi); }
     .brand { font-weight:800; letter-spacing:.3px; display:flex; align-items:center; gap:9px; font-size:16px; }
-    .brand .logo { width:30px; height:30px; border-radius:10px; background:var(--accent-grad); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(255,255,255,.5),var(--hi); }
-    .brand .logo svg { width:16px; height:16px; stroke:#000000; }
+    .brand .logo { width:30px; height:30px; display:flex; align-items:center; justify-content:center; }
+    .brand .logo img { width:30px; height:30px; display:block; }
     .brand b span, .brand .grad { background:var(--accent-grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
     .spacer { flex:1; }
     .menu-wrap { position:relative; }
@@ -117,12 +118,13 @@
     .cat { padding:6px 12px; border-radius:100px; font-size:11px; font-weight:600; background:var(--glass-2); border:1px solid var(--border); color:var(--dim); }
     .cat.on { background:var(--accent-grad); color:#000000; border-color:transparent; font-weight:700; }
     .cat:hover { color:var(--text); }
-    .anim-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
-    .anim-card { background:var(--glass-2); border:1px solid var(--border); border-radius:13px; padding:11px; cursor:pointer; transition:.15s; box-shadow:var(--hi); }
-    .anim-card:hover { border-color:var(--accent); transform:translateY(-2px); box-shadow:var(--glow); background:var(--glass-3); }
-    .anim-card .nm { font-size:11.5px; font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:5px; }
-    .anim-card .nm svg { width:13px; height:13px; color:var(--accent); }
-    .anim-card .ds { font-size:10px; color:var(--dim); line-height:1.4; }
+    /* compact name-only effect list (line by line) */
+    .anim-grid { display:flex; flex-direction:column; gap:5px; }
+    .anim-card { background:var(--glass-2); border:1px solid var(--border); border-radius:9px; padding:8px 11px; cursor:grab; transition:.12s; display:flex; align-items:center; gap:8px; }
+    .anim-card:hover { border-color:var(--accent); background:var(--glass-3); }
+    .anim-card:active { cursor:grabbing; }
+    .anim-card .nm { font-size:12px; font-weight:600; display:flex; align-items:center; gap:7px; text-transform:capitalize; }
+    .anim-card .nm svg { width:13px; height:13px; color:var(--dim); }
     .preset-card { background:var(--glass-2); border:1px solid var(--border); border-radius:13px; padding:11px; margin-bottom:9px; box-shadow:var(--hi); }
     .preset-card .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
     .preset-card .head b { font-size:12px; color:#ffffff; }
@@ -237,7 +239,7 @@
   <div id="toast"></div>
   <div id="app">
     <div class="topbar">
-      <div class="brand"><span class="logo" id="logoIcon"></span><b>VIDEO<span>GEN</span>PRO</b></div>
+      <div class="brand"><span class="logo" id="logoIcon"><img src="/packages/editor/logo.svg" width="30" height="30" alt="logo"/></span><b>VIDEO<span>GEN</span>PRO</b></div>
       <div class="menu-wrap">
         <button class="btn" id="fileBtn"><span id="fileIcon"></span>File</button>
         <div class="menu" id="fileMenu"></div>

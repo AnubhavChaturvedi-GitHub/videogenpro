@@ -5,9 +5,10 @@ import { transitionPresets } from './transition';
 import { enterPresets } from './enter';
 import { exitPresets } from './exit';
 import { audioPresets } from './audio';
+import { overlayPresets } from './overlay';
 
 const ALL: Preset[] = [
-  ...textPresets, ...imagePresets, ...enterPresets, ...exitPresets, ...audioPresets, ...transitionPresets,
+  ...textPresets, ...imagePresets, ...enterPresets, ...exitPresets, ...audioPresets, ...overlayPresets, ...transitionPresets,
 ];
 
 export const REGISTRY: Map<string, Preset> = new Map(ALL.map((p) => [p.id, p]));

@@ -1,0 +1,16 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="vgb" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00D4FF"/>
+      <stop offset="35%" stop-color="#00FFB3"/>
+      <stop offset="70%" stop-color="#7B61FF"/>
+      <stop offset="100%" stop-color="#FF4FCB"/>
+    </linearGradient>
+  </defs>
+  <path
+    d="M50 100 C50 60 90 60 100 100 C110 140 150 140 150 100 C150 60 110 60 100 100 C90 140 50 140 50 100Z"
+    fill="none" stroke="url(#vgb)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"
+    stroke-dasharray="500" stroke-dashoffset="500">
+    <animate attributeName="stroke-dashoffset" values="500;0;-500" dur="4s" repeatCount="indefinite"/>
+  </path>
+</svg>

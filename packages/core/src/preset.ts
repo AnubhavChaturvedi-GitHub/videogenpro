@@ -39,7 +39,7 @@ export type ApplyCtx = {
 
 // Categories double as the Animation Library tabs in the editor:
 //   text · image (video) · audio · in (fade-in) · out (fade-out) · transition
-export type PresetCategory = 'text' | 'image' | 'audio' | 'in' | 'out' | 'layer' | 'transition';
+export type PresetCategory = 'text' | 'image' | 'audio' | 'in' | 'out' | 'overlay' | 'layer' | 'transition';
 
 export type Preset = {
   id: string;

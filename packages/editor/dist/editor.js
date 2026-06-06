@@ -4976,6 +4976,110 @@
     }
   ];
 
+  // packages/core/src/presets/overlay.ts
+  var overlayPresets = [
+    {
+      id: "overlay.blur",
+      category: "overlay",
+      description: "blur",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 8, min: 0, max: 40, unit: "px" } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `blur(${prm.amount}px)` } })
+    },
+    {
+      id: "overlay.black-white",
+      category: "overlay",
+      description: "black & white",
+      tags: ["filter", "mono"],
+      continuous: true,
+      params: { amount: { default: 1, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `grayscale(${prm.amount})` } })
+    },
+    {
+      id: "overlay.sepia",
+      category: "overlay",
+      description: "sepia",
+      tags: ["filter", "warm"],
+      continuous: true,
+      params: { amount: { default: 0.8, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `sepia(${prm.amount})` } })
+    },
+    {
+      id: "overlay.brighten",
+      category: "overlay",
+      description: "brighten",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 0.3, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `brightness(${1 + prm.amount})` } })
+    },
+    {
+      id: "overlay.darken",
+      category: "overlay",
+      description: "darken",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 0.4, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `brightness(${1 - prm.amount})` } })
+    },
+    {
+      id: "overlay.contrast",
+      category: "overlay",
+      description: "contrast",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 0.4, min: 0, max: 1.5 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `contrast(${1 + prm.amount})` } })
+    },
+    {
+      id: "overlay.saturate",
+      category: "overlay",
+      description: "saturate",
+      tags: ["filter", "color"],
+      continuous: true,
+      params: { amount: { default: 1.6, min: 0, max: 3 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `saturate(${prm.amount})` } })
+    },
+    {
+      id: "overlay.fade",
+      category: "overlay",
+      description: "fade",
+      tags: ["dim"],
+      continuous: true,
+      params: { amount: { default: 0.5, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ opacity: 1 - prm.amount })
+    },
+    {
+      id: "overlay.vignette",
+      category: "overlay",
+      description: "vignette",
+      tags: ["cinematic"],
+      continuous: true,
+      params: { amount: { default: 0.7, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { boxShadow: `inset 0 0 140px ${40 * prm.amount}px rgba(0,0,0,${0.85 * prm.amount})` } })
+    },
+    {
+      id: "overlay.invert",
+      category: "overlay",
+      description: "invert",
+      tags: ["filter"],
+      continuous: true,
+      params: { amount: { default: 1, min: 0, max: 1 } },
+      defaultDuration: 5,
+      apply: (_p, prm) => ({ css: { filter: `invert(${prm.amount})` } })
+    }
+  ];
+
   // packages/core/src/presets/index.ts
   var ALL = [
     ...textPresets,
@@ -4983,6 +5087,7 @@
     ...enterPresets,
     ...exitPresets,
     ...audioPresets,
+    ...overlayPresets,
     ...transitionPresets
   ];
   var REGISTRY = new Map(ALL.map((p) => [p.id, p]));
@@ -5050,6 +5155,7 @@
     { key: "audio", label: "Audio", icon: "spark" },
     { key: "in", label: "Fade In", icon: "plus" },
     { key: "out", label: "Fade Out", icon: "plus" },
+    { key: "overlay", label: "Overlays", icon: "sliders" },
     { key: "transition", label: "Transitions", icon: "loop" }
   ];
   var S = {
@@ -5345,6 +5451,28 @@
         if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add("sel");
         const handle = el("div", "handle");
         clip.appendChild(handle);
+        clip.addEventListener("dragover", (e) => {
+          if (e.dataTransfer?.types.includes("application/x-vgp-preset")) {
+            e.preventDefault();
+            clip.style.outline = "2px solid #fff";
+          }
+        });
+        clip.addEventListener("dragleave", () => {
+          clip.style.outline = "";
+        });
+        clip.addEventListener("drop", (e) => {
+          e.preventDefault();
+          clip.style.outline = "";
+          const id = e.dataTransfer?.getData("application/x-vgp-preset");
+          if (id) {
+            layer2.presets = layer2.presets || [];
+            layer2.presets.push({ id, params: {} });
+            S.selected = { s: si, l: li };
+            S.playhead = S.offsets[si] + (layer2.start ?? 0) + 0.05;
+            structuralEdit();
+            showToast("Added " + id.split(".")[1].replace(/-/g, " "));
+          }
+        });
         clip.onmousedown = (e) => {
           if (e.target === handle) return;
           e.preventDefault();
@@ -6046,16 +6174,11 @@
     MANIFEST.filter((e) => e.category === S.cat).forEach((e) => {
       const card = el("div", "anim-card");
       const nm = el("div", "nm");
-      nm.innerHTML = icon("spark") + e.id.split(".")[1];
+      nm.innerHTML = icon("spark") + e.id.split(".")[1].replace(/-/g, " ");
       card.appendChild(nm);
-      const ds = el("div", "ds");
-      ds.textContent = e.description + (e.category === "transition" ? " \xB7 drag onto a scene seam \u25C6" : "");
-      card.appendChild(ds);
       card.onclick = () => applyFromLibrary(e);
-      if (e.category === "transition") {
-        card.draggable = true;
-        card.ondragstart = (ev) => ev.dataTransfer.setData("application/x-vgp-transition", e.id);
-      }
+      card.draggable = true;
+      card.ondragstart = (ev) => ev.dataTransfer.setData(e.category === "transition" ? "application/x-vgp-transition" : "application/x-vgp-preset", e.id);
       grid.appendChild(card);
     });
     p.appendChild(grid);
@@ -6202,7 +6325,6 @@
     });
   }
   async function init() {
-    $("logoIcon").innerHTML = icon("spark");
     $("fileIcon").innerHTML = icon("file");
     $("expIcon").innerHTML = icon("download");
     $("i-text").innerHTML = icon("text");
