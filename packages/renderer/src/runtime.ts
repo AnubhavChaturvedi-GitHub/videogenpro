@@ -296,8 +296,11 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
   (window as any).__vgpMounts = ((window as any).__vgpMounts || 0) + 1;
   // dispose previous WebGL contexts before rebuilding (avoid context-limit leaks on live edit)
   for (const sn of sceneNodes) for (const ln of sn.layers) ln.three?.dispose?.();
-  for (const a of audioEls) { a.el.pause(); a.el.remove(); }
-  audioEls = [];
+  // AUDIO IS NOT TORN DOWN HERE. The visual DOM (stage) is fully rebuilt on every
+  // re-mount (cheap, no playback state), but <audio> elements carry live playback
+  // state (currentTime / play state) that must survive structural edits. We reconcile
+  // them below instead of disposing+recreating, so narration never restarts on a click.
+  reconcileAudio(c);
   stage = document.getElementById('stage') as HTMLDivElement;
   stage.style.width = px(c.width);
   stage.style.height = px(c.height);
@@ -322,15 +325,48 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
     });
     sceneNodes.push({ el: sEl, scene, layers, offset: offs[i] });
   });
+}
 
-  // audio tracks (voiceover / music) — hidden <audio> elements outside the stage
-  audioEls = ((c as any).audio ?? []).map((track: any) => {
+// Reconcile audio tracks across re-mounts so editing/clicking never restarts narration.
+//
+// ALGORITHM:
+//  1. Resolve the new composition's `audio[]` srcs (in order) to absolute URLs.
+//  2. Build the list of currently-mounted resolved srcs (in order).
+//  3. If the two lists are STRUCTURALLY IDENTICAL (same length, same resolved src at
+//     every index), it's a pure-reuse case: keep every existing <audio> element exactly
+//     as-is (its currentTime + play state are preserved) and only re-point each kept
+//     element's `track` reference to the NEW track object so updated start / volume /
+//     duration / trimStart are honored on the next syncAudio() call. No DOM churn.
+//  4. Otherwise the audio set genuinely changed (added/removed/reordered/different src):
+//     fully recreate. We pause+remove every old element and build fresh ones. (A finer
+//     per-src diff is possible, but reorder/dedupe ambiguity makes full recreate the
+//     safe, deterministic choice; the common live-edit path is the identical case in 3.)
+//
+// In all cases the final `audioEls` array has exactly one entry per new track and each
+// element is appended to document.body exactly once (no duplicates, no leaks).
+function reconcileAudio(c: Composition) {
+  const tracks: any[] = (c as any).audio ?? [];
+  const newSrcs = tracks.map((t) => resolveSrc(t.src));
+  const oldSrcs = audioEls.map((a) => resolveSrc(a.track.src));
+
+  const sameSet = newSrcs.length === oldSrcs.length
+    && newSrcs.every((s, i) => s === oldSrcs[i]);
+
+  if (sameSet) {
+    // Pure reuse: keep elements & playback, just adopt the new track objects.
+    audioEls = audioEls.map((a, i) => ({ el: a.el, track: tracks[i] }));
+    return;
+  }
+
+  // Structural change: tear down old, build fresh.
+  for (const a of audioEls) { a.el.pause(); a.el.remove(); }
+  audioEls = tracks.map((track) => {
     const el = document.createElement('audio');
     el.src = resolveSrc(track.src);
     el.preload = 'auto';
     el.volume = track.volume ?? 1;
     el.addEventListener('loadedmetadata', () => { try { (window as any).__vgpAudioReady?.(); } catch {} });
-    document.body.appendChild(el);
+    document.body.appendChild(el); // appended exactly once (these are brand-new elements)
     return { el, track };
   });
 }

@@ -101,12 +101,19 @@ function fit() {
   S.scale = s;
   const sc = $('scaler'); sc.style.width = S.ir.width + 'px'; sc.style.height = S.ir.height + 'px'; sc.style.transform = `scale(${s})`;
 }
-function mountPreview() { VGP.mount(S.ir, { assetBase: baseUrl() }); fit(); VGP.seek(S.playhead); }
-const liveSeek = () => VGP.seek(S.playhead);
+function mountPreview() { VGP.mount(S.ir, { assetBase: baseUrl() }); fit(); VGP.seek(S.playhead, { playing: S.playing }); }
+const liveSeek = () => VGP.seek(S.playhead, { playing: S.playing });
 
 // ---------- sync ----------
 let saveTimer: any;
 function setDot(state: string, text?: string) { $('syncDot').className = 'dot ' + state; $('syncText').textContent = text ?? state; }
+// non-blocking top-center toast — auto-hides after ~2s, resets any prior timer
+let toastTimer: any;
+function showToast(msg: string) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+}
 function scheduleSave() {
   setDot('edited', 'editing');
   clearTimeout(saveTimer);
@@ -341,9 +348,10 @@ function addKeyframe(prop: string) {
 }
 function clearKeyframes(prop: string) { if (!S.selected) return; const layer = S.ir.scenes[S.selected.s].layers[S.selected.l]; if (layer.keyframes) { delete layer.keyframes[prop]; structuralEdit(); } }
 function splitSelected() {
-  if (!S.selected) return; const { s, l } = S.selected; const scene = S.ir.scenes[s]; const layer = scene.layers[l];
+  if (!S.selected) { showToast('Please select a layer to split.'); return; }
+  const { s, l } = S.selected; const scene = S.ir.scenes[s]; const layer = scene.layers[l];
   const ls = layer.start ?? 0, ld = layer.duration ?? scene.duration; const local = S.playhead - (S.offsets[s] + ls);
-  if (local <= 0.05 || local >= ld - 0.05) { setDot('edited', 'move playhead over clip'); return; }
+  if (local <= 0.05 || local >= ld - 0.05) { showToast('Move the playhead over the clip to split.'); return; }
   const second = JSON.parse(JSON.stringify(layer));
   layer.duration = +local.toFixed(2); second.start = +(ls + local).toFixed(2); second.duration = +(ld - local).toFixed(2);
   // B07: keyframe times are layer-local, so the second half must shift by -local
@@ -589,6 +597,7 @@ async function init() {
     if (meta && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return; }
     if (meta && e.key.toLowerCase() === 's') { e.preventDefault(); saveJson(); return; }
     if (meta && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); return; }
+    if (meta && e.key.toLowerCase() === 'b') { e.preventDefault(); splitSelected(); return; }
     if (!meta && (e.key === 's' || e.key === 'S')) { splitSelected(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.selected) { const { s, l } = S.selected; S.ir.scenes[s].layers.splice(l, 1); S.selected = null; structuralEdit(); return; }
     if (S.selected && e.key.startsWith('Arrow')) {

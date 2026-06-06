@@ -5109,13 +5109,21 @@
   function mountPreview() {
     VGP.mount(S.ir, { assetBase: baseUrl() });
     fit();
-    VGP.seek(S.playhead);
+    VGP.seek(S.playhead, { playing: S.playing });
   }
-  var liveSeek = () => VGP.seek(S.playhead);
+  var liveSeek = () => VGP.seek(S.playhead, { playing: S.playing });
   var saveTimer;
   function setDot(state, text) {
     $("syncDot").className = "dot " + state;
     $("syncText").textContent = text ?? state;
+  }
+  var toastTimer;
+  function showToast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2e3);
   }
   function scheduleSave() {
     setDot("edited", "editing");
@@ -5608,14 +5616,17 @@
     buildProps();
   }
   function splitSelected() {
-    if (!S.selected) return;
+    if (!S.selected) {
+      showToast("Please select a layer to split.");
+      return;
+    }
     const { s, l } = S.selected;
     const scene2 = S.ir.scenes[s];
     const layer2 = scene2.layers[l];
     const ls = layer2.start ?? 0, ld = layer2.duration ?? scene2.duration;
     const local = S.playhead - (S.offsets[s] + ls);
     if (local <= 0.05 || local >= ld - 0.05) {
-      setDot("edited", "move playhead over clip");
+      showToast("Move the playhead over the clip to split.");
       return;
     }
     const second = JSON.parse(JSON.stringify(layer2));
@@ -6219,6 +6230,11 @@
       if (meta && e.key.toLowerCase() === "d") {
         e.preventDefault();
         duplicateSelected();
+        return;
+      }
+      if (meta && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        splitSelected();
         return;
       }
       if (!meta && (e.key === "s" || e.key === "S")) {
