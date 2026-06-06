@@ -304,6 +304,7 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
     el.src = resolveSrc(track.src);
     el.preload = 'auto';
     el.volume = track.volume ?? 1;
+    el.addEventListener('loadedmetadata', () => { try { (window as any).__vgpAudioReady?.(); } catch {} });
     document.body.appendChild(el);
     return { el, track };
   });
@@ -480,4 +481,6 @@ async function ready(): Promise<void> {
   })));
 }
 
-(window as any).VGP = { mount, seek, ready, compositionDuration };
+function audioInfo() { return audioEls.map((a) => ({ src: a.track.src, duration: isFinite(a.el.duration) ? a.el.duration : null })); }
+
+(window as any).VGP = { mount, seek, ready, compositionDuration, audioInfo };
