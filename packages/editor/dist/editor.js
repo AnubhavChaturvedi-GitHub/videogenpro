@@ -5753,6 +5753,9 @@
             }
           }
         }
+        const lh = el("div", "handle");
+        lh.style.cssText = "right:auto;left:0";
+        clip.appendChild(lh);
         const handle = el("div", "handle");
         clip.appendChild(handle);
         clip.addEventListener("dragover", (e) => {
@@ -5793,7 +5796,7 @@
           showToast("Added " + id.split(".")[1].replace(/-/g, " "));
         });
         clip.onmousedown = (e) => {
-          if (e.target === handle || e.button !== 0) return;
+          if (e.target === handle || e.target === lh || e.button !== 0) return;
           e.preventDefault();
           const rectLeft = $("tlInner").getBoundingClientRect().left;
           const tl = $("tlScroll");
@@ -5830,6 +5833,7 @@
             maxStart = Math.max(0, winMax - 0.1);
           }
           const sceneOff = S.offsets[si] ?? 0;
+          const allowCrossScene = layer2.type !== "fx";
           const mv = (ev) => {
             lastY = ev.clientY;
             const dx = ev.clientX - sx, dy = ev.clientY - sy;
@@ -5838,10 +5842,14 @@
               if (gesture === "reorder" && !autoT) autoT = setInterval(autoTick, 16);
             }
             if (gesture === "time") {
-              const rawAbs = sceneOff + os + dx / S.pxPerSec;
-              const snappedAbs = snapTime(rawAbs, sceneSnapTargets(si, scene2, li), ev.altKey);
-              cand = clampStart(snappedAbs - sceneOff, maxStart);
-              clip.style.left = LABELW + (sceneOff + cand) * S.pxPerSec + "px";
+              const snappedAbs = snapTime(sceneOff + os + dx / S.pxPerSec, allowCrossScene ? [0, S.playhead, ...S.offsets, effectiveTotal()] : sceneSnapTargets(si, scene2, li), ev.altKey);
+              if (allowCrossScene) {
+                cand = clampStart(snappedAbs, Math.max(0, effectiveTotal() - 0.1));
+                clip.style.left = LABELW + cand * S.pxPerSec + "px";
+              } else {
+                cand = clampStart(snappedAbs - sceneOff, maxStart);
+                clip.style.left = LABELW + (sceneOff + cand) * S.pxPerSec + "px";
+              }
             } else if (gesture === "reorder") {
               refreshReorder();
             }
@@ -5855,8 +5863,26 @@
               autoT = null;
             }
             if (gesture === "time") {
-              layer2.start = clampStart(cand, maxStart);
-              timingEdit();
+              if (allowCrossScene) {
+                const targetS = sceneAt(cand);
+                const localStart = +Math.max(0, cand - (S.offsets[targetS] ?? 0)).toFixed(3);
+                if (targetS === si) {
+                  layer2.start = localStart;
+                  timingEdit();
+                } else {
+                  const [movedLayer] = S.ir.scenes[si].layers.splice(li, 1);
+                  movedLayer.start = localStart;
+                  S.ir.scenes[targetS].layers.push(movedLayer);
+                  normalizeZ(si);
+                  normalizeZ(targetS);
+                  S.selected = { s: targetS, l: S.ir.scenes[targetS].layers.length - 1 };
+                  structuralEdit();
+                  showToast(`Moved to scene ${targetS + 1}`);
+                }
+              } else {
+                layer2.start = clampStart(cand, maxStart);
+                timingEdit();
+              }
             } else if (gesture === "reorder") {
               select(si, li);
               const steps = Math.round(Math.abs(dyFinal) / trackH);
@@ -5918,6 +5944,44 @@
             if (!moved) return;
             layer2.duration = clampDuration(pending, Math.max(0.1, 24 / S.pxPerSec), maxDur);
             timingEdit();
+          };
+          window.addEventListener("mousemove", mv);
+          window.addEventListener("mouseup", up);
+        };
+        lh.onmousedown = (e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (layer2.type === "video" && videoSrcDuration(layer2) == null) {
+            showToast("media still loading\u2026");
+            return;
+          }
+          const sx = e.clientX, os = layer2.start ?? 0, od = layer2.duration ?? scene2.duration, ots = layer2.trimStart ?? 0;
+          const sceneOff = S.offsets[si] ?? 0;
+          const endLocal = os + od;
+          const minDur = Math.max(0.1, 24 / S.pxPerSec);
+          let moved = false;
+          let pStart = os, pDur = od, pTrim = ots;
+          const mv = (ev) => {
+            if (Math.abs(ev.clientX - sx) > 3) moved = true;
+            if (!moved) return;
+            const snappedStartAbs = snapTime(sceneOff + os + (ev.clientX - sx) / S.pxPerSec, sceneSnapTargets(si, scene2, li), ev.altKey);
+            const newStart = Math.max(0, Math.min(snappedStartAbs - sceneOff, endLocal - minDur));
+            let dt = newStart - os;
+            if (layer2.type === "video") dt = Math.max(dt, -ots);
+            pStart = +(os + dt).toFixed(3);
+            pDur = +(od - dt).toFixed(3);
+            if (layer2.type === "video") pTrim = +Math.max(0, ots + dt).toFixed(3);
+            layer2.start = pStart;
+            layer2.duration = pDur;
+            if (layer2.type === "video") layer2.trimStart = pTrim;
+            clip.style.left = LABELW + (sceneOff + pStart) * S.pxPerSec + "px";
+            clip.style.width = Math.max(24, pDur * S.pxPerSec) + "px";
+          };
+          const up = () => {
+            window.removeEventListener("mousemove", mv);
+            window.removeEventListener("mouseup", up);
+            if (moved) timingEdit();
           };
           window.addEventListener("mousemove", mv);
           window.addEventListener("mouseup", up);

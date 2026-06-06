@@ -526,6 +526,8 @@ function buildTimeline() {
           }
         }
       }
+      // left-edge head-trim handle (move the START edge; the END stays fixed)
+      const lh = el('div', 'handle'); lh.style.cssText = 'right:auto;left:0'; clip.appendChild(lh);
       const handle = el('div', 'handle'); clip.appendChild(handle);
       // drop an effect/overlay preset card directly onto this clip's layer
       clip.addEventListener('dragover', (e: DragEvent) => {
@@ -548,7 +550,7 @@ function buildTimeline() {
         S.selected = { s: si, l: li + 1 }; S.playhead = S.offsets[si] + (layer.start ?? 0) + 0.05; structuralEdit(); showToast('Added ' + id.split('.')[1].replace(/-/g, ' '));
       });
       clip.onmousedown = (e: MouseEvent) => {
-        if (e.target === handle || e.button !== 0) return; e.preventDefault();
+        if (e.target === handle || e.target === lh || e.button !== 0) return; e.preventDefault();
         const rectLeft = $('tlInner').getBoundingClientRect().left; // cache before any rebuild (B-clip-click)
         const tl = $('tlScroll');
         const sx = e.clientX, sy = e.clientY, os = layer.start ?? 0, scrollStart = tl.scrollTop;
@@ -585,6 +587,9 @@ function buildTimeline() {
         let maxStart = isFullScene ? Math.max(0, scene.duration - 0.2) : (Math.max(scene.duration, S.total) || scene.duration);
         if (layer.type === 'fx') { const tgt = resolveFxTarget(scene, li); const winMax = (tgt?.layer.start ?? 0) + (tgt?.layer.duration ?? scene.duration); maxStart = Math.max(0, winMax - 0.1); }
         const sceneOff = S.offsets[si] ?? 0;
+        // fx must stay with its in-scene target; every other layer can be dragged
+        // ANYWHERE on the timeline (across scene seams), reassigning scene on drop.
+        const allowCrossScene = layer.type !== 'fx';
         const mv = (ev: MouseEvent) => {
           lastY = ev.clientY;
           const dx = ev.clientX - sx, dy = ev.clientY - sy;
@@ -593,12 +598,16 @@ function buildTimeline() {
             if (gesture === 'reorder' && !autoT) autoT = setInterval(autoTick, 16); // edge auto-scroll while reordering
           }
           if (gesture === 'time') {
-            // B-snap: snap the clip's absolute START to nearby significant times
-            // (playhead/scene seams/0/neighbour edges); Alt bypasses.
-            const rawAbs = sceneOff + os + dx / S.pxPerSec;
-            const snappedAbs = snapTime(rawAbs, sceneSnapTargets(si, scene, li), ev.altKey);
-            cand = clampStart(snappedAbs - sceneOff, maxStart);
-            clip.style.left = (LABELW + (sceneOff + cand) * S.pxPerSec) + 'px'; // visual only until commit
+            // snap the clip's absolute START to significant times (playhead/scene
+            // seams/0/total); Alt bypasses. fx stays scene-local; others go absolute.
+            const snappedAbs = snapTime(sceneOff + os + dx / S.pxPerSec, allowCrossScene ? [0, S.playhead, ...S.offsets, effectiveTotal()] : sceneSnapTargets(si, scene, li), ev.altKey);
+            if (allowCrossScene) {
+              cand = clampStart(snappedAbs, Math.max(0, effectiveTotal() - 0.1)); // cand = ABSOLUTE timeline start
+              clip.style.left = (LABELW + cand * S.pxPerSec) + 'px';
+            } else {
+              cand = clampStart(snappedAbs - sceneOff, maxStart); // scene-local
+              clip.style.left = (LABELW + (sceneOff + cand) * S.pxPerSec) + 'px';
+            }
           } else if (gesture === 'reorder') {
             refreshReorder();
           }
@@ -607,9 +616,23 @@ function buildTimeline() {
           window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); window.removeEventListener('blur', up);
           if (autoT) { clearInterval(autoT); autoT = null; }
           if (gesture === 'time') {
-            // B-commit-reclamp: re-clamp against freshly-derived bounds so a stale
-            // gesture basis can never commit an out-of-range start.
-            layer.start = clampStart(cand, maxStart); timingEdit();
+            if (allowCrossScene) {
+              // cand is ABSOLUTE: drop the clip into whichever scene holds that time,
+              // reassigning scene membership so it can live anywhere on the timeline.
+              const targetS = sceneAt(cand);
+              const localStart = +Math.max(0, cand - (S.offsets[targetS] ?? 0)).toFixed(3);
+              if (targetS === si) { layer.start = localStart; timingEdit(); }
+              else {
+                const [movedLayer] = S.ir.scenes[si].layers.splice(li, 1);
+                movedLayer.start = localStart;
+                S.ir.scenes[targetS].layers.push(movedLayer);
+                normalizeZ(si); normalizeZ(targetS);
+                S.selected = { s: targetS, l: S.ir.scenes[targetS].layers.length - 1 };
+                structuralEdit(); showToast(`Moved to scene ${targetS + 1}`);
+              }
+            } else {
+              layer.start = clampStart(cand, maxStart); timingEdit(); // fx stays scene-local
+            }
           } else if (gesture === 'reorder') {
             // reorder by the number of track-rows dragged in CONTENT space (includes any
             // auto-scroll). select() first so arrangeLayer targets this layer; it keeps
@@ -674,6 +697,30 @@ function buildTimeline() {
           // B-commit-reclamp: re-clamp the final duration against fresh bounds.
           layer.duration = clampDuration(pending, Math.max(0.1, 24 / S.pxPerSec), maxDur); timingEdit();
         };
+        window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+      };
+      // left-edge head-trim: move the START edge, keep the END fixed (duration adjusts;
+      // a video also skips into its footage via trimStart). Mirror of the right handle.
+      lh.onmousedown = (e: MouseEvent) => {
+        if (e.button !== 0) return; e.preventDefault(); e.stopPropagation();
+        if (layer.type === 'video' && videoSrcDuration(layer) == null) { showToast('media still loading…'); return; }
+        const sx = e.clientX, os = layer.start ?? 0, od = layer.duration ?? scene.duration, ots = layer.trimStart ?? 0;
+        const sceneOff = S.offsets[si] ?? 0; const endLocal = os + od; const minDur = Math.max(0.1, 24 / S.pxPerSec);
+        let moved = false; let pStart = os, pDur = od, pTrim = ots;
+        const mv = (ev: MouseEvent) => {
+          if (Math.abs(ev.clientX - sx) > 3) moved = true; if (!moved) return; // B-trim-threshold
+          // snap the absolute START edge; keep the END fixed so duration = endLocal - start.
+          const snappedStartAbs = snapTime(sceneOff + os + (ev.clientX - sx) / S.pxPerSec, sceneSnapTargets(si, scene, li), ev.altKey);
+          const newStart = Math.max(0, Math.min(snappedStartAbs - sceneOff, endLocal - minDur));
+          let dt = newStart - os;
+          if (layer.type === 'video') dt = Math.max(dt, -ots); // can't un-trim past the footage head
+          pStart = +(os + dt).toFixed(3); pDur = +(od - dt).toFixed(3);
+          if (layer.type === 'video') pTrim = +Math.max(0, ots + dt).toFixed(3);
+          layer.start = pStart; layer.duration = pDur; if (layer.type === 'video') layer.trimStart = pTrim;
+          clip.style.left = (LABELW + (sceneOff + pStart) * S.pxPerSec) + 'px';
+          clip.style.width = Math.max(24, pDur * S.pxPerSec) + 'px';
+        };
+        const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); if (moved) timingEdit(); };
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
       };
       track.appendChild(clip); inner.appendChild(track);
