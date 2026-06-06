@@ -29,7 +29,7 @@ export type Transform = {
   anchor?: Vec2;    // 0..1 within layer box; default [0.5, 0.5]
 };
 
-export type LayerType = 'text' | 'image' | 'video' | 'html' | 'three' | 'shape' | 'overlay';
+export type LayerType = 'text' | 'image' | 'video' | 'html' | 'three' | 'shape' | 'overlay' | 'fx';
 
 export interface BaseLayer {
   id?: string;
@@ -87,7 +87,15 @@ export interface OverlayLayer extends BaseLayer {
   params?: Record<string, number>; // e.g. { amount }
 }
 
-export type Layer = TextLayer | ImageLayer | VideoLayer | HtmlLayer | ThreeLayer | ShapeLayer | OverlayLayer;
+// fx control-layer: a tracked effect (a preset id) that drives the effect onto
+// the content layer directly below it. Has no visual of its own.
+export interface FxLayer extends BaseLayer {
+  type: 'fx';
+  effect: string;                  // a preset id, e.g. "text.fade-up", "image.ken-burns"
+  params?: Record<string, number>;
+}
+
+export type Layer = TextLayer | ImageLayer | VideoLayer | HtmlLayer | ThreeLayer | ShapeLayer | OverlayLayer | FxLayer;
 
 export interface Scene {
   id?: string;

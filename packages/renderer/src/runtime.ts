@@ -17,6 +17,7 @@ type LayerNode = {
   layer: Layer;
   three?: ThreeHandle;
   video?: HTMLVideoElement;
+  fxLayers?: any[];            // fx control-layers that target THIS layer (drive effects onto it)
 };
 type ThreeHandle = { render: (t: number, props: Record<string, number>) => void; dispose?: () => void };
 
@@ -204,7 +205,7 @@ function presetProgress(inst: PresetInstance, layerLocalT: number, layerDur: num
 }
 
 // ---- build DOM ----
-function buildLayer(layer: Layer, sceneDur: number): LayerNode {
+function buildLayer(layer: Layer, sceneDur: number, fxLayers: any[] = []): LayerNode {
   const el = document.createElement('div');
   el.style.position = 'absolute';
   el.style.willChange = 'transform, opacity, filter';
@@ -222,9 +223,12 @@ function buildLayer(layer: Layer, sceneDur: number): LayerNode {
   }
   if (layer.zIndex !== undefined) el.style.zIndex = String(layer.zIndex);
 
-  const node: LayerNode = { el, layer };
+  const node: LayerNode = { el, layer, fxLayers };
+  // all preset instances that can affect this layer: its own + the fx layers targeting it
+  const allInsts = [...(layer.presets ?? []), ...fxLayers.map((f) => ({ id: f.effect, params: f.params }))];
 
   switch (layer.type) {
+    case 'fx': { el.style.display = 'none'; return node; } // control layer — no visual
     case 'text': {
       el.style.display = 'flex';
       el.style.alignItems = 'center';
@@ -234,7 +238,7 @@ function buildLayer(layer: Layer, sceneDur: number): LayerNode {
         fontFamily: 'Inter, system-ui, sans-serif', fontSize: '80px', fontWeight: '800', color: '#fff',
       });
       if (layer.style) Object.assign(el.style, layer.style);
-      const splitPreset = (layer.presets ?? []).map((p) => getPreset(p.id)).find((p) => p?.split);
+      const splitPreset = allInsts.map((p) => getPreset(p.id)).find((p) => p?.split);
       if (splitPreset?.split) {
         const inner = document.createElement('div');
         const units = splitPreset.split === 'char'
@@ -342,8 +346,14 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
     sEl.style.overflow = 'hidden';
     sEl.style.display = 'none';
     stage.appendChild(sEl);
-    const layers = scene.layers.map((l) => {
-      const ln = buildLayer(l, scene.duration);
+    // map each fx control-layer to the nearest content layer below it (its target)
+    const fxByTarget: Record<number, any[]> = {};
+    scene.layers.forEach((L: any, idx: number) => {
+      if (L.type !== 'fx') return;
+      for (let j = idx - 1; j >= 0; j--) { const ty = (scene.layers[j] as any).type; if (ty !== 'fx' && ty !== 'overlay') { (fxByTarget[j] = fxByTarget[j] || []).push(L); break; } }
+    });
+    const layers = scene.layers.map((l, idx) => {
+      const ln = buildLayer(l, scene.duration, fxByTarget[idx] || []);
       sEl.appendChild(ln.el);
       return ln;
     });
@@ -402,6 +412,7 @@ function reconcileAudio(c: Composition) {
 
 function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
   const layer = ln.layer;
+  if (layer.type === 'fx') { ln.el.style.display = 'none'; return; } // control-only layer
   const start = layer.start ?? 0;
   const dur = layer.duration ?? sceneDur;
   const active = sceneLocalT >= start && sceneLocalT < start + dur + 0.0001;
@@ -418,32 +429,36 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
   base.rotate = keyframeValue(layer.keyframes?.rotate, layerLocalT, tf.rotate ?? 0);
   base.opacity = keyframeValue(layer.keyframes?.opacity, layerLocalT, tf.opacity ?? 1);
 
-  // split vs whole presets
-  const insts = layer.presets ?? [];
+  // preset entries: this layer's own presets (timed to the layer) + any active fx
+  // control-layers targeting it (timed to the fx layer's own window)
+  type PE = { inst: PresetInstance; localT: number; dur: number };
+  const entries: PE[] = (layer.presets ?? []).map((inst) => ({ inst, localT: layerLocalT, dur }));
+  for (const fx of (ln.fxLayers ?? [])) {
+    const fs = fx.start ?? 0, fd = fx.duration ?? sceneDur;
+    if (sceneLocalT >= fs - 0.0001 && sceneLocalT < fs + fd + 0.0001) entries.push({ inst: { id: fx.effect, params: fx.params }, localT: sceneLocalT - fs, dur: fd });
+  }
+
   const wholeDelta = emptyDelta();
   combine(wholeDelta, base);
-  for (const inst of insts) {
-    const preset = getPreset(inst.id);
+  for (const e of entries) {
+    const preset = getPreset(e.inst.id);
     if (!preset || !preset.apply || preset.split) continue;
-    // B15: text-only presets must not silently affect non-text layers.
-    if ((preset.category === 'text' || preset.split) && layer.type !== 'text') continue;
-    const p = presetProgress(inst, layerLocalT, dur, !!preset.continuous);
-    combine(wholeDelta, preset.apply(p, resolveParams(preset, inst.params), { index: 0, count: 1, time: layerLocalT, dur }));
+    if (preset.category === 'text' && layer.type !== 'text') continue;
+    const p = presetProgress(e.inst, e.localT, e.dur, !!preset.continuous);
+    combine(wholeDelta, preset.apply(p, resolveParams(preset, e.inst.params), { index: 0, count: 1, time: e.localT, dur: e.dur }));
   }
   applyDelta(ln.el, wholeDelta);
 
-  // split text presets -> per span
+  // split text presets -> per span (from own + fx entries)
   if (ln.spans) {
-    const splitInsts = insts.filter((i) => getPreset(i.id)?.split && getPreset(i.id)?.apply);
+    const splitEntries = entries.filter((e) => getPreset(e.inst.id)?.split && getPreset(e.inst.id)?.apply);
     ln.spans.forEach((span, idx) => {
       const sd = emptyDelta();
-      for (const inst of splitInsts) {
-        const preset = getPreset(inst.id)!;
-        const p = presetProgress(inst, layerLocalT, dur, !!preset.continuous);
-        combine(sd, preset.apply!(p, resolveParams(preset, inst.params), { index: idx, count: ln.spans!.length, time: layerLocalT, dur }));
+      for (const e of splitEntries) {
+        const preset = getPreset(e.inst.id)!;
+        const p = presetProgress(e.inst, e.localT, e.dur, !!preset.continuous);
+        combine(sd, preset.apply!(p, resolveParams(preset, e.inst.params), { index: idx, count: ln.spans!.length, time: e.localT, dur: e.dur }));
       }
-      // spans are inline-block in normal flow — use the non-centering transform
-      // (applyDelta's translate(-50%,-50%) would shift each span by half its width)
       applySceneDelta(span, sd);
     });
   }

@@ -4112,7 +4112,8 @@
     external_exports.object({ ...baseLayer, type: external_exports.literal("html"), html: external_exports.string() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("three"), scene: external_exports.string(), props: external_exports.record(external_exports.number()).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("shape"), shape: external_exports.enum(["rect", "circle", "line"]), fill: external_exports.string().optional(), radius: external_exports.number().optional() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("overlay"), effect: external_exports.string(), params: external_exports.record(external_exports.number()).optional() })
+    external_exports.object({ ...baseLayer, type: external_exports.literal("overlay"), effect: external_exports.string(), params: external_exports.record(external_exports.number()).optional() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("fx"), effect: external_exports.string(), params: external_exports.record(external_exports.number()).optional() })
   ]);
   var scene = external_exports.object({
     id: external_exports.string().optional(),
@@ -5146,9 +5147,10 @@
     sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>'
   };
   var icon = (n) => `<svg viewBox="0 0 24 24">${I[n] ?? ""}</svg>`;
-  var typeIco = { text: "text", image: "image", video: "video", shape: "shape", three: "cube", html: "text", overlay: "sliders" };
-  var clipColor = { text: "var(--clip-text)", image: "var(--clip-image)", three: "var(--clip-three)", shape: "var(--clip-shape)", html: "var(--clip-html)", video: "var(--clip-video)", overlay: "var(--clip-overlay)" };
-  var typeTint = { text: "var(--t-text)", image: "var(--t-image)", video: "var(--t-video)", three: "var(--t-three)", shape: "var(--t-shape)", html: "var(--t-html)", audio: "var(--t-audio)", overlay: "var(--t-overlay)" };
+  var typeIco = { text: "text", image: "image", video: "video", shape: "shape", three: "cube", html: "text", overlay: "sliders", fx: "spark" };
+  var clipColor = { text: "var(--clip-text)", image: "var(--clip-image)", three: "var(--clip-three)", shape: "var(--clip-shape)", html: "var(--clip-html)", video: "var(--clip-video)", overlay: "var(--clip-overlay)", fx: "var(--clip-fx)" };
+  var typeTint = { text: "var(--t-text)", image: "var(--t-image)", video: "var(--t-video)", three: "var(--t-three)", shape: "var(--t-shape)", html: "var(--t-html)", audio: "var(--t-audio)", overlay: "var(--t-overlay)", fx: "var(--t-fx)" };
+  var layerLabel = (l) => l.type === "text" ? String(l.text) : l.type === "fx" ? String(l.effect).split(".")[1].replace(/-/g, " ") : l.type === "overlay" ? "overlay " + String(l.effect).replace(/-/g, " ") : l.type;
   var tintIcon = (n, type) => `<span style="color:${typeTint[type] || "#fff"}">${icon(n)}</span>`;
   var CATS = [
     { key: "text", label: "Text", icon: "text" },
@@ -5345,6 +5347,7 @@
     const effect = id.split(".")[1];
     return { type: "overlay", effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: 3, presets: [{ id: "in.fade" }], transform: {} };
   };
+  var newFxLayer = (target, sceneDur, presetId) => ({ type: "fx", effect: presetId, params: {}, start: target.start ?? 0, duration: target.duration ?? sceneDur });
   var newAssetLayer = (a) => ({ type: a.type, src: a.src, fit: "cover", duration: 2.5, presets: a.type === "image" ? [{ id: "image.ken-burns" }] : [], transform: {} });
   function addLayerAtPlayhead(layer2) {
     const si = sceneAt(S.playhead);
@@ -5445,7 +5448,7 @@
       scene2.layers.forEach((layer2, li) => {
         const track = el("div", "track");
         const label = el("div", "track-label");
-        label.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${layer2.type === "text" ? String(layer2.text).slice(0, 8) : layer2.type}</span>`;
+        label.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${layerLabel(layer2).slice(0, 9)}</span>`;
         track.appendChild(label);
         const offset = S.offsets[si] + (layer2.start ?? 0);
         const dur = layer2.duration ?? scene2.duration;
@@ -5453,7 +5456,7 @@
         clip.style.left = LABELW + offset * S.pxPerSec + "px";
         clip.style.width = Math.max(24, dur * S.pxPerSec) + "px";
         clip.style.background = clipColor[layer2.type] ?? "#555";
-        clip.innerHTML = icon(typeIco[layer2.type] ?? "shape") + `<span>${layer2.type === "text" ? String(layer2.text).slice(0, 12) : layer2.type}</span>`;
+        clip.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${layerLabel(layer2).slice(0, 16)}</span>`;
         if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add("sel");
         const handle = el("div", "handle");
         clip.appendChild(handle);
@@ -5471,9 +5474,8 @@
           clip.style.outline = "";
           const id = e.dataTransfer?.getData("application/x-vgp-preset");
           if (id) {
-            layer2.presets = layer2.presets || [];
-            layer2.presets.push({ id, params: {} });
-            S.selected = { s: si, l: li };
+            scene2.layers.splice(li + 1, 0, newFxLayer(layer2, scene2.duration, id));
+            S.selected = { s: si, l: li + 1 };
             S.playhead = S.offsets[si] + (layer2.start ?? 0) + 0.05;
             structuralEdit();
             showToast("Added " + id.split(".")[1].replace(/-/g, " "));
@@ -5985,6 +5987,52 @@
       x.textContent = t;
       p.appendChild(x);
     };
+    if (layer2.type === "fx") {
+      const entry = MAN.get(layer2.effect);
+      const head2 = el("div", "sel-head");
+      const pill2 = el("span", "pill");
+      pill2.innerHTML = icon("spark") + "fx";
+      pill2.style.background = "var(--clip-fx)";
+      head2.appendChild(pill2);
+      const title2 = el("span");
+      title2.textContent = String(layer2.effect).split(".")[1].replace(/-/g, " ");
+      title2.style.cssText = "flex:1;font-weight:600";
+      head2.appendChild(title2);
+      const del2 = el("button", "icon-btn");
+      del2.innerHTML = icon("trash");
+      del2.onclick = () => {
+        scene2.layers.splice(l, 1);
+        S.selected = null;
+        structuralEdit();
+      };
+      head2.appendChild(del2);
+      p.appendChild(head2);
+      const note = el("div");
+      note.style.cssText = "font-size:11px;color:var(--dim);margin-bottom:8px";
+      note.textContent = "applies to the layer directly below this fx track";
+      p.appendChild(note);
+      layer2.params = layer2.params || {};
+      if (entry) {
+        h("effect settings");
+        for (const [pk, spec] of Object.entries(entry.params)) {
+          const min = spec.min ?? 0, max = spec.max ?? (spec.default * 2 || 1);
+          p.appendChild(numField(pk, layer2.params[pk] ?? spec.default, min, max, (max - min) / 100 || 0.01, (v) => {
+            layer2.params[pk] = v;
+            liveEdit();
+          }));
+        }
+      }
+      h("timing");
+      p.appendChild(numField("start (s)", layer2.start ?? 0, 0, scene2.duration, 0.05, (v) => {
+        layer2.start = v;
+        timingEdit();
+      }));
+      p.appendChild(numField("duration (s)", layer2.duration ?? scene2.duration, 0.1, Math.max(scene2.duration, S.total), 0.05, (v) => {
+        layer2.duration = v;
+        timingEdit();
+      }));
+      return;
+    }
     const head = el("div", "sel-head");
     const pill = el("span", "pill");
     pill.innerHTML = icon(typeIco[layer2.type] ?? "shape") + layer2.type;
@@ -6225,16 +6273,19 @@
       return;
     }
     if (!S.selected) {
-      setDot("edited", "select a clip!");
+      showToast("Select a clip to apply the effect.");
       return;
     }
-    const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
-    layer2.presets = layer2.presets || [];
-    layer2.presets.push({ id: entry.id, params: {} });
-    S.playhead = S.offsets[S.selected.s] + (layer2.start ?? 0) + 0.05;
+    const { s, l } = S.selected;
+    const scene2 = S.ir.scenes[s];
+    const target = scene2.layers[l];
+    scene2.layers.splice(l + 1, 0, newFxLayer(target, scene2.duration, entry.id));
+    S.selected = { s, l: l + 1 };
+    S.playhead = (S.offsets[s] ?? 0) + (target.start ?? 0) + 0.05;
     setTab("props");
     structuralEdit();
     positionPlayhead();
+    showToast("Added " + entry.id.split(".")[1].replace(/-/g, " "));
   }
   function updateTime() {
     $("tpTime").textContent = fmtClockMs(S.playhead);
@@ -6560,7 +6611,7 @@
       for (let li = scene2.layers.length - 1; li >= 0; li--) {
         const L = scene2.layers[li];
         const st = L.start ?? 0, du = L.duration ?? scene2.duration;
-        if (L.type === "overlay") continue;
+        if (L.type === "overlay" || L.type === "fx") continue;
         if (localT < st - 0.01 || localT > st + du + 0.01) continue;
         const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
         const tf = L.transform ?? {};

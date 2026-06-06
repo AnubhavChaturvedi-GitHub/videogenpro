@@ -46,9 +46,11 @@ const I: Record<string, string> = {
   sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
 };
 const icon = (n: string) => `<svg viewBox="0 0 24 24">${I[n] ?? ''}</svg>`;
-const typeIco: Record<string, string> = { text: 'text', image: 'image', video: 'video', shape: 'shape', three: 'cube', html: 'text', overlay: 'sliders' };
-const clipColor: Record<string, string> = { text: 'var(--clip-text)', image: 'var(--clip-image)', three: 'var(--clip-three)', shape: 'var(--clip-shape)', html: 'var(--clip-html)', video: 'var(--clip-video)', overlay: 'var(--clip-overlay)' };
-const typeTint: Record<string, string> = { text: 'var(--t-text)', image: 'var(--t-image)', video: 'var(--t-video)', three: 'var(--t-three)', shape: 'var(--t-shape)', html: 'var(--t-html)', audio: 'var(--t-audio)', overlay: 'var(--t-overlay)' };
+const typeIco: Record<string, string> = { text: 'text', image: 'image', video: 'video', shape: 'shape', three: 'cube', html: 'text', overlay: 'sliders', fx: 'spark' };
+const clipColor: Record<string, string> = { text: 'var(--clip-text)', image: 'var(--clip-image)', three: 'var(--clip-three)', shape: 'var(--clip-shape)', html: 'var(--clip-html)', video: 'var(--clip-video)', overlay: 'var(--clip-overlay)', fx: 'var(--clip-fx)' };
+const typeTint: Record<string, string> = { text: 'var(--t-text)', image: 'var(--t-image)', video: 'var(--t-video)', three: 'var(--t-three)', shape: 'var(--t-shape)', html: 'var(--t-html)', audio: 'var(--t-audio)', overlay: 'var(--t-overlay)', fx: 'var(--t-fx)' };
+// label shown on a clip/track for a layer
+const layerLabel = (l: any) => l.type === 'text' ? String(l.text) : l.type === 'fx' ? String(l.effect).split('.')[1].replace(/-/g, ' ') : l.type === 'overlay' ? ('overlay ' + String(l.effect).replace(/-/g, ' ')) : l.type;
 const tintIcon = (n: string, type: string) => `<span style="color:${typeTint[type] || '#fff'}">${icon(n)}</span>`;
 
 // library category tabs → preset categories
@@ -171,6 +173,8 @@ const newShape = () => ({ type: 'shape', shape: 'rect', fill: '#ffffff', rect: {
 const newLine = () => ({ type: 'shape', shape: 'line', fill: '#ffffff', rect: { x: 340, y: 360, w: 600, h: 6 }, duration: 2, presets: [{ id: 'in.slide-left', params: { distance: 120 } }], transform: {} });
 const new3D = () => ({ type: 'three', scene: 'particles', props: { speed: 0.3 }, duration: 3, presets: [], transform: {} });
 const overlayLayerFromId = (id: string) => { const entry = MAN.get(id) as any; const effect = id.split('.')[1]; return { type: 'overlay', effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: 3, presets: [{ id: 'in.fade' }], transform: {} }; };
+// an fx control-layer drives an effect (preset) onto the content layer below it
+const newFxLayer = (target: any, sceneDur: number, presetId: string) => ({ type: 'fx', effect: presetId, params: {}, start: target.start ?? 0, duration: target.duration ?? sceneDur });
 const newAssetLayer = (a: any) => ({ type: a.type, src: a.src, fit: 'cover', duration: 2.5, presets: (a.type === 'image' ? [{ id: 'image.ken-burns' }] : []), transform: {} });
 function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
 function dropLayerAt(clientX: number, layer: any) { const r = $('tlInner').getBoundingClientRect(); const t = Math.max(0, Math.min(S.total, (clientX - r.left - LABELW) / S.pxPerSec)); const si = sceneAt(t); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
@@ -216,17 +220,17 @@ function buildTimeline() {
     inner.appendChild(sr);
     scene.layers.forEach((layer: any, li: number) => {
       const track = el('div', 'track');
-      const label = el('div', 'track-label'); label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${layer.type === 'text' ? String(layer.text).slice(0, 8) : layer.type}</span>`; track.appendChild(label);
+      const label = el('div', 'track-label'); label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${layerLabel(layer).slice(0, 9)}</span>`; track.appendChild(label);
       const offset = S.offsets[si] + (layer.start ?? 0); const dur = layer.duration ?? scene.duration;
       const clip = el('div', 'clip');
       clip.style.left = (LABELW + offset * S.pxPerSec) + 'px'; clip.style.width = Math.max(24, dur * S.pxPerSec) + 'px'; clip.style.background = clipColor[layer.type] ?? '#555';
-      clip.innerHTML = icon(typeIco[layer.type] ?? 'shape') + `<span>${layer.type === 'text' ? String(layer.text).slice(0, 12) : layer.type}</span>`;
+      clip.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${layerLabel(layer).slice(0, 16)}</span>`;
       if (S.selected && S.selected.s === si && S.selected.l === li) clip.classList.add('sel');
       const handle = el('div', 'handle'); clip.appendChild(handle);
       // drop an effect/overlay preset card directly onto this clip's layer
       clip.addEventListener('dragover', (e: DragEvent) => { if (e.dataTransfer?.types.includes('application/x-vgp-preset')) { e.preventDefault(); clip.style.outline = '2px solid #fff'; } });
       clip.addEventListener('dragleave', () => { clip.style.outline = ''; });
-      clip.addEventListener('drop', (e: DragEvent) => { e.preventDefault(); clip.style.outline = ''; const id = e.dataTransfer?.getData('application/x-vgp-preset'); if (id) { layer.presets = layer.presets || []; layer.presets.push({ id, params: {} }); S.selected = { s: si, l: li }; S.playhead = S.offsets[si] + (layer.start ?? 0) + 0.05; structuralEdit(); showToast('Added ' + id.split('.')[1].replace(/-/g, ' ')); } });
+      clip.addEventListener('drop', (e: DragEvent) => { e.preventDefault(); clip.style.outline = ''; const id = e.dataTransfer?.getData('application/x-vgp-preset'); if (id) { scene.layers.splice(li + 1, 0, newFxLayer(layer, scene.duration, id)); S.selected = { s: si, l: li + 1 }; S.playhead = S.offsets[si] + (layer.start ?? 0) + 0.05; structuralEdit(); showToast('Added ' + id.split('.')[1].replace(/-/g, ' ')); } });
       clip.onmousedown = (e: MouseEvent) => {
         if (e.target === handle) return; e.preventDefault();
         const sx = e.clientX, os = layer.start ?? 0; let moved = false;
@@ -471,6 +475,22 @@ function buildProps() {
   if (!layer) { S.selected = null; return buildProps(); }
   const h = (t: string) => { const x = el('h3'); x.textContent = t; p.appendChild(x); };
 
+  // fx control-layer: a tracked effect applied to the clip below it
+  if (layer.type === 'fx') {
+    const entry = MAN.get(layer.effect) as any;
+    const head = el('div', 'sel-head');
+    const pill = el('span', 'pill'); pill.innerHTML = icon('spark') + 'fx'; pill.style.background = 'var(--clip-fx)'; head.appendChild(pill);
+    const title = el('span'); title.textContent = String(layer.effect).split('.')[1].replace(/-/g, ' '); title.style.cssText = 'flex:1;font-weight:600'; head.appendChild(title);
+    const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => { scene.layers.splice(l, 1); S.selected = null; structuralEdit(); }; head.appendChild(del); p.appendChild(head);
+    const note = el('div'); note.style.cssText = 'font-size:11px;color:var(--dim);margin-bottom:8px'; note.textContent = 'applies to the layer directly below this fx track'; p.appendChild(note);
+    layer.params = layer.params || {};
+    if (entry) { h('effect settings'); for (const [pk, spec] of Object.entries<any>(entry.params)) { const min = spec.min ?? 0, max = spec.max ?? (spec.default * 2 || 1); p.appendChild(numField(pk, layer.params[pk] ?? spec.default, min, max, (max - min) / 100 || 0.01, (v) => { layer.params[pk] = v; liveEdit(); })); } }
+    h('timing');
+    p.appendChild(numField('start (s)', layer.start ?? 0, 0, scene.duration, 0.05, (v) => { layer.start = v; timingEdit(); }));
+    p.appendChild(numField('duration (s)', layer.duration ?? scene.duration, 0.1, Math.max(scene.duration, S.total), 0.05, (v) => { layer.duration = v; timingEdit(); }));
+    return;
+  }
+
   const head = el('div', 'sel-head');
   const pill = el('span', 'pill'); pill.innerHTML = icon(typeIco[layer.type] ?? 'shape') + layer.type; pill.style.background = clipColor[layer.type] ?? '#555'; head.appendChild(pill);
   const title = el('span'); title.textContent = layer.type === 'text' ? String(layer.text).slice(0, 16) : (layer.src ? String(layer.src).split('/').pop() : layer.type); title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
@@ -559,11 +579,13 @@ function applyFromLibrary(entry: any) {
     structuralEdit(); return;
   }
   if (entry.category === 'overlay') { addLayerAtPlayhead(overlayLayerFromId(entry.id)); showToast('Overlay layer added: ' + entry.id.split('.')[1].replace(/-/g, ' ')); return; }
-  if (!S.selected) { setDot('edited', 'select a clip!'); return; }
-  const layer = S.ir.scenes[S.selected.s].layers[S.selected.l];
-  layer.presets = layer.presets || []; layer.presets.push({ id: entry.id, params: {} });
-  S.playhead = S.offsets[S.selected.s] + (layer.start ?? 0) + 0.05;
+  if (!S.selected) { showToast('Select a clip to apply the effect.'); return; }
+  const { s, l } = S.selected; const scene = S.ir.scenes[s]; const target = scene.layers[l];
+  scene.layers.splice(l + 1, 0, newFxLayer(target, scene.duration, entry.id));
+  S.selected = { s, l: l + 1 };
+  S.playhead = (S.offsets[s] ?? 0) + (target.start ?? 0) + 0.05;
   setTab('props'); structuralEdit(); positionPlayhead();
+  showToast('Added ' + entry.id.split('.')[1].replace(/-/g, ' '));
 }
 
 // ---------- playback ----------
@@ -712,7 +734,7 @@ async function init() {
     let hit = -1;
     for (let li = scene.layers.length - 1; li >= 0; li--) {
       const L = scene.layers[li]; const st = L.start ?? 0, du = L.duration ?? scene.duration;
-      if (L.type === 'overlay') continue; // full-frame adjustment layers aren't canvas-draggable; select via timeline
+      if (L.type === 'overlay' || L.type === 'fx') continue; // adjustment/control layers aren't canvas-draggable; select via timeline
       if (localT < st - 0.01 || localT > st + du + 0.01) continue;
       const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height }; const tf = L.transform ?? {}; const scl = tf.scale ?? 1;
       const ccx = r.x + r.w / 2 + (tf.x ?? 0), ccy = r.y + r.h / 2 + (tf.y ?? 0), hw = r.w * scl / 2, hh = r.h * scl / 2;
