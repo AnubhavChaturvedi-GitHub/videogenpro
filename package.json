@@ -1,0 +1,25 @@
+{
+  "name": "videogenpro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic, agent-authorable motion engine. Preset-driven, multi-renderer (HTML + Three.js + image/video), no AI model in the render path.",
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "build:runtime": "tsx packages/cli/src/build.ts",
+    "render": "tsx packages/cli/src/render.ts",
+    "manifest": "tsx packages/cli/src/manifest.ts",
+    "demo": "pnpm build:runtime && pnpm render examples/hello.json out/hello.mp4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "three": "^0.171.0",
+    "zod": "^3.24.0"
+  }
+}
