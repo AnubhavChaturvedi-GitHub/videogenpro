@@ -25078,15 +25078,18 @@
     return renderAnim;
   }
   function showRender(show) {
-    $("renderBar").classList.toggle("show", show);
+    const bar = $("renderBar");
+    const wasShown = bar.classList.contains("show");
+    bar.classList.toggle("show", show);
     const a = ensureRenderLottie();
     if (a) {
       try {
-        show ? a.goToAndPlay(0, true) : a.stop();
+        if (show && !wasShown) a.goToAndPlay(0, true);
+        else if (!show) a.stop();
       } catch {
       }
     }
-    if (show) {
+    if (show && !wasShown) {
       const img = document.getElementById("renderPreviewImg");
       if (img) {
         img.removeAttribute("src");
@@ -25777,8 +25780,10 @@
             if (m.url) window.open(m.url, "_blank");
           }, 1e3);
         } else if (m.state === "error") {
-          $("renderLabel").textContent = "\u2715 Render failed";
-          setTimeout(() => showRender(false), 3e3);
+          const msg = m.error ? String(m.error).trim().split("\n").filter(Boolean).pop() : "";
+          $("renderLabel").textContent = "\u2715 " + (msg || "Render failed").slice(0, 110);
+          console.error("[render] export failed:\n", m.error);
+          setTimeout(() => showRender(false), 7e3);
         }
       }
     };

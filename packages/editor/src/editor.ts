@@ -2078,10 +2078,13 @@ function ensureRenderLottie() {
   return renderAnim;
 }
 function showRender(show: boolean) {
-  $('renderBar').classList.toggle('show', show);
+  const bar = $('renderBar'); const wasShown = bar.classList.contains('show');
+  bar.classList.toggle('show', show);
   const a = ensureRenderLottie();
-  if (a) { try { show ? a.goToAndPlay(0, true) : a.stop(); } catch {} }
-  if (show) { const img = document.getElementById('renderPreviewImg') as HTMLImageElement | null; if (img) { img.removeAttribute('src'); img.classList.remove('has'); } } // fresh preview each export
+  if (a) { try { if (show && !wasShown) a.goToAndPlay(0, true); else if (!show) a.stop(); } catch {} }
+  // reset the preview only on the FIRST show of an export, not on every SSE tick (otherwise
+  // the live frame flickers as 'rendering' messages interleave with 'preview' ones).
+  if (show && !wasShown) { const img = document.getElementById('renderPreviewImg') as HTMLImageElement | null; if (img) { img.removeAttribute('src'); img.classList.remove('has'); } }
 }
 async function cancelRender() {
   $('renderLabel').textContent = 'Cancelling…';
@@ -2477,7 +2480,7 @@ async function init() {
       else if (m.state === 'rendering') { $('renderFill').style.width = m.pct + '%'; $('renderPct').textContent = m.pct + '%'; $('renderLabel').textContent = `Rendering frame ${m.done}/${m.total}`; }
       else if (m.state === 'cancelled') { showRender(false); }
       else if (m.state === 'done') { $('renderFill').style.width = '100%'; $('renderPct').textContent = '100%'; $('renderLabel').textContent = '✓ Export complete'; setTimeout(() => { showRender(false); if (m.url) window.open(m.url, '_blank'); }, 1000); }
-      else if (m.state === 'error') { $('renderLabel').textContent = '✕ Render failed'; setTimeout(() => showRender(false), 3000); }
+      else if (m.state === 'error') { const msg = m.error ? String(m.error).trim().split('\n').filter(Boolean).pop() : ''; $('renderLabel').textContent = '✕ ' + (msg || 'Render failed').slice(0, 110); console.error('[render] export failed:\n', m.error); setTimeout(() => showRender(false), 7000); }
     }
   };
 }

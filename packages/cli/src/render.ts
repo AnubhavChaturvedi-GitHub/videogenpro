@@ -68,6 +68,9 @@ async function main() {
       l.src = new URL(l.src, assetBase).href;
     }
   }
+  // resolve audio paths too so the browser preview can load them (otherwise file:// 404s
+  // flood the page); ffmpeg still muxes audio from its own resolved paths separately.
+  for (const a of ((resolved.audio ?? []) as any[])) { if (a.src && !/^https?:|^file:/.test(a.src)) a.src = new URL(a.src, assetBase).href; }
   await page.evaluate((c) => (window as any).VGP.mount(c), resolved);
   await page.evaluate(() => (window as any).VGP.ready());
 
