@@ -212,7 +212,7 @@ export const textPresets: Preset[] = [
       // Deterministic per-char pseudo-random in [-1,1] from the index (no Math.random).
       const seed = Math.sin(ctx.index * 12.9898 + 4.1414) * 43758.5453;
       const rx = ((seed - Math.floor(seed)) * 2 - 1);
-      const ry = ((Math.sin(ctx.index * 78.233 + 1.7) * 1271.137) % 1) * 2 - 1;
+      const sy = Math.sin(ctx.index * 78.233 + 1.7) * 1271.137; const ry = (sy - Math.floor(sy)) * 2 - 1; // true fract (signed % gave up to ~3x amount)
       const k = 1 - e;
       return { x: rx * prm.amount * k, y: ry * prm.amount * k, rotate: rx * 35 * k, opacity: ease('easeOutCubic', pe) };
     },

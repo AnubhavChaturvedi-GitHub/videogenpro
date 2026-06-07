@@ -12,6 +12,8 @@
     "studio": "tsx packages/cli/src/serve.ts",
     "manifest": "tsx packages/cli/src/manifest.ts",
     "check": "tsc --noEmit",
+    "test": "tsx --test tests/unit/*.test.ts",
+    "test:e2e": "node tests/e2e/run.mjs",
     "demo": "pnpm build:runtime && pnpm render examples/hello.json out/hello.mp4"
   },
   "devDependencies": {

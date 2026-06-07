@@ -4287,97 +4287,6 @@
     }
   ];
 
-  // packages/core/src/schema.ts
-  var presetInstance = external_exports.object({
-    id: external_exports.string(),
-    params: external_exports.record(external_exports.number()).optional(),
-    start: external_exports.number().optional(),
-    duration: external_exports.number().optional()
-  });
-  var easingName = external_exports.enum([
-    "linear",
-    "easeIn",
-    "easeOut",
-    "easeInOut",
-    "easeOutBack",
-    "easeOutExpo",
-    "easeOutCubic",
-    "easeInOutCubic"
-  ]);
-  var keyframe = external_exports.object({
-    t: external_exports.number(),
-    value: external_exports.number(),
-    easing: easingName.optional()
-  });
-  var transform = external_exports.object({
-    x: external_exports.number().optional(),
-    y: external_exports.number().optional(),
-    scale: external_exports.number().optional(),
-    rotate: external_exports.number().optional(),
-    opacity: external_exports.number().optional(),
-    anchor: external_exports.tuple([external_exports.number(), external_exports.number()]).optional()
-  }).optional();
-  var rect = external_exports.object({ x: external_exports.number(), y: external_exports.number(), w: external_exports.number(), h: external_exports.number() }).optional();
-  var overlayEffectValues = overlayPresets.map((p) => p.id.replace(/^overlay\./, ""));
-  var overlayEffect = external_exports.enum(overlayEffectValues);
-  var baseLayer = {
-    id: external_exports.string().optional(),
-    start: external_exports.number().optional(),
-    duration: external_exports.number().optional(),
-    rect,
-    transform,
-    presets: external_exports.array(presetInstance).optional(),
-    keyframes: external_exports.record(external_exports.array(keyframe)).optional(),
-    zIndex: external_exports.number().optional(),
-    // editor-only metadata: a shared id tying layers into a selectable group. The
-    // runtime ignores it (render == preview); kept here so grouping persists through
-    // POST /api/composition validation instead of being stripped/rejected.
-    groupId: external_exports.string().optional(),
-    // crop (image/video): inset % from each side -> clip-path on the media element.
-    crop: external_exports.object({ t: external_exports.number(), r: external_exports.number(), b: external_exports.number(), l: external_exports.number() }).optional(),
-    // Match & Move pairing key (optional; runtime auto-pairs by src/text when unset).
-    matchId: external_exports.string().optional(),
-    // visibility toggle — runtime skips the layer when true (preview + render).
-    hidden: external_exports.boolean().optional(),
-    // video layers: play the clip's own audio when muted === false (default muted).
-    muted: external_exports.boolean().optional()
-  };
-  var layer = external_exports.discriminatedUnion("type", [
-    external_exports.object({ ...baseLayer, type: external_exports.literal("text"), text: external_exports.string(), style: external_exports.record(external_exports.string()).optional() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("image"), src: external_exports.string(), fit: external_exports.enum(["cover", "contain"]).optional() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("video"), src: external_exports.string(), trimStart: external_exports.number().optional(), fit: external_exports.enum(["cover", "contain"]).optional() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("html"), html: external_exports.string() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("three"), scene: external_exports.string(), props: external_exports.record(external_exports.number()).optional() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("shape"), shape: external_exports.enum(["rect", "circle", "line"]), fill: external_exports.string().optional(), radius: external_exports.number().optional() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("overlay"), effect: overlayEffect, params: external_exports.record(external_exports.number()).optional() }),
-    external_exports.object({ ...baseLayer, type: external_exports.literal("fx"), effect: external_exports.string(), params: external_exports.record(external_exports.number()).optional() })
-  ]);
-  var scene = external_exports.object({
-    id: external_exports.string().optional(),
-    duration: external_exports.number().positive(),
-    background: external_exports.string().optional(),
-    layers: external_exports.array(layer),
-    transitionIn: presetInstance.optional()
-  });
-  var compositionSchema = external_exports.object({
-    fps: external_exports.number().positive(),
-    width: external_exports.number().positive(),
-    height: external_exports.number().positive(),
-    name: external_exports.string().optional(),
-    scenes: external_exports.array(scene).min(1),
-    audio: external_exports.array(external_exports.object({
-      src: external_exports.string(),
-      start: external_exports.number().optional(),
-      trimStart: external_exports.number().optional(),
-      duration: external_exports.number().optional(),
-      // clip length (seconds) — lets audio-clip trimming persist
-      volume: external_exports.number().optional(),
-      muted: external_exports.boolean().optional()
-      // track on/off toggle (preview + export)
-    })).optional(),
-    defaultTransition: presetInstance.optional()
-  });
-
   // packages/core/src/presets/text.ts
   var staggered = (p, ctx, staggerFrac) => {
     if (ctx.count <= 1 || staggerFrac <= 0) return clamp01(p);
@@ -4627,7 +4536,8 @@
         const e = ease("easeOutCubic", pe);
         const seed = Math.sin(ctx.index * 12.9898 + 4.1414) * 43758.5453;
         const rx = (seed - Math.floor(seed)) * 2 - 1;
-        const ry = Math.sin(ctx.index * 78.233 + 1.7) * 1271.137 % 1 * 2 - 1;
+        const sy = Math.sin(ctx.index * 78.233 + 1.7) * 1271.137;
+        const ry = (sy - Math.floor(sy)) * 2 - 1;
         const k = 1 - e;
         return { x: rx * prm.amount * k, y: ry * prm.amount * k, rotate: rx * 35 * k, opacity: ease("easeOutCubic", pe) };
       }
@@ -4932,7 +4842,8 @@
         const cell = Math.floor(phase);
         const r = Math.abs(Math.sin(cell * 91.7) * 1e3) % 1;
         const fire = r > 0.6 ? 1 : 0;
-        const jitter = (Math.sin(cell * 33.3) * 1e3 % 1 * 2 - 1) * prm.amount * fire;
+        const sj = Math.sin(cell * 33.3) * 1e3;
+        const jitter = ((sj - Math.floor(sj)) * 2 - 1) * prm.amount * fire;
         const hue = fire ? (r - 0.5) * 40 : 0;
         return { x: jitter, css: { filter: `url(#vgp-rgb-split) hue-rotate(${hue}deg)` } };
       }
@@ -5892,6 +5803,90 @@
     ...p.split ? { split: p.split } : {}
   }));
 
+  // packages/core/src/schema.ts
+  var presetId = external_exports.enum(allPresets().map((p) => p.id));
+  var cropPct = external_exports.number().min(0).max(100);
+  var presetInstance = external_exports.object({
+    id: presetId,
+    params: external_exports.record(external_exports.number()).optional(),
+    start: external_exports.number().nonnegative().finite().optional(),
+    duration: external_exports.number().positive().finite().optional()
+  });
+  var easingName = external_exports.enum(Object.keys(EASINGS));
+  var keyframe = external_exports.object({
+    t: external_exports.number().nonnegative().finite(),
+    value: external_exports.number().finite(),
+    easing: easingName.optional()
+  });
+  var transform = external_exports.object({
+    x: external_exports.number().optional(),
+    y: external_exports.number().optional(),
+    scale: external_exports.number().optional(),
+    rotate: external_exports.number().optional(),
+    opacity: external_exports.number().optional(),
+    anchor: external_exports.tuple([external_exports.number(), external_exports.number()]).optional()
+  }).optional();
+  var rect = external_exports.object({ x: external_exports.number(), y: external_exports.number(), w: external_exports.number(), h: external_exports.number() }).optional();
+  var overlayEffectValues = overlayPresets.map((p) => p.id.replace(/^overlay\./, ""));
+  var overlayEffect = external_exports.enum(overlayEffectValues);
+  var baseLayer = {
+    id: external_exports.string().optional(),
+    start: external_exports.number().nonnegative().finite().optional(),
+    duration: external_exports.number().positive().finite().optional(),
+    rect,
+    transform,
+    presets: external_exports.array(presetInstance).optional(),
+    keyframes: external_exports.record(external_exports.array(keyframe)).optional(),
+    zIndex: external_exports.number().optional(),
+    // editor-only metadata: a shared id tying layers into a selectable group. The
+    // runtime ignores it (render == preview); kept here so grouping persists through
+    // POST /api/composition validation instead of being stripped/rejected.
+    groupId: external_exports.string().optional(),
+    // crop (image/video): inset % from each side -> clip-path on the media element.
+    crop: external_exports.object({ t: cropPct, r: cropPct, b: cropPct, l: cropPct }).optional(),
+    // Match & Move pairing key (optional; runtime auto-pairs by src/text when unset).
+    matchId: external_exports.string().optional(),
+    // visibility toggle — runtime skips the layer when true (preview + render).
+    hidden: external_exports.boolean().optional(),
+    // video layers: play the clip's own audio when muted === false (default muted).
+    muted: external_exports.boolean().optional()
+  };
+  var layer = external_exports.discriminatedUnion("type", [
+    external_exports.object({ ...baseLayer, type: external_exports.literal("text"), text: external_exports.string(), style: external_exports.record(external_exports.string()).optional() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("image"), src: external_exports.string(), fit: external_exports.enum(["cover", "contain"]).optional() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("video"), src: external_exports.string(), trimStart: external_exports.number().nonnegative().finite().optional(), fit: external_exports.enum(["cover", "contain"]).optional() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("html"), html: external_exports.string() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("three"), scene: external_exports.string(), props: external_exports.record(external_exports.number()).optional() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("shape"), shape: external_exports.enum(["rect", "circle", "line"]), fill: external_exports.string().optional(), radius: external_exports.number().optional() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("overlay"), effect: overlayEffect, params: external_exports.record(external_exports.number()).optional() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("fx"), effect: presetId, params: external_exports.record(external_exports.number()).optional() })
+  ]);
+  var scene = external_exports.object({
+    id: external_exports.string().optional(),
+    duration: external_exports.number().positive().finite(),
+    background: external_exports.string().optional(),
+    layers: external_exports.array(layer),
+    transitionIn: presetInstance.optional()
+  });
+  var compositionSchema = external_exports.object({
+    fps: external_exports.number().positive().finite().max(480),
+    width: external_exports.number().positive().finite().max(16384),
+    height: external_exports.number().positive().finite().max(16384),
+    name: external_exports.string().optional(),
+    scenes: external_exports.array(scene).min(1),
+    audio: external_exports.array(external_exports.object({
+      src: external_exports.string(),
+      start: external_exports.number().nonnegative().finite().optional(),
+      trimStart: external_exports.number().nonnegative().finite().optional(),
+      duration: external_exports.number().positive().finite().optional(),
+      // clip length (seconds) — lets audio-clip trimming persist
+      volume: external_exports.number().min(0).max(4).optional(),
+      muted: external_exports.boolean().optional()
+      // track on/off toggle (preview + export)
+    })).optional(),
+    defaultTransition: presetInstance.optional()
+  });
+
   // packages/editor/src/editor.ts
   var MANIFEST = buildManifest();
   var MAN = new Map(MANIFEST.map((e) => [e.id, e]));
@@ -6172,9 +6167,9 @@
     });
     return out;
   }
-  function presetAppliesTo(presetId, layerType) {
+  function presetAppliesTo(presetId2, layerType) {
     if (layerType === "overlay") return false;
-    const e = MAN.get(presetId);
+    const e = MAN.get(presetId2);
     if (e && (e.category === "text" || e.split) && layerType !== "text") return false;
     return true;
   }
@@ -6315,11 +6310,11 @@
     const effect = id.split(".")[1];
     return { type: "overlay", effect, params: { amount: entry?.params?.amount?.default ?? 1 }, duration: entry?.defaultDuration ?? 5, presets: [{ id: "in.fade" }], transform: {} };
   };
-  var newFxLayer = (target, sceneDur, presetId) => {
-    const entry = MAN.get(presetId);
+  var newFxLayer = (target, sceneDur, presetId2) => {
+    const entry = MAN.get(presetId2);
     const full = target.duration ?? sceneDur;
     const dur = entry?.split && !entry?.continuous && entry?.defaultDuration ? Math.min(full, entry.defaultDuration) : full;
-    return { type: "fx", effect: presetId, params: {}, start: target.start ?? 0, duration: dur };
+    return { type: "fx", effect: presetId2, params: {}, start: target.start ?? 0, duration: dur };
   };
   var newAssetLayer = (a) => ({ type: a.type, src: a.src, fit: "cover", duration: 2.5, presets: a.type === "image" ? [{ id: "image.ken-burns" }] : [], transform: {} });
   function addLayerAtPlayhead(layer2) {

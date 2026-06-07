@@ -210,7 +210,7 @@ export const imagePresets: Preset[] = [
       // Deterministic per-burst gate: only ~40% of bursts fire, sizes vary by cell.
       const r = Math.abs(Math.sin(cell * 91.7) * 1000) % 1;
       const fire = r > 0.6 ? 1 : 0;
-      const jitter = (((Math.sin(cell * 33.3) * 1000) % 1) * 2 - 1) * prm.amount * fire;
+      const sj = Math.sin(cell * 33.3) * 1000; const jitter = ((sj - Math.floor(sj)) * 2 - 1) * prm.amount * fire; // true fract (signed % gave up to ~3x amount)
       const hue = fire ? (r - 0.5) * 40 : 0;
       return { x: jitter, css: { filter: `url(#vgp-rgb-split) hue-rotate(${hue}deg)` } };
     },

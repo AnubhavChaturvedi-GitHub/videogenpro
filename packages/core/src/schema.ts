@@ -1,26 +1,29 @@
 import { z } from 'zod';
 import { overlayPresets } from './presets/overlay';
+import { allPresets } from './presets/index';
+import { EASINGS } from './easing';
+
+// every preset / fx / transition id must be a REAL registered preset — a typo'd or
+// hallucinated id otherwise validates and then silently no-ops at runtime (bug 7).
+const presetId = z.enum(allPresets().map((p) => p.id) as [string, ...string[]]);
+const cropPct = z.number().min(0).max(100); // crop inset %, per side (bug 23)
 
 // Validation for the IR. Agent edits and hand-written JSON are checked here
 // before they ever reach the renderer, so bad documents fail loud and early.
 const presetInstance = z.object({
-  id: z.string(),
+  id: presetId,
   params: z.record(z.number()).optional(),
-  start: z.number().optional(),
-  duration: z.number().optional(),
+  start: z.number().nonnegative().finite().optional(),
+  duration: z.number().positive().finite().optional(),
 });
 
-// Must match EasingName in ./easing. Typos fail validation instead of being
-// silently linearized.
-const easingName = z.enum([
-  'linear',
-  'easeIn', 'easeOut', 'easeInOut',
-  'easeOutBack', 'easeOutExpo', 'easeOutCubic', 'easeInOutCubic',
-]);
+// Derived from the runtime EASINGS so the schema can never drift from what `ease()`
+// actually supports (the hand-listed enum was missing 6 real easings — bug 22).
+const easingName = z.enum(Object.keys(EASINGS) as [string, ...string[]]);
 
 const keyframe = z.object({
-  t: z.number(),
-  value: z.number(),
+  t: z.number().nonnegative().finite(),
+  value: z.number().finite(),
   easing: easingName.optional(),
 });
 
@@ -47,8 +50,8 @@ const overlayEffect = z.enum(overlayEffectValues as [string, ...string[]]);
 
 const baseLayer = {
   id: z.string().optional(),
-  start: z.number().optional(),
-  duration: z.number().optional(),
+  start: z.number().nonnegative().finite().optional(),
+  duration: z.number().positive().finite().optional(),
   rect,
   transform,
   presets: z.array(presetInstance).optional(),
@@ -59,7 +62,7 @@ const baseLayer = {
   // POST /api/composition validation instead of being stripped/rejected.
   groupId: z.string().optional(),
   // crop (image/video): inset % from each side -> clip-path on the media element.
-  crop: z.object({ t: z.number(), r: z.number(), b: z.number(), l: z.number() }).optional(),
+  crop: z.object({ t: cropPct, r: cropPct, b: cropPct, l: cropPct }).optional(),
   // Match & Move pairing key (optional; runtime auto-pairs by src/text when unset).
   matchId: z.string().optional(),
   // visibility toggle — runtime skips the layer when true (preview + render).
@@ -71,34 +74,34 @@ const baseLayer = {
 const layer = z.discriminatedUnion('type', [
   z.object({ ...baseLayer, type: z.literal('text'), text: z.string(), style: z.record(z.string()).optional() }),
   z.object({ ...baseLayer, type: z.literal('image'), src: z.string(), fit: z.enum(['cover', 'contain']).optional() }),
-  z.object({ ...baseLayer, type: z.literal('video'), src: z.string(), trimStart: z.number().optional(), fit: z.enum(['cover', 'contain']).optional() }),
+  z.object({ ...baseLayer, type: z.literal('video'), src: z.string(), trimStart: z.number().nonnegative().finite().optional(), fit: z.enum(['cover', 'contain']).optional() }),
   z.object({ ...baseLayer, type: z.literal('html'), html: z.string() }),
   z.object({ ...baseLayer, type: z.literal('three'), scene: z.string(), props: z.record(z.number()).optional() }),
   z.object({ ...baseLayer, type: z.literal('shape'), shape: z.enum(['rect', 'circle', 'line']), fill: z.string().optional(), radius: z.number().optional() }),
   z.object({ ...baseLayer, type: z.literal('overlay'), effect: overlayEffect, params: z.record(z.number()).optional() }),
-  z.object({ ...baseLayer, type: z.literal('fx'), effect: z.string(), params: z.record(z.number()).optional() }),
+  z.object({ ...baseLayer, type: z.literal('fx'), effect: presetId, params: z.record(z.number()).optional() }),
 ]);
 
 const scene = z.object({
   id: z.string().optional(),
-  duration: z.number().positive(),
+  duration: z.number().positive().finite(),
   background: z.string().optional(),
   layers: z.array(layer),
   transitionIn: presetInstance.optional(),
 });
 
 export const compositionSchema = z.object({
-  fps: z.number().positive(),
-  width: z.number().positive(),
-  height: z.number().positive(),
+  fps: z.number().positive().finite().max(480),
+  width: z.number().positive().finite().max(16384),
+  height: z.number().positive().finite().max(16384),
   name: z.string().optional(),
   scenes: z.array(scene).min(1),
   audio: z.array(z.object({
     src: z.string(),
-    start: z.number().optional(),
-    trimStart: z.number().optional(),
-    duration: z.number().optional(), // clip length (seconds) — lets audio-clip trimming persist
-    volume: z.number().optional(),
+    start: z.number().nonnegative().finite().optional(),
+    trimStart: z.number().nonnegative().finite().optional(),
+    duration: z.number().positive().finite().optional(), // clip length (seconds) — lets audio-clip trimming persist
+    volume: z.number().min(0).max(4).optional(),
     muted: z.boolean().optional(),   // track on/off toggle (preview + export)
   })).optional(),
   defaultTransition: presetInstance.optional(),
