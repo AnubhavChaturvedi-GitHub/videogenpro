@@ -55,8 +55,8 @@ test('bug23: crop insets outside 0..100 are rejected', () => {
   rejects(valid(sceneWith({ type: 'image', src: 'x.png', crop: { t: -5, r: 0, b: 0, l: 0 } })));
 });
 
-test('regression net: every shipped examples/*.json validates', () => {
-  const dir = resolve(dirname(fileURLToPath(import.meta.url)), '../../examples');
+test('regression net: every fixture composition validates', () => {
+  const dir = resolve(dirname(fileURLToPath(import.meta.url)), '../fixtures');
   for (const f of readdirSync(dir).filter((n) => n.endsWith('.json') && !n.startsWith('_'))) {
     assert.doesNotThrow(() => validateComposition(JSON.parse(readFileSync(join(dir, f), 'utf8'))), `${f} must validate`);
   }

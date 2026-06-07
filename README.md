@@ -6,8 +6,9 @@
 > user) just picks, tunes, arranges, and keyframes.
 
 This file is the **single source of truth for context** when starting a new session.
-Read this first, then `AGENTS.md` (authoring reference), then `docs/TEST-SHEET.md`
-(known bugs/gaps) and `docs/design.md` (brand tokens).
+Read this first, then `docs/AGENT-PLAYBOOK.md` (the brief→render workflow), then `AGENTS.md`
+(authoring reference), then `docs/TEST-SHEET.md` (known bugs/gaps) and `docs/design.md`
+(brand tokens). New AI agent? Start at `CLAUDE.md`.
 
 Location: `~/Desktop/video gen pro` · macOS / Node 25 / pnpm 10 / ffmpeg 8 · not a fresh
 git repo? it IS a git repo, commit history is the checkpoint log (see bottom).
@@ -20,12 +21,12 @@ git repo? it IS a git repo, commit history is the checkpoint log (see bottom).
 pnpm install
 npx playwright install chromium          # one-time, for headless render
 pnpm build:runtime                       # bundles renderer + editor (esbuild)
-pnpm studio examples/lesson2.json 5174   # dev server + editor at http://localhost:5174
+pnpm studio your-composition.json 5174   # dev server + editor at http://localhost:5174
 # other:
-pnpm render examples/lesson2.json out/x.mp4   # headless export (Playwright + ffmpeg, with audio)
+pnpm render your-composition.json out/x.mp4   # headless export (Playwright + ffmpeg, with audio)
 pnpm check                               # tsc --noEmit (typecheck gate — keep green)
 pnpm manifest                            # print the AI-facing preset catalog (JSON)
-pnpm preview examples/hello.json         # standalone self-contained preview HTML
+pnpm preview your-composition.json         # standalone self-contained preview HTML
 ```
 
 The Studio dev server edits a real composition JSON file on disk. **That file is shared
@@ -60,8 +61,9 @@ packages/
     render.ts      # headless export: Playwright drives seek per-frame -> PNG pipe -> ffmpeg (+audio mux)
     preview.ts     # standalone preview HTML generator
     manifest.ts    # prints buildManifest()
-examples/          # hello.json, lesson2.json (Lesson-2 port), text-showcase.json, hello.pristine.json
-assets/prism/      # 21 imported Lesson-2 assets (videos, pngs, mp3 voiceovers, bgm) — DO NOT regenerate
+    cli.ts         # `videogenpro <studio|render|build|manifest>` dispatcher
+bin/videogenpro.mjs # npm bin entry (runs cli.ts via tsx)
+tests/             # unit/ + e2e/ + fixtures/ (self-contained sample media & comps)
 docs/              # TEST-SHEET.md (bug+feature audit), design.md (Brainfish tokens — historical)
 AGENTS.md          # full agent authoring guide (IR, presets, keyframes, how to add effects)
 ```
@@ -249,7 +251,7 @@ Full detail (26 bugs as of that audit, 70 test cases, ~45 feature gaps) in **doc
 - The last action was a **timeline-fix-loop workflow** (3 rounds, 42 agents). It edited
   `editor.ts`, `runtime.ts`, `schema.ts`, `overlay.ts` and **passes `pnpm check` (tsc) +
   build**, but was **not yet functionally smoke-tested** by me. **First task: run
-  `pnpm build:runtime`, `pnpm studio examples/lesson2.json`, load it headless/in browser,
+  `pnpm build:runtime`, `pnpm studio your-composition.json`, load it headless/in browser,
   confirm no console errors, and verify the core timeline interactions** (zoom, arrange,
   fx apply, overlay blur, scrub-no-select, seam drop, audio sync, keyframes) before building more.
 - The workflow's audit did NOT converge to 0 "bugs" (43→30→35 across rounds) — many are

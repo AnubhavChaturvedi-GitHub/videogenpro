@@ -2,12 +2,15 @@
 // property-section header must not start playback (#20).
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { resolve, dirname } from 'node:path';
+import { copyFileSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = 5315;
-const srv = spawn('npx', ['tsx', 'packages/cli/src/serve.ts', 'examples/_uipack.json', String(PORT)], { cwd: root, stdio: 'ignore' });
+const compRel = 'tests/fixtures/_uipack.json';
+copyFileSync(join(root, 'tests', 'fixtures', 'hello.json'), join(root, compRel));
+const srv = spawn('npx', ['tsx', 'packages/cli/src/serve.ts', compRel, String(PORT)], { cwd: root, stdio: 'ignore' });
 const R = []; const rec = (k, ok, d = '') => { R.push({ k, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${d ? '  ::  ' + d : ''}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

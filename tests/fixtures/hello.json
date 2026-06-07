@@ -1,0 +1,4 @@
+{ "fps": 30, "width": 1280, "height": 720, "scenes": [ { "duration": 3, "background": "#0c0d12", "layers": [
+  { "type": "text", "text": "Hello", "rect": { "x": 140, "y": 120, "w": 1000, "h": 200 } },
+  { "type": "shape", "shape": "rect", "fill": "#3b82f6", "rect": { "x": 140, "y": 360, "w": 400, "h": 220 } }
+] } ] }

@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = 5314;
-const rel = 'examples/_e2e_sync.json';
+const rel = 'tests/fixtures/_e2e_sync.json';
 const tmp = join(root, rel);
-copyFileSync(join(root, 'examples', 'hello.json'), tmp);
+copyFileSync(join(root, 'tests', 'fixtures', 'hello.json'), tmp);
 
 const srv = spawn('npx', ['tsx', 'packages/cli/src/serve.ts', rel, String(PORT)], { cwd: root, stdio: 'ignore' });
 const R = []; const rec = (k, ok, d = '') => { R.push({ k, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${d ? '  ::  ' + d : ''}`); };

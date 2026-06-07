@@ -2,10 +2,56 @@
   "name": "videogenpro",
   "version": "0.1.0",
   "private": true,
-  "description": "Deterministic, agent-authorable motion engine. Preset-driven, multi-renderer (HTML + Three.js + image/video), no AI model in the render path.",
+  "description": "Deterministic, agent-authorable motion-graphics video engine with a CapCut-style browser studio. Preset-driven, multi-renderer (HTML + Three.js + image/video), no AI model in the render path.",
   "type": "module",
+  "license": "MIT",
+  "author": "Anubhav Chaturvedi",
+  "keywords": [
+    "video",
+    "motion-graphics",
+    "video-editor",
+    "render",
+    "ffmpeg",
+    "playwright",
+    "deterministic",
+    "composition",
+    "animation",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/videogenpro.git"
+  },
+  "homepage": "https://github.com/your-org/videogenpro#readme",
+  "bugs": {
+    "url": "https://github.com/your-org/videogenpro/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "packageManager": "pnpm@10.11.0",
+  "bin": {
+    "videogenpro": "bin/videogenpro.mjs"
+  },
+  "files": [
+    "bin/",
+    "packages/core/src/",
+    "packages/renderer/src/",
+    "packages/renderer/index.html",
+    "packages/renderer/dist/runtime.js",
+    "packages/editor/src/",
+    "packages/editor/index.html",
+    "packages/editor/dist/editor.js",
+    "packages/editor/logo.svg",
+    "packages/editor/Export.json",
+    "packages/editor/placeholder.json",
+    "packages/cli/src/",
+    "tsconfig.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "tsx packages/cli/src/build.ts",
     "build:runtime": "tsx packages/cli/src/build.ts",
     "render": "tsx packages/cli/src/render.ts",
     "preview": "tsx packages/cli/src/preview.ts",
@@ -14,19 +60,19 @@
     "check": "tsc --noEmit",
     "test": "tsx --test tests/unit/*.test.ts",
     "test:e2e": "node tests/e2e/run.mjs",
-    "demo": "pnpm build:runtime && pnpm render examples/hello.json out/hello.mp4"
-  },
-  "devDependencies": {
-    "@types/node": "^22.10.0",
-    "@types/three": "^0.184.1",
-    "esbuild": "^0.24.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "prepublishOnly": "pnpm build:runtime && tsc --noEmit"
   },
   "dependencies": {
     "lottie-web": "^5.13.0",
     "playwright": "^1.49.0",
     "three": "^0.171.0",
+    "tsx": "^4.19.0",
     "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/three": "^0.184.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
   }
 }

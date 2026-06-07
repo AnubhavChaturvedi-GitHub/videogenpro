@@ -1,7 +1,7 @@
 # VideoGenPro — Agent Authoring Guide
 
 This file is the **complete context** an AI agent needs to author and edit VideoGenPro
-compositions. The composition file (e.g. `examples/hello.json`) is the single source of
+compositions. The composition file (e.g. `your-composition.json`) is the single source of
 truth. When the Studio dev server is running, editing that file pushes changes live into
 the browser; the user's edits are written back to the same file.
 

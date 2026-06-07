@@ -1,12 +1,21 @@
 // Pack 3 — the determinism law + Match & Move correctness.
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { resolve, dirname } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = 5312;
-const srv = spawn('npx', ['tsx', 'packages/cli/src/serve.ts', 'examples/_det.json', String(PORT)], { cwd: root, stdio: 'ignore' });
+const compRel = 'tests/fixtures/_det.json';
+writeFileSync(join(root, compRel), JSON.stringify({ fps: 30, width: 1280, height: 720, scenes: [
+  { duration: 3, background: '#111111', layers: [
+    { type: 'image', src: 'pic.png', rect: { x: 120, y: 120, w: 300, h: 300 } },
+    { type: 'image', src: 'pic2.png', rect: { x: 900, y: 120, w: 200, h: 200 }, presets: [{ id: 'in.skew' }, { id: 'in.flip-y' }] }] },
+  { duration: 3, background: '#222233', transitionIn: { id: 'transition.match-move', duration: 0.9 }, layers: [
+    { type: 'image', src: 'pic.png', rect: { x: 800, y: 380, w: 300, h: 300 } },
+    { type: 'image', src: 'pic2.png', rect: { x: 100, y: 100, w: 200, h: 200 }, hidden: true }] }] }));
+const srv = spawn('npx', ['tsx', 'packages/cli/src/serve.ts', compRel, String(PORT)], { cwd: root, stdio: 'ignore' });
 const R = []; const rec = (k, ok, d = '') => { R.push({ k, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${d ? '  ::  ' + d : ''}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

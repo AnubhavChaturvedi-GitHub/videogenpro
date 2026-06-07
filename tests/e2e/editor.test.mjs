@@ -1,12 +1,18 @@
 // Pack 4 — editor: hidden layers are non-interactive, scene-duplicate strips groupId.
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { resolve, dirname } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = 5313;
-const srv = spawn('npx', ['tsx', 'packages/cli/src/serve.ts', 'examples/_ed.json', String(PORT)], { cwd: root, stdio: 'ignore' });
+const compRel = 'tests/fixtures/_ed.json';
+writeFileSync(join(root, compRel), JSON.stringify({ fps: 30, width: 1280, height: 720, scenes: [{ duration: 4, background: '#111111', layers: [
+  { type: 'shape', shape: 'rect', fill: '#3b82f6', rect: { x: 100, y: 100, w: 300, h: 200 }, groupId: 'g1' },
+  { type: 'text', text: 'A', rect: { x: 100, y: 350, w: 300, h: 100 }, groupId: 'g1' },
+  { type: 'shape', shape: 'circle', fill: '#22c55e', rect: { x: 620, y: 220, w: 320, h: 320 }, hidden: true }] }] }));
+const srv = spawn('npx', ['tsx', 'packages/cli/src/serve.ts', compRel, String(PORT)], { cwd: root, stdio: 'ignore' });
 const R = []; const rec = (k, ok, d = '') => { R.push({ k, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${d ? '  ::  ' + d : ''}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
