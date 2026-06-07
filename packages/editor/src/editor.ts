@@ -2050,7 +2050,7 @@ function buildFileMenu() {
   item('folder', 'Open…', '', openProjects);
   m.appendChild(el('div', 'menu-sep'));
   item('save', 'Export as JSON', '⌘S', saveJson);
-  item('download', 'Export as MP4', '', runExport);
+  item('download', 'Export as MP4', '', openExportDialog);
 }
 // New opens a dialog and creates a SEPARATE file (After-Effects style): the current
 // composition is preserved under its own name — New never overwrites what you had open.
@@ -2082,7 +2082,7 @@ function openExportMenu() {
   const cleanup = () => { m.remove(); document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); exportMenuClose = null; };
   const mi = (ic: string, label: string, fn: () => void) => { const b = el('button', 'menu-item'); b.innerHTML = icon(ic) + `<span>${label}</span>`; b.onclick = () => { cleanup(); fn(); }; m.appendChild(b); };
   mi('save', 'Export as JSON', saveJson);
-  mi('download', 'Export as MP4', runExport);
+  mi('download', 'Export as MP4', openExportDialog);
   document.body.appendChild(m);
   const onDown = (ev: MouseEvent) => { if (!m.contains(ev.target as Node) && ev.target !== btn) cleanup(); };
   const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') cleanup(); };
@@ -2113,20 +2113,28 @@ function showRender(show: boolean) {
   bar.classList.toggle('show', show);
   const a = ensureRenderLottie();
   if (a) { try { if (show && !wasShown) a.goToAndPlay(0, true); else if (!show) a.stop(); } catch {} }
+  if (show && !wasShown) { ($('renderActions') as HTMLElement).style.display = 'none'; ($('renderCancel') as HTMLElement).style.display = ''; } // start in the rendering state (Cancel shown)
 }
 async function cancelRender() {
   $('renderLabel').textContent = 'Cancelling…';
   try { await fetch('/api/render/cancel', { method: 'POST' }); } catch {}
   showRender(false); showToast('Export cancelled');
 }
-async function runExport() {
+let lastRenderPath = '';
+async function runExport(opts: { height?: number; name?: string; dir?: string } = {}) {
   showRender(true); $('renderFill').style.width = '0%'; $('renderPct').textContent = '0%'; $('renderLabel').textContent = 'Starting render…';
-  // B04: flush any pending debounced save so the render uses the latest edit,
-  // not the stale on-disk file. Cancel the timer and write S.ir directly first.
+  // B04: flush any pending debounced save so the render uses the latest edit, not stale disk.
   clearTimeout(saveTimer);
   const body = JSON.stringify(S.ir); S.lastSyncJson = body;
   try { await fetch('/api/composition', { method: 'POST', headers: { 'content-type': 'application/json' }, body }); } catch {}
-  fetch('/api/render', { method: 'POST' }).catch(() => {});
+  fetch('/api/render', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(opts) }).catch(() => {});
+}
+// Export-settings dialog — resolution, file name, save location.
+async function openExportDialog() {
+  ($('exportName') as HTMLInputElement).value = (S.ir?.name || 'render').replace(/[^\w.-]+/g, '_') || 'render';
+  const sel = $('exportDir') as HTMLSelectElement; sel.innerHTML = '';
+  try { const locs = await (await fetch('/api/locations')).json(); for (const l of locs) { const o = document.createElement('option'); o.value = l.path; o.textContent = `${l.label}  ·  ${l.path}`; sel.appendChild(o); } } catch {}
+  openModalById('exportModal');
 }
 
 // ---------- resizable panels ----------
@@ -2315,6 +2323,19 @@ async function init() {
   document.addEventListener('click', closeMenu);
   $('export').onclick = () => openExportMenu();
   $('renderCancel').onclick = cancelRender;
+  // post-render actions: open the finished file in the OS, or close the dialog
+  $('renderOpen').onclick = async () => { if (lastRenderPath) { try { const r = await (await fetch('/api/reveal', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: lastRenderPath }) })).json(); if (!r.ok) showToast('Could not open: ' + (r.error || 'file not found')); } catch {} } showRender(false); };
+  $('renderClose').onclick = () => showRender(false);
+  // export dialog: resolution picker, cancel, backdrop-close, and Export
+  $('exportCancel').onclick = () => closeModalById('exportModal');
+  $('exportModal').addEventListener('mousedown', (e) => { if (e.target === $('exportModal')) closeModalById('exportModal'); });
+  $('exportRes').querySelectorAll('.res-opt').forEach((b) => ((b as HTMLElement).onclick = () => { $('exportRes').querySelectorAll('.res-opt').forEach((x) => x.classList.remove('on')); b.classList.add('on'); }));
+  $('exportGo').onclick = () => {
+    const h = Number(($('exportRes').querySelector('.res-opt.on') as HTMLElement)?.dataset.h) || 1080;
+    const name = ($('exportName') as HTMLInputElement).value.trim() || 'render';
+    const dir = ($('exportDir') as HTMLSelectElement).value || '';
+    closeModalById('exportModal'); runExport({ height: h, name, dir });
+  };
   $('openClose').onclick = () => closeModalById('openModal');
   // close the Open modal on backdrop click too (parity with the project modal).
   $('openModal').addEventListener('mousedown', (e) => { if (e.target === $('openModal')) closeModalById('openModal'); });
@@ -2506,7 +2527,7 @@ async function init() {
       showRender(true);
       if (m.state === 'rendering') { $('renderFill').style.width = m.pct + '%'; $('renderPct').textContent = m.pct + '%'; $('renderLabel').textContent = `Rendering frame ${m.done}/${m.total}`; }
       else if (m.state === 'cancelled') { showRender(false); }
-      else if (m.state === 'done') { $('renderFill').style.width = '100%'; $('renderPct').textContent = '100%'; $('renderLabel').textContent = '✓ Export complete'; setTimeout(() => { showRender(false); if (m.url) window.open(m.url, '_blank'); }, 1000); }
+      else if (m.state === 'done') { lastRenderPath = m.path || ''; $('renderFill').style.width = '100%'; $('renderPct').textContent = '100%'; $('renderLabel').textContent = '✓ Export complete'; ($('renderCancel') as HTMLElement).style.display = 'none'; ($('renderActions') as HTMLElement).style.display = 'flex'; }
       else if (m.state === 'error') { const msg = m.error ? String(m.error).trim().split('\n').filter(Boolean).pop() : ''; $('renderLabel').textContent = '✕ ' + (msg || 'Render failed').slice(0, 110); console.error('[render] export failed:\n', m.error); setTimeout(() => showRender(false), 7000); }
     }
   };

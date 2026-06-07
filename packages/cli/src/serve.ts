@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, existsSync, watch, statSync, createReadStr
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, relative, extname, normalize, join, isAbsolute, sep } from 'node:path';
+import { homedir } from 'node:os';
 import { validateComposition } from '../../core/src/index';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -226,39 +227,75 @@ const server = createServer((req, res) => {
     } catch (e: any) { return json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
   }
 
-  // export with streamed progress over SSE
+  // export with streamed progress over SSE. Body: { height?, name?, dir? } — resolution,
+  // filename and save folder chosen in the editor's export dialog.
   if (path === '/api/render' && req.method === 'POST') {
-    const relComp = relative(root, active);
-    send({ t: 'render', state: 'start', pct: 0, done: 0, total: 0 });
-    const child = spawn('npx', ['tsx', 'packages/cli/src/render.ts', relComp, 'out/studio-render.mp4'], { cwd: root, detached: true });
-    renderChild = child; renderCancelled = false; // detached → its own process group, so cancel can kill the whole tree (tsx+chromium+ffmpeg)
-    let buf = '', log = '', replied = false;
-    child.stdout.on('data', (d) => {
-      buf += d; let i;
-      while ((i = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, i); buf = buf.slice(i + 1);
-        const m = line.match(/^@P (\d+) (\d+)/);
-        if (m) { const done = +m[1], total = +m[2]; send({ t: 'render', state: 'rendering', done, total, pct: Math.round((done / total) * 100) }); }
-      }
-    });
-    child.stderr.on('data', (d) => (log += d));
-    // Spawn failure (e.g. tsx/ffmpeg not found) emits 'error' and may never fire 'close',
-    // which would otherwise hang the request forever. Report it and broadcast over SSE.
-    child.on('error', (err: any) => {
-      renderChild = null;
-      if (replied) return; replied = true;
-      const error = String(err?.message ?? err);
-      send({ t: 'render', state: 'error', error });
-      json(res, 200, { ok: false, error });
-    });
-    child.on('close', (code) => {
-      renderChild = null;
-      if (replied) return; replied = true;
-      if (renderCancelled) { send({ t: 'render', state: 'cancelled' }); return json(res, 200, { ok: false, cancelled: true }); }
-      if (code === 0) { const url2 = '/out/studio-render.mp4?t=' + Date.now(); send({ t: 'render', state: 'done', pct: 100, url: url2 }); json(res, 200, { ok: true, url: url2 }); }
-      else { send({ t: 'render', state: 'error', error: log.slice(-300) }); json(res, 200, { ok: false, error: log.slice(-300) }); }
+    let body = ''; req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      let opts: any = {}; try { opts = JSON.parse(body || '{}'); } catch {}
+      const relComp = relative(root, active);
+      const name = ((String(opts.name || 'render').split(/[\\/]/).pop() || 'render').replace(/\.mp4$/i, '').replace(/[^a-zA-Z0-9._ -]/g, '_').replace(/^\.+/, '').trim() || 'render') + '.mp4';
+      let dir = (typeof opts.dir === 'string' && opts.dir) ? opts.dir : resolve(root, 'out');
+      try { mkdirSync(dir, { recursive: true }); } catch { dir = resolve(root, 'out'); mkdirSync(dir, { recursive: true }); }
+      const outAbs = join(dir, name);
+      const height = Number(opts.height) > 0 ? String(Math.round(Number(opts.height))) : '';
+      const args = ['tsx', 'packages/cli/src/render.ts', relComp, outAbs]; if (height) args.push(height);
+      send({ t: 'render', state: 'start', pct: 0, done: 0, total: 0 });
+      const child = spawn('npx', args, { cwd: root, detached: true }); // detached → own group, cancellable as a tree
+      renderChild = child; renderCancelled = false;
+      let sbuf = '', log = '', replied = false;
+      child.stdout.on('data', (d) => {
+        sbuf += d; let i;
+        while ((i = sbuf.indexOf('\n')) >= 0) {
+          const line = sbuf.slice(0, i); sbuf = sbuf.slice(i + 1);
+          const m = line.match(/^@P (\d+) (\d+)/);
+          if (m) { const done = +m[1], total = +m[2]; send({ t: 'render', state: 'rendering', done, total, pct: Math.round((done / total) * 100) }); }
+        }
+      });
+      child.stderr.on('data', (d) => (log += d));
+      child.on('error', (err: any) => {
+        renderChild = null; if (replied) return; replied = true;
+        const error = String(err?.message ?? err); send({ t: 'render', state: 'error', error }); json(res, 200, { ok: false, error });
+      });
+      child.on('close', (code) => {
+        renderChild = null; if (replied) return; replied = true;
+        if (renderCancelled) { send({ t: 'render', state: 'cancelled' }); return json(res, 200, { ok: false, cancelled: true }); }
+        if (code === 0) {
+          const url2 = withinRoot(outAbs) ? '/' + relative(root, outAbs).split(/[\\/]/).join('/') + '?t=' + Date.now() : null;
+          send({ t: 'render', state: 'done', pct: 100, path: outAbs, url: url2 });
+          json(res, 200, { ok: true, path: outAbs, url: url2 });
+        } else { send({ t: 'render', state: 'error', error: log.slice(-300) }); json(res, 200, { ok: false, error: log.slice(-300) }); }
+      });
     });
     return;
+  }
+
+  // open a finished render in the OS default app ("open the video in my local system")
+  if (path === '/api/reveal' && req.method === 'POST') {
+    let body = ''; req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const { path: p } = JSON.parse(body || '{}');
+        if (typeof p !== 'string' || !existsSync(p) || !statSync(p).isFile()) return json(res, 400, { ok: false, error: 'file not found' });
+        const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+        spawn(opener, [p], { detached: true, stdio: 'ignore' }).unref();
+        json(res, 200, { ok: true });
+      } catch (e: any) { json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
+    });
+    return;
+  }
+
+  // common save locations for the export dialog
+  if (path === '/api/locations' && req.method === 'GET') {
+    const home = homedir();
+    const locs = [
+      { label: 'Project folder', path: dirname(active) },
+      { label: 'Desktop', path: join(home, 'Desktop') },
+      { label: 'Downloads', path: join(home, 'Downloads') },
+      { label: 'Movies', path: join(home, 'Movies') },
+      { label: 'Project / out', path: resolve(root, 'out') },
+    ].filter((l) => { try { return existsSync(l.path) || l.label.startsWith('Project'); } catch { return false; } });
+    return json(res, 200, locs);
   }
 
   // cancel an in-flight export — kill the whole render process group (tsx + chromium + ffmpeg)

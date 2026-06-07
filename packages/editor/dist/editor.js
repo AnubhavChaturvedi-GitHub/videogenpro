@@ -25014,7 +25014,7 @@
     item("folder", "Open\u2026", "", openProjects);
     m.appendChild(el("div", "menu-sep"));
     item("save", "Export as JSON", "\u2318S", saveJson);
-    item("download", "Export as MP4", "", runExport);
+    item("download", "Export as MP4", "", openExportDialog);
   }
   function newComposition() {
     const inp = $("newName");
@@ -25078,7 +25078,7 @@
       m.appendChild(b);
     };
     mi("save", "Export as JSON", saveJson);
-    mi("download", "Export as MP4", runExport);
+    mi("download", "Export as MP4", openExportDialog);
     document.body.appendChild(m);
     const onDown = (ev) => {
       if (!m.contains(ev.target) && ev.target !== btn) cleanup();
@@ -25135,6 +25135,10 @@
       } catch {
       }
     }
+    if (show && !wasShown) {
+      $("renderActions").style.display = "none";
+      $("renderCancel").style.display = "";
+    }
   }
   async function cancelRender() {
     $("renderLabel").textContent = "Cancelling\u2026";
@@ -25145,7 +25149,8 @@
     showRender(false);
     showToast("Export cancelled");
   }
-  async function runExport() {
+  var lastRenderPath = "";
+  async function runExport(opts = {}) {
     showRender(true);
     $("renderFill").style.width = "0%";
     $("renderPct").textContent = "0%";
@@ -25157,8 +25162,24 @@
       await fetch("/api/composition", { method: "POST", headers: { "content-type": "application/json" }, body });
     } catch {
     }
-    fetch("/api/render", { method: "POST" }).catch(() => {
+    fetch("/api/render", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(opts) }).catch(() => {
     });
+  }
+  async function openExportDialog() {
+    $("exportName").value = (S.ir?.name || "render").replace(/[^\w.-]+/g, "_") || "render";
+    const sel = $("exportDir");
+    sel.innerHTML = "";
+    try {
+      const locs = await (await fetch("/api/locations")).json();
+      for (const l of locs) {
+        const o = document.createElement("option");
+        o.value = l.path;
+        o.textContent = `${l.label}  \xB7  ${l.path}`;
+        sel.appendChild(o);
+      }
+    } catch {
+    }
+    openModalById("exportModal");
   }
   var PANEL_CLAMP = { side: [150, 460], right: [240, 520], tl: [160, 640] };
   var PANEL_KEYS = { side: "vgp.sideW", right: "vgp.rightW", tl: "vgp.tlH" };
@@ -25429,6 +25450,32 @@
     document.addEventListener("click", closeMenu);
     $("export").onclick = () => openExportMenu();
     $("renderCancel").onclick = cancelRender;
+    $("renderOpen").onclick = async () => {
+      if (lastRenderPath) {
+        try {
+          const r = await (await fetch("/api/reveal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: lastRenderPath }) })).json();
+          if (!r.ok) showToast("Could not open: " + (r.error || "file not found"));
+        } catch {
+        }
+      }
+      showRender(false);
+    };
+    $("renderClose").onclick = () => showRender(false);
+    $("exportCancel").onclick = () => closeModalById("exportModal");
+    $("exportModal").addEventListener("mousedown", (e) => {
+      if (e.target === $("exportModal")) closeModalById("exportModal");
+    });
+    $("exportRes").querySelectorAll(".res-opt").forEach((b) => b.onclick = () => {
+      $("exportRes").querySelectorAll(".res-opt").forEach((x) => x.classList.remove("on"));
+      b.classList.add("on");
+    });
+    $("exportGo").onclick = () => {
+      const h = Number($("exportRes").querySelector(".res-opt.on")?.dataset.h) || 1080;
+      const name2 = $("exportName").value.trim() || "render";
+      const dir = $("exportDir").value || "";
+      closeModalById("exportModal");
+      runExport({ height: h, name: name2, dir });
+    };
     $("openClose").onclick = () => closeModalById("openModal");
     $("openModal").addEventListener("mousedown", (e) => {
       if (e.target === $("openModal")) closeModalById("openModal");
@@ -25805,13 +25852,12 @@
         } else if (m.state === "cancelled") {
           showRender(false);
         } else if (m.state === "done") {
+          lastRenderPath = m.path || "";
           $("renderFill").style.width = "100%";
           $("renderPct").textContent = "100%";
           $("renderLabel").textContent = "\u2713 Export complete";
-          setTimeout(() => {
-            showRender(false);
-            if (m.url) window.open(m.url, "_blank");
-          }, 1e3);
+          $("renderCancel").style.display = "none";
+          $("renderActions").style.display = "flex";
         } else if (m.state === "error") {
           const msg = m.error ? String(m.error).trim().split("\n").filter(Boolean).pop() : "";
           $("renderLabel").textContent = "\u2715 " + (msg || "Render failed").slice(0, 110);
