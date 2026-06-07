@@ -144,9 +144,8 @@ async function main() {
   const indexUrl = pathToFileURL(resolve(root, 'packages/renderer/index.html')).href;
   const outDir = dirname(absOut);
   const segPaths = ranges.map((_, i) => resolve(outDir, `._vgpseg_${i}.mp4`));
-  const thumbEvery = Math.max(1, Math.floor(totalFrames / 24));
   let doneCount = 0;
-  const onFrame = (buf: Buffer) => { doneCount++; process.stdout.write(`@P ${doneCount} ${totalFrames}\n`); if (doneCount % thumbEvery === 0) process.stdout.write(`@T ${buf.toString('base64')}\n`); };
+  const onFrame = () => { doneCount++; process.stdout.write(`@P ${doneCount} ${totalFrames}\n`); };
 
   try {
     await Promise.all(ranges.map((r, i) => renderSegment(browser, resolved, indexUrl, comp.fps, r[0], r[1], segPaths[i], onFrame)));

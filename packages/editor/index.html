@@ -324,12 +324,9 @@
     .render-bar.show { opacity:1; pointer-events:auto; }
     .render-card { width:480px; max-width:92vw; display:flex; flex-direction:column; align-items:stretch; background:rgba(18,18,18,.96); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px; box-shadow:0 32px 80px rgba(0,0,0,.7),var(--hi); transform:scale(.94); transition:transform .25s cubic-bezier(.22,1,.36,1); }
     .render-bar.show .render-card { transform:scale(1); }
-    .render-preview { position:relative; width:100%; aspect-ratio:16/9; margin-bottom:14px; border-radius:var(--r-md); overflow:hidden; background:#000; border:1px solid var(--border); }
-    .render-preview-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; transition:opacity .25s; }
-    .render-preview-img.has { opacity:1; }
-    .render-lottie { position:absolute; inset:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; pointer-events:none; transition:opacity .25s; }
-    .render-preview-img.has + .render-lottie { opacity:0; }
-    .render-lottie svg { display:block; max-width:82%; max-height:82%; }
+    .render-preview { position:relative; width:100%; height:200px; margin-bottom:14px; display:flex; align-items:center; justify-content:center; }
+    .render-lottie { width:100%; height:100%; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+    .render-lottie svg { display:block; max-width:90%; max-height:100%; }
     .render-cancel { margin-top:14px; padding:10px 14px; width:100%; font:inherit; font-size:13px; font-weight:600; color:var(--text); background:var(--glass-2); border:1px solid var(--border); border-radius:var(--r-md); cursor:pointer; transition:.15s; }
     .render-cancel:hover { background:rgba(255,80,80,.16); border-color:rgba(255,80,80,.5); color:#fff; }
     .render-head { display:flex; align-items:center; gap:16px; }
@@ -762,7 +759,6 @@
   <div class="render-bar" id="renderBar">
     <div class="render-card">
       <div class="render-preview">
-        <img id="renderPreviewImg" class="render-preview-img" alt="" />
         <div id="renderLottie" class="render-lottie" aria-hidden="true"></div>
       </div>
       <div class="render-meta">

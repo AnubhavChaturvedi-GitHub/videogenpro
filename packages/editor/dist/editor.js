@@ -25085,13 +25085,6 @@
       } catch {
       }
     }
-    if (show && !wasShown) {
-      const img = document.getElementById("renderPreviewImg");
-      if (img) {
-        img.removeAttribute("src");
-        img.classList.remove("has");
-      }
-    }
   }
   async function cancelRender() {
     $("renderLabel").textContent = "Cancelling\u2026";
@@ -25755,13 +25748,7 @@
       }
       if (m.t === "render") {
         showRender(true);
-        if (m.state === "preview" && m.thumb) {
-          const img = document.getElementById("renderPreviewImg");
-          if (img) {
-            img.src = "data:image/jpeg;base64," + m.thumb;
-            img.classList.add("has");
-          }
-        } else if (m.state === "rendering") {
+        if (m.state === "rendering") {
           $("renderFill").style.width = m.pct + "%";
           $("renderPct").textContent = m.pct + "%";
           $("renderLabel").textContent = `Rendering frame ${m.done}/${m.total}`;

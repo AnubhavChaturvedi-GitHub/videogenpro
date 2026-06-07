@@ -2079,9 +2079,6 @@ function showRender(show: boolean) {
   bar.classList.toggle('show', show);
   const a = ensureRenderLottie();
   if (a) { try { if (show && !wasShown) a.goToAndPlay(0, true); else if (!show) a.stop(); } catch {} }
-  // reset the preview only on the FIRST show of an export, not on every SSE tick (otherwise
-  // the live frame flickers as 'rendering' messages interleave with 'preview' ones).
-  if (show && !wasShown) { const img = document.getElementById('renderPreviewImg') as HTMLImageElement | null; if (img) { img.removeAttribute('src'); img.classList.remove('has'); } }
 }
 async function cancelRender() {
   $('renderLabel').textContent = 'Cancelling…';
@@ -2473,8 +2470,7 @@ async function init() {
     if (m.t === 'doc') { const j = JSON.stringify(m.ir); if (j === S.lastSyncJson) return; clearTimeout(saveTimer); S.ir = m.ir; S.lastSyncJson = j; S.multi = []; pushHistory(j); captureSceneBase(); S.ir.scenes.forEach((_: any, i: number) => normalizeZ(i)); derive(); mountPreview(); buildTimeline(); renderRight(); setDot('edited', 'agent edit ✦'); setTimeout(() => setDot('saved', 'synced'), 1400); }
     if (m.t === 'render') {
       showRender(true);
-      if (m.state === 'preview' && m.thumb) { const img = document.getElementById('renderPreviewImg') as HTMLImageElement | null; if (img) { img.src = 'data:image/jpeg;base64,' + m.thumb; img.classList.add('has'); } }
-      else if (m.state === 'rendering') { $('renderFill').style.width = m.pct + '%'; $('renderPct').textContent = m.pct + '%'; $('renderLabel').textContent = `Rendering frame ${m.done}/${m.total}`; }
+      if (m.state === 'rendering') { $('renderFill').style.width = m.pct + '%'; $('renderPct').textContent = m.pct + '%'; $('renderLabel').textContent = `Rendering frame ${m.done}/${m.total}`; }
       else if (m.state === 'cancelled') { showRender(false); }
       else if (m.state === 'done') { $('renderFill').style.width = '100%'; $('renderPct').textContent = '100%'; $('renderLabel').textContent = '✓ Export complete'; setTimeout(() => { showRender(false); if (m.url) window.open(m.url, '_blank'); }, 1000); }
       else if (m.state === 'error') { const msg = m.error ? String(m.error).trim().split('\n').filter(Boolean).pop() : ''; $('renderLabel').textContent = '✕ ' + (msg || 'Render failed').slice(0, 110); console.error('[render] export failed:\n', m.error); setTimeout(() => showRender(false), 7000); }

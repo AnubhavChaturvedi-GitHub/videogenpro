@@ -239,7 +239,6 @@ const server = createServer((req, res) => {
         const line = buf.slice(0, i); buf = buf.slice(i + 1);
         const m = line.match(/^@P (\d+) (\d+)/);
         if (m) { const done = +m[1], total = +m[2]; send({ t: 'render', state: 'rendering', done, total, pct: Math.round((done / total) * 100) }); }
-        else if (line.startsWith('@T ')) { send({ t: 'render', state: 'preview', thumb: line.slice(3) }); } // live render-preview frame
       }
     });
     child.stderr.on('data', (d) => (log += d));
