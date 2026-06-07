@@ -49,6 +49,7 @@ setWatch(active);
 const json = (res: ServerResponse, code: number, obj: any) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 
 const server = createServer((req, res) => {
+ try {
   const url = new URL(req.url!, `http://localhost:${PORT}`);
   const path = url.pathname;
 
@@ -181,6 +182,12 @@ const server = createServer((req, res) => {
   if (!existsSync(file) || statSync(file).isDirectory()) { res.writeHead(404); return res.end('not found'); }
   res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' });
   createReadStream(file).pipe(res);
+ } catch (e: any) {
+  // A synchronous throw in any handler (e.g. the active file was deleted/renamed out
+  // from under us → readFileSync ENOENT) must NOT crash the whole studio. Respond 500
+  // and stay up (bug #2).
+  try { if (!res.headersSent) json(res, 500, { ok: false, error: String(e?.message ?? e) }); else res.end(); } catch {}
+ }
 });
 
 server.listen(PORT, () => {
