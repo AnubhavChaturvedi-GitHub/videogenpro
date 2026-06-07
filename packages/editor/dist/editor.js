@@ -8016,6 +8016,7 @@
       head2.onkeydown = (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
+          ev.stopPropagation();
           toggle();
         }
       };
@@ -8664,10 +8665,10 @@
     a.click();
     showToast("Exported " + nm + ".json");
   }
+  var exportMenuClose = null;
   function openExportMenu() {
-    const existing = document.getElementById("exportMenu");
-    if (existing) {
-      existing.remove();
+    if (exportMenuClose) {
+      exportMenuClose();
       return;
     }
     const btn = $("export");
@@ -8675,12 +8676,17 @@
     const m = el("div", "menu");
     m.id = "exportMenu";
     m.style.cssText = `position:fixed; top:${Math.round(r.bottom + 6)}px; right:${Math.round(Math.max(8, window.innerWidth - r.right))}px; left:auto; display:block; z-index:200; min-width:210px;`;
+    const cleanup = () => {
+      m.remove();
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      exportMenuClose = null;
+    };
     const mi = (ic, label, fn) => {
       const b = el("button", "menu-item");
       b.innerHTML = icon(ic) + `<span>${label}</span>`;
       b.onclick = () => {
-        m.remove();
-        document.removeEventListener("mousedown", close);
+        cleanup();
         fn();
       };
       m.appendChild(b);
@@ -8688,13 +8694,17 @@
     mi("save", "Export as JSON", saveJson);
     mi("download", "Export as MP4", runExport);
     document.body.appendChild(m);
-    const close = (ev) => {
-      if (!m.contains(ev.target) && ev.target !== btn) {
-        m.remove();
-        document.removeEventListener("mousedown", close);
-      }
+    const onDown = (ev) => {
+      if (!m.contains(ev.target) && ev.target !== btn) cleanup();
     };
-    setTimeout(() => document.addEventListener("mousedown", close), 0);
+    const onKey = (ev) => {
+      if (ev.key === "Escape") cleanup();
+    };
+    exportMenuClose = cleanup;
+    setTimeout(() => {
+      document.addEventListener("mousedown", onDown);
+      document.addEventListener("keydown", onKey);
+    }, 0);
   }
   async function openProjects() {
     const list = await (await fetch("/api/projects")).json();
@@ -8738,7 +8748,8 @@
   var PANEL_VARS = { side: "--side-w", right: "--right-w", tl: "--tl-h" };
   function setPanelVar(which, px, persist = true) {
     const [lo, hi] = PANEL_CLAMP[which];
-    const v = Math.round(Math.max(lo, Math.min(hi, px)));
+    const vpMax = which === "tl" ? Math.max(lo, window.innerHeight - 200) : Math.max(lo, Math.round(window.innerWidth * 0.42));
+    const v = Math.round(Math.max(lo, Math.min(hi, vpMax, px)));
     document.getElementById("app").style.setProperty(PANEL_VARS[which], v + "px");
     if (persist) {
       try {
@@ -8756,6 +8767,13 @@
       } catch {
       }
       if (isFinite(stored) && stored > 0) setPanelVar(which, stored, false);
+    });
+  }
+  function reclampPanels() {
+    const app = document.getElementById("app");
+    ["side", "right", "tl"].forEach((w) => {
+      const cur = parseFloat(getComputedStyle(app).getPropertyValue(PANEL_VARS[w])) || 0;
+      if (cur > 0) setPanelVar(w, cur, false);
     });
   }
   function curPanelPx(which, fallbackEl) {
@@ -8996,6 +9014,9 @@
     $("openClose").onclick = () => closeModalById("openModal");
     $("openModal").addEventListener("mousedown", (e) => {
       if (e.target === $("openModal")) closeModalById("openModal");
+    });
+    $("newModal").addEventListener("mousedown", (e) => {
+      if (e.target === $("newModal")) closeModalById("newModal");
     });
     $("importBtn").onclick = () => {
       const inp = document.createElement("input");
@@ -9322,6 +9343,7 @@
     });
     let resizeT;
     window.addEventListener("resize", () => {
+      reclampPanels();
       fit();
       clearTimeout(resizeT);
       resizeT = setTimeout(() => buildTimeline(), 120);

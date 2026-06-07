@@ -258,8 +258,8 @@
     /* width-aware truncation — the label span shrinks and ellipsises inside the flex row */
     .track-label span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     /* per-track visibility / mute toggle on the (frozen, sticky) label */
-    .track-label .tl-toggle { flex-shrink:0; padding:2px; display:flex; align-items:center; color:var(--dim); background:transparent; border-radius:var(--r-sm); opacity:0; transition:opacity .12s; }
-    .track:hover .track-label .tl-toggle, .track-label .tl-toggle.off { opacity:1; } /* reveal on hover; an off (hidden/muted) toggle stays visible so you can turn it back on */
+    .track-label .tl-toggle { flex-shrink:0; display:flex; align-items:center; color:var(--dim); background:transparent; border-radius:var(--r-sm); width:0; padding:0; overflow:hidden; opacity:0; transition:opacity .12s; }
+    .track:hover .track-label .tl-toggle, .track-label .tl-toggle.off { width:auto; padding:2px; opacity:1; } /* #26: collapse to 0 width when idle so the name keeps its room; expand on hover (an off/hidden/muted toggle stays shown) */
     .track-label .tl-toggle:hover { color:#fff; background:var(--glass-2); }
     .track-label .tl-toggle.off { color:var(--dim2); }
     .track-label .tl-toggle svg { width:13px; height:13px; }

@@ -1657,7 +1657,7 @@ function buildProps() {
     const body = el('div', 'sec-body');
     const toggle = () => { const nowCollapsed = sec.classList.toggle('collapsed'); if (nowCollapsed) collapsedSecs.add(t); else collapsedSecs.delete(t); persistCollapsedSecs(); };
     head.onclick = toggle;
-    head.onkeydown = (ev: KeyboardEvent) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } };
+    head.onkeydown = (ev: KeyboardEvent) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); toggle(); } }; // #20: stop Space bubbling to the global play/pause
     sec.appendChild(head); sec.appendChild(body); p.appendChild(sec);
     cur = body; return body;
   };
@@ -2035,17 +2035,21 @@ let menuOpen = false;
 function closeMenu() { menuOpen = false; $('fileMenu').classList.remove('open'); }
 function saveJson() { const nm = (S.ir?.name || 'composition').replace(/[^\w.-]+/g, '_') || 'composition'; const blob = new Blob([JSON.stringify(S.ir, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nm + '.json'; a.click(); showToast('Exported ' + nm + '.json'); }
 // the topbar Export button: a small popup offering JSON or MP4 (click again / outside to close).
+let exportMenuClose: (() => void) | null = null;
 function openExportMenu() {
-  const existing = document.getElementById('exportMenu'); if (existing) { existing.remove(); return; }
+  if (exportMenuClose) { exportMenuClose(); return; } // toggle closed (cleans up its own listeners — no leak, #28)
   const btn = $('export'); const r = btn.getBoundingClientRect();
   const m = el('div', 'menu'); m.id = 'exportMenu';
   m.style.cssText = `position:fixed; top:${Math.round(r.bottom + 6)}px; right:${Math.round(Math.max(8, window.innerWidth - r.right))}px; left:auto; display:block; z-index:200; min-width:210px;`;
-  const mi = (ic: string, label: string, fn: () => void) => { const b = el('button', 'menu-item'); b.innerHTML = icon(ic) + `<span>${label}</span>`; b.onclick = () => { m.remove(); document.removeEventListener('mousedown', close); fn(); }; m.appendChild(b); };
+  const cleanup = () => { m.remove(); document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); exportMenuClose = null; };
+  const mi = (ic: string, label: string, fn: () => void) => { const b = el('button', 'menu-item'); b.innerHTML = icon(ic) + `<span>${label}</span>`; b.onclick = () => { cleanup(); fn(); }; m.appendChild(b); };
   mi('save', 'Export as JSON', saveJson);
   mi('download', 'Export as MP4', runExport);
   document.body.appendChild(m);
-  const close = (ev: MouseEvent) => { if (!m.contains(ev.target as Node) && ev.target !== btn) { m.remove(); document.removeEventListener('mousedown', close); } };
-  setTimeout(() => document.addEventListener('mousedown', close), 0);
+  const onDown = (ev: MouseEvent) => { if (!m.contains(ev.target as Node) && ev.target !== btn) cleanup(); };
+  const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') cleanup(); };
+  exportMenuClose = cleanup;
+  setTimeout(() => { document.addEventListener('mousedown', onDown); document.addEventListener('keydown', onKey); }, 0);
 }
 async function openProjects() {
   const list = await (await fetch('/api/projects')).json();
@@ -2081,7 +2085,11 @@ const PANEL_CLAMP = { side: [150, 460], right: [240, 520], tl: [160, 640] } as c
 const PANEL_KEYS = { side: 'vgp.sideW', right: 'vgp.rightW', tl: 'vgp.tlH' } as const;
 const PANEL_VARS = { side: '--side-w', right: '--right-w', tl: '--tl-h' } as const;
 function setPanelVar(which: 'side' | 'right' | 'tl', px: number, persist = true) {
-  const [lo, hi] = PANEL_CLAMP[which]; const v = Math.round(Math.max(lo, Math.min(hi, px)));
+  const [lo, hi] = PANEL_CLAMP[which];
+  // #12: also cap to a fraction of the viewport so a persisted size can't crush the
+  // preview on a smaller window (inline vars override the CSS @media fallbacks).
+  const vpMax = which === 'tl' ? Math.max(lo, window.innerHeight - 200) : Math.max(lo, Math.round(window.innerWidth * 0.42));
+  const v = Math.round(Math.max(lo, Math.min(hi, vpMax, px)));
   document.getElementById('app')!.style.setProperty(PANEL_VARS[which], v + 'px');
   if (persist) { try { localStorage.setItem(PANEL_KEYS[which], String(v)); } catch {} }
   return v;
@@ -2092,6 +2100,12 @@ function restorePanelSizes() {
     let stored = NaN; try { stored = parseFloat(localStorage.getItem(PANEL_KEYS[which]) || ''); } catch {}
     if (isFinite(stored) && stored > 0) setPanelVar(which, stored, false);
   });
+}
+// #12: re-apply panel sizes through the viewport-aware clamp on window resize so a
+// too-large persisted panel shrinks to fit a smaller window instead of crushing the preview.
+function reclampPanels() {
+  const app = document.getElementById('app')!;
+  (['side', 'right', 'tl'] as const).forEach((w) => { const cur = parseFloat(getComputedStyle(app).getPropertyValue(PANEL_VARS[w])) || 0; if (cur > 0) setPanelVar(w, cur, false); });
 }
 // current pixel width/height a var resolves to on #app (falls back to the measured
 // panel box when the var is unset, so the first drag grows from the real size).
@@ -2246,6 +2260,7 @@ async function init() {
   $('openClose').onclick = () => closeModalById('openModal');
   // close the Open modal on backdrop click too (parity with the project modal).
   $('openModal').addEventListener('mousedown', (e) => { if (e.target === $('openModal')) closeModalById('openModal'); });
+  $('newModal').addEventListener('mousedown', (e) => { if (e.target === $('newModal')) closeModalById('newModal'); }); // #28: backdrop-close parity
   $('importBtn').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json'; inp.onchange = () => { const f = inp.files?.[0]; if (!f) return; const rd = new FileReader(); rd.onload = async () => { try { const parsed = JSON.parse(String(rd.result)); const nm = (f.name || 'imported').replace(/\.json$/i, ''); const r = await (await fetch('/api/new', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: nm, ir: parsed }) })).json(); if (r.ok) { S.assetBase = r.assetBase; setDoc(r.ir); closeModalById('openModal'); showToast(`Imported as ${r.file}`); } else showToast('Import failed: ' + (r.error || 'invalid JSON')); } catch (e: any) { showToast('Import failed: ' + e.message); } }; rd.readAsText(f); }; inp.click(); };
   $('newCreate').onclick = createNewFile; $('newCancel').onclick = () => closeModalById('newModal'); $('newName').onkeydown = (e: KeyboardEvent) => { if (e.key === 'Enter') createNewFile(); };
 
@@ -2418,7 +2433,7 @@ async function init() {
   });
   // re-fit the preview AND the timeline on resize (debounced) so the ruler/clips
   // don't overflow/under-fill after a window resize.
-  let resizeT: any; window.addEventListener('resize', () => { fit(); clearTimeout(resizeT); resizeT = setTimeout(() => buildTimeline(), 120); });
+  let resizeT: any; window.addEventListener('resize', () => { reclampPanels(); fit(); clearTimeout(resizeT); resizeT = setTimeout(() => buildTimeline(), 120); });
 
   // browsers block audio until a user gesture — kick playback on first interaction
   const kick = () => { if (S.playing) VGP.seek(S.playhead, { playing: true }); window.removeEventListener('pointerdown', kick); };
