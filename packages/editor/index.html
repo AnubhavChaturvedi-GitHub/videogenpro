@@ -102,6 +102,11 @@
     #selbox .sh-crop[data-h=crop-b]{ left:50%; bottom:0;  margin:0 0 -7px -7px; cursor:row-resize; }
     #selbox .sh-crop[data-h=crop-l]{ top:50%;  left:0;    margin:-7px 0 0 -7px; cursor:col-resize; }
     #selbox .sh-crop[data-h=crop-r]{ top:50%;  right:0;   margin:-7px -7px 0 0; cursor:col-resize; }
+    /* rotation handle: a dot above the top-centre with a short stem down to the box */
+    #selbox .sh-rot{ left:50%; top:0; margin:-40px 0 0 -8px; width:16px; height:16px; border-radius:50%; background:#fff; border:2px solid var(--accent); cursor:grab; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+    #selbox .sh-rot:hover{ box-shadow:0 0 0 3px rgba(255,255,255,.35), 0 2px 8px rgba(0,0,0,.6); }
+    #selbox .sh-rot:active{ cursor:grabbing; }
+    #selbox .sh-rot::before{ content:''; position:absolute; left:50%; top:100%; width:2px; height:24px; margin-left:-1px; background:var(--accent); pointer-events:none; }
 
     .topbar { display:flex; align-items:center; gap:13px; padding:0 18px; background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-bottom:1px solid var(--border); position:relative; z-index:50; box-shadow:var(--hi); }
     .brand { font-weight:800; letter-spacing:.3px; display:flex; align-items:center; gap:9px; font-size:16px; }
@@ -711,6 +716,7 @@
             <div class="sh sh-crop" data-h="crop-r" title="Drag to crop right edge"></div>
             <div class="sh sh-crop" data-h="crop-b" title="Drag to crop bottom edge"></div>
             <div class="sh sh-crop" data-h="crop-l" title="Drag to crop left edge"></div>
+            <div class="sh sh-rot" data-h="rotate" title="Drag to rotate (Shift = snap 15°)"></div>
           </div>
         </div></div>
         <div class="seekbar" id="seekbar" title="Drag to scrub">

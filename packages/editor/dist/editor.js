@@ -23586,6 +23586,37 @@
           window.addEventListener("mouseup", up2);
           return;
         }
+        if (cropEdge === "rotate") {
+          if (!layer2.rect) layer2.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
+          const r2 = layer2.rect;
+          const sc2 = S.scale || 1;
+          const stageRect2 = $("stage").getBoundingClientRect();
+          const d02 = renderedDelta(layer2, sceneIdx);
+          const cxScr2 = stageRect2.left + (r2.x + r2.w / 2 + d02.x) * sc2;
+          const cyScr2 = stageRect2.top + (r2.y + r2.h / 2 + d02.y) * sc2;
+          const rotKeyed = isKeyframed(layer2, "rotate");
+          const baseRot = rotKeyed ? tfAt(layer2, sceneIdx, "rotate", 0) : layer2.transform?.rotate ?? 0;
+          const startAng = Math.atan2(e.clientY - cyScr2, e.clientX - cxScr2) * 180 / Math.PI;
+          const mv2 = (ev) => {
+            let rot = baseRot + (Math.atan2(ev.clientY - cyScr2, ev.clientX - cxScr2) * 180 / Math.PI - startAng);
+            if (ev.shiftKey) rot = Math.round(rot / 15) * 15;
+            rot = (Math.round(rot * 10) / 10 % 360 + 540) % 360 - 180;
+            if (rotKeyed) setKeyframeAtPlayhead("rotate", rot);
+            else layer2.transform = { ...layer2.transform || {}, rotate: rot };
+            liveSeek();
+            updateSelBox();
+          };
+          const up2 = () => {
+            window.removeEventListener("mousemove", mv2);
+            window.removeEventListener("mouseup", up2);
+            if (rotKeyed) buildTimeline();
+            scheduleSave();
+            buildProps();
+          };
+          window.addEventListener("mousemove", mv2);
+          window.addEventListener("mouseup", up2);
+          return;
+        }
         if (!layer2.rect) layer2.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
         const r = layer2.rect;
         const sc = S.scale || 1;

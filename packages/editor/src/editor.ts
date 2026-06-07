@@ -1110,6 +1110,29 @@ function initSelHandles() {
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
         return;
       }
+      // ROTATION handle (the dot above the box): drag to rotate around the layer centre.
+      // Works for every layer type (image/video/text/shape); Shift snaps to 15°.
+      if (cropEdge === 'rotate') {
+        if (!layer.rect) layer.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
+        const r = layer.rect; const sc = S.scale || 1; const stageRect = $('stage').getBoundingClientRect();
+        const d0 = renderedDelta(layer, sceneIdx);
+        const cxScr = stageRect.left + (r.x + r.w / 2 + d0.x) * sc;
+        const cyScr = stageRect.top + (r.y + r.h / 2 + d0.y) * sc;
+        const rotKeyed = isKeyframed(layer, 'rotate');
+        const baseRot = rotKeyed ? tfAt(layer, sceneIdx, 'rotate', 0) : (layer.transform?.rotate ?? 0);
+        const startAng = Math.atan2(e.clientY - cyScr, e.clientX - cxScr) * 180 / Math.PI;
+        const mv = (ev: MouseEvent) => {
+          let rot = baseRot + (Math.atan2(ev.clientY - cyScr, ev.clientX - cxScr) * 180 / Math.PI - startAng);
+          if (ev.shiftKey) rot = Math.round(rot / 15) * 15;             // Shift = snap to 15°
+          rot = ((Math.round(rot * 10) / 10) % 360 + 540) % 360 - 180;  // wrap to (-180, 180]
+          if (rotKeyed) setKeyframeAtPlayhead('rotate', rot);
+          else layer.transform = { ...(layer.transform || {}), rotate: rot };
+          liveSeek(); updateSelBox();
+        };
+        const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); if (rotKeyed) buildTimeline(); scheduleSave(); buildProps(); };
+        window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+        return;
+      }
       // FEATURE 2: the 4 corner dots drive a real UNIFORM SCALE that writes
       // layer.transform.scale (the same property the props "scale (zoom)" slider edits),
       // anchored at the rendered layer CENTER. This works WHILE a preset is present —
