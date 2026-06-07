@@ -48,15 +48,31 @@ function importBytes(compDir: string, rawName: string, bytes: Buffer): { name: s
   return { name, rel: 'assets/' + name };
 }
 
-let active = resolve(process.cwd(), process.argv[2] ?? 'examples/hello.json');
-if (!existsSync(active)) { console.error('composition not found:', active); process.exit(1); }
+// A blank but valid starter, used when the requested file doesn't exist yet — so the studio
+// ALWAYS opens (never blanks out), and `videogenpro studio newproject.json` scaffolds a project.
+const BLANK_COMPOSITION = {
+  name: 'untitled', fps: 30, width: 1920, height: 1080,
+  scenes: [{ duration: 5, background: '#0c0d12', layers: [
+    { type: 'text', text: 'New project', rect: { x: 360, y: 440, w: 1200, h: 200 } },
+  ] }],
+};
+let active = resolve(process.cwd(), process.argv[2] ?? 'composition.json');
+if (!existsSync(active)) {
+  try {
+    mkdirSync(dirname(active), { recursive: true });
+    writeFileSync(active, JSON.stringify(BLANK_COMPOSITION, null, 2));
+    console.log('created a new composition:', relative(root, active));
+  } catch { console.error('composition not found and could not be created:', active); process.exit(1); }
+}
 // The exact bytes we last wrote to / read from `active`. When the file-watcher fires for
 // OUR OWN write, the on-disk bytes equal this → we skip the broadcast, so a user's save
 // never echoes back as a phantom "agent edit" and can't start the save↔SSE wipe-loop (bug #3).
 let knownBytes = '';
 const PORT = Number(process.argv[3] ?? 5174);
 const projectsDir = dirname(active);
-const assetBaseFor = (f: string) => '/' + relative(root, dirname(f)).split(/[\\/]/).join('/') + '/';
+// '/<dir>/' for a comp in a subfolder, or '/' when the comp sits at the project root
+// (avoid '//', which is a host-less protocol-relative URL and throws in the editor).
+const assetBaseFor = (f: string) => { const rel = relative(root, dirname(f)).split(/[\\/]/).join('/'); return rel ? '/' + rel + '/' : '/'; };
 
 const MIME: Record<string, string> = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
