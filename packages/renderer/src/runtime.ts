@@ -414,6 +414,11 @@ function buildLayer(layer: Layer, sceneDur: number, fxLayers: any[] = []): Layer
       img.style.objectFit = layer.fit ?? 'cover';
       el.appendChild(img);
       node.media = img;
+      // smooth crop edits in the EDITOR. Determinism-safe: crop is static per render, so
+      // the clip-path never changes between seeks -> the transition never fires during a
+      // render; we seed the initial clip-path here so the first seek doesn't animate either.
+      img.style.transition = 'clip-path .16s cubic-bezier(.4,0,.2,1)';
+      { const c = (layer as any).crop; if (c && (c.t || c.r || c.b || c.l)) img.style.clipPath = `inset(${c.t || 0}% ${c.r || 0}% ${c.b || 0}% ${c.l || 0}%)`; }
       break;
     }
     case 'video': {
@@ -425,6 +430,8 @@ function buildLayer(layer: Layer, sceneDur: number, fxLayers: any[] = []): Layer
       v.style.objectFit = layer.fit ?? 'cover';
       el.appendChild(v);
       node.video = v; node.media = v;
+      v.style.transition = 'clip-path .16s cubic-bezier(.4,0,.2,1)'; // smooth crop edits (editor); static crop never transitions in render
+      { const c = (layer as any).crop; if (c && (c.t || c.r || c.b || c.l)) v.style.clipPath = `inset(${c.t || 0}% ${c.r || 0}% ${c.b || 0}% ${c.l || 0}%)`; }
       break;
     }
     case 'html': {
