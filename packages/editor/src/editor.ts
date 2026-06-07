@@ -91,7 +91,7 @@ type State = {
   sceneBase: number[];
 };
 const S: State = {
-  ir: null, assetBase: '/', assets: [], selected: null, selAudio: null, multi: [], playhead: 0, playing: false, loop: true,
+  ir: null, assetBase: '/', assets: [], selected: null, selAudio: null, multi: [], playhead: 0, playing: false, loop: false,
   pxPerSec: 120, scale: 1, offsets: [], total: 0, lastSyncJson: '', panel: 'props', cat: 'text',
   history: [], histIndex: -1, sceneBase: [],
 };

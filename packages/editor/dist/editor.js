@@ -22292,7 +22292,7 @@
     multi: [],
     playhead: 0,
     playing: false,
-    loop: true,
+    loop: false,
     pxPerSec: 120,
     scale: 1,
     offsets: [],
