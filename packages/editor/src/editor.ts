@@ -1644,8 +1644,15 @@ function loadCollapsedSecs(): Set<string> {
 }
 const collapsedSecs = loadCollapsedSecs();
 function persistCollapsedSecs() { try { localStorage.setItem(SEC_KEY, JSON.stringify([...collapsedSecs])); } catch {} }
+// empty-state Properties placeholder — an engaging Lottie loop (packages/editor/placeholder.json)
+let phAnim: any = null;
+function mountPlaceholderLottie() {
+  const c = document.getElementById('phLottie'); if (!c) return;
+  try { phAnim = lottie.loadAnimation({ container: c, renderer: 'svg', loop: true, autoplay: true, path: '/packages/editor/placeholder.json' }); } catch {}
+}
 function buildProps() {
   const p = $('rightBody'); p.innerHTML = '';
+  try { phAnim?.destroy(); } catch {} phAnim = null; // tear down the placeholder animation on every re-render
   // current append target for section fields — `add(node)` routes a field into the
   // CURRENT section body so every field after a header lands in that header's
   // collapsible body (set by h()). Defaults to the panel root for pre-header content.
@@ -1691,13 +1698,11 @@ function buildProps() {
   // EMPTY-STATE onboarding: friendly hint pointing at the workflow when nothing is
   // selected. Kept inside the .empty element so the markup agent's styling applies.
   if (!S.selected) {
-    p.innerHTML = '<div class="empty">'
-      + '<b>Select a clip</b> in the timeline to edit it.'
-      + '<br/><br/>New here? Try:'
-      + '<br/>• <b>Add layer ↑</b> — text, shape, line or 3D'
-      + '<br/>• <b>Drag media</b> into the upload box to add it'
-      + '<br/>• Open the <b>Animations</b> tab to browse presets'
+    p.innerHTML = '<div class="empty ph-empty">'
+      + '<div id="phLottie" class="ph-lottie" aria-hidden="true"></div>'
+      + '<div class="ph-hint"><b>Select a clip</b> to edit — or add a layer / drag in media to begin.</div>'
       + '</div>';
+    mountPlaceholderLottie();
     return;
   }
   const { s, l } = S.selected; const scene = S.ir.scenes[s]; const layer = scene?.layers[l];

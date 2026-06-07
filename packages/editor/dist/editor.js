@@ -24328,9 +24328,23 @@
     } catch {
     }
   }
+  var phAnim = null;
+  function mountPlaceholderLottie() {
+    const c = document.getElementById("phLottie");
+    if (!c) return;
+    try {
+      phAnim = import_lottie_web.default.loadAnimation({ container: c, renderer: "svg", loop: true, autoplay: true, path: "/packages/editor/placeholder.json" });
+    } catch {
+    }
+  }
   function buildProps() {
     const p = $("rightBody");
     p.innerHTML = "";
+    try {
+      phAnim?.destroy();
+    } catch {
+    }
+    phAnim = null;
     let cur = p;
     const add2 = (node) => cur.appendChild(node);
     const h = (t) => {
@@ -24424,7 +24438,8 @@
       return;
     }
     if (!S.selected) {
-      p.innerHTML = '<div class="empty"><b>Select a clip</b> in the timeline to edit it.<br/><br/>New here? Try:<br/>\u2022 <b>Add layer \u2191</b> \u2014 text, shape, line or 3D<br/>\u2022 <b>Drag media</b> into the upload box to add it<br/>\u2022 Open the <b>Animations</b> tab to browse presets</div>';
+      p.innerHTML = '<div class="empty ph-empty"><div id="phLottie" class="ph-lottie" aria-hidden="true"></div><div class="ph-hint"><b>Select a clip</b> to edit \u2014 or add a layer / drag in media to begin.</div></div>';
+      mountPlaceholderLottie();
       return;
     }
     const { s, l } = S.selected;
