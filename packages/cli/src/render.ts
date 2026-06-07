@@ -111,7 +111,9 @@ async function main() {
   const ffArgs = ['-y', '-f', 'image2pipe', '-framerate', String(comp.fps), '-i', '-', ...audioArgs];
   // B06: with no valid audio tracks, render video-only (no -filter_complex / audio map).
   if (hasAudio) ffArgs.push('-filter_complex', filters.join(';'), '-map', '0:v', '-map', '[aout]');
-  ffArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'slow', '-crf', '15', '-profile:v', 'high', '-level', '4.2', '-movflags', '+faststart');
+  // fast + high-quality: veryfast preset keeps the encoder ahead of the screenshot pipe (no
+  // backpressure stalls), crf 18 is visually high quality. (Was preset=slow/crf=15 — much slower.)
+  ffArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-crf', '18', '-profile:v', 'high', '-level', '4.2', '-movflags', '+faststart');
   if (hasAudio) ffArgs.push('-c:a', 'aac', '-b:a', '192k', '-t', String(totalDur));
   ffArgs.push(absOut);
   const ff = spawn('ffmpeg', ffArgs, { stdio: ['pipe', 'inherit', 'inherit'] });
@@ -149,21 +151,23 @@ async function main() {
         if (rvfc.length) {
           let pending = rvfc.length;
           const done = () => { if (--pending <= 0) res(); };
-          // safety timeout so a paused/ended video can't stall the render
-          const to = setTimeout(res, 300);
+          // safety timeout so a paused/ended/idle video can't stall the render. Kept short:
+          // when a new frame WILL present, rVFC fires in ~16-33ms; when it won't (video idle
+          // for much of the timeline), we must not burn 300ms/frame — that's the "stuck" crawl.
+          const to = setTimeout(res, 60);
           rvfc.forEach((v) => (v as any).requestVideoFrameCallback(() => { clearTimeout(to); done(); }));
         } else {
           requestAnimationFrame(() => requestAnimationFrame(() => res()));
         }
       }));
     }
-    const buf = await stage.screenshot({ type: 'png' });
+    // JPEG is far faster to capture AND pipe than PNG (≈30× smaller → ffmpeg never backpressures
+    // the screenshot loop); q90 stays high-quality through the x264 encode.
+    const buf = await stage.screenshot({ type: 'jpeg', quality: 90 });
     if (ffFailed) break;
     if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once('drain', r));
     process.stdout.write(`@P ${f + 1} ${totalFrames}\n`); // machine-readable progress (parsed by the dev server)
-    if (f % thumbEvery === 0 || f === totalFrames - 1) {
-      try { const th = await stage.screenshot({ type: 'jpeg', quality: 40 }); process.stdout.write(`@T ${th.toString('base64')}\n`); } catch {} // live preview frame (parsed as @T)
-    }
+    if (f % thumbEvery === 0 || f === totalFrames - 1) process.stdout.write(`@T ${buf.toString('base64')}\n`); // reuse the frame as the live preview — no second screenshot
   }
   ff.stdin.end();
   process.stdout.write(`\r  rendered ${totalFrames}/${totalFrames} frames        \n`);
