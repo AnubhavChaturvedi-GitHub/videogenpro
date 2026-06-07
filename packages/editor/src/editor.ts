@@ -1017,6 +1017,50 @@ function selectionList(): { s: number; l: number }[] {
   if (S.multi.length) return S.multi.slice();
   return S.selected ? [{ s: S.selected.s, l: S.selected.l }] : [];
 }
+// ---- alignment / distribution ----
+// Aligns the SELECTION to each other (>=2 layers) or to the canvas (single layer).
+// Operates on each layer's RENDERED box (base rect + transform offset + scale) and
+// writes the result back to rect.x/y, so the visual result matches what's on screen.
+function alignableSelection(): any[] {
+  return selectionList().map(({ s, l }) => S.ir.scenes[s]?.layers?.[l]).filter((L) => L && L.type !== 'overlay' && L.type !== 'fx');
+}
+function ensureLayerRect(L: any) {
+  if (!L.rect) L.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
+  return L.rect;
+}
+const effBox = (L: any) => { const r = ensureLayerRect(L); const sc = L.transform?.scale ?? 1; const cx = r.x + r.w / 2 + (L.transform?.x ?? 0); const cy = r.y + r.h / 2 + (L.transform?.y ?? 0); return { left: cx - r.w * sc / 2, top: cy - r.h * sc / 2, w: r.w * sc, h: r.h * sc, cx, cy }; };
+const setBoxLeft = (L: any, left: number) => { const r = L.rect, sc = L.transform?.scale ?? 1; r.x = Math.round(left + r.w * sc / 2 - r.w / 2 - (L.transform?.x ?? 0)); };
+const setBoxTop = (L: any, top: number) => { const r = L.rect, sc = L.transform?.scale ?? 1; r.y = Math.round(top + r.h * sc / 2 - r.h / 2 - (L.transform?.y ?? 0)); };
+const setBoxCX = (L: any, cx: number) => { L.rect.x = Math.round(cx - L.rect.w / 2 - (L.transform?.x ?? 0)); };
+const setBoxCY = (L: any, cy: number) => { L.rect.y = Math.round(cy - L.rect.h / 2 - (L.transform?.y ?? 0)); };
+function alignSelected(mode: string) {
+  const layers = alignableSelection(); if (!layers.length) { showToast('Select a layer to align.'); return; }
+  const boxes = layers.map((L) => ({ L, b: effBox(L) }));
+  let ref: { left: number; top: number; right: number; bottom: number; cx: number; cy: number };
+  if (layers.length >= 2) {
+    const left = Math.min(...boxes.map((x) => x.b.left)), top = Math.min(...boxes.map((x) => x.b.top));
+    const right = Math.max(...boxes.map((x) => x.b.left + x.b.w)), bottom = Math.max(...boxes.map((x) => x.b.top + x.b.h));
+    ref = { left, top, right, bottom, cx: (left + right) / 2, cy: (top + bottom) / 2 };
+  } else ref = { left: 0, top: 0, right: S.ir.width, bottom: S.ir.height, cx: S.ir.width / 2, cy: S.ir.height / 2 };
+  for (const { L, b } of boxes) {
+    if (mode === 'left') setBoxLeft(L, ref.left);
+    else if (mode === 'cx') setBoxCX(L, ref.cx);
+    else if (mode === 'right') setBoxLeft(L, ref.right - b.w);
+    else if (mode === 'top') setBoxTop(L, ref.top);
+    else if (mode === 'cy') setBoxCY(L, ref.cy);
+    else if (mode === 'bottom') setBoxTop(L, ref.bottom - b.h);
+  }
+  liveSeek(); updateSelBox(); scheduleSave();
+}
+function distributeSelected(axis: 'h' | 'v') {
+  const layers = alignableSelection(); if (layers.length < 3) { showToast('Select 3+ layers to distribute evenly.'); return; }
+  const boxes = layers.map((L) => ({ L, b: effBox(L) })).sort((a, b) => (axis === 'h' ? a.b.cx - b.b.cx : a.b.cy - b.b.cy));
+  const c0 = axis === 'h' ? boxes[0].b.cx : boxes[0].b.cy;
+  const c1 = axis === 'h' ? boxes[boxes.length - 1].b.cx : boxes[boxes.length - 1].b.cy;
+  const step = (c1 - c0) / (boxes.length - 1);
+  boxes.forEach(({ L }, i) => { const c = c0 + step * i; axis === 'h' ? setBoxCX(L, c) : setBoxCY(L, c); });
+  liveSeek(); updateSelBox(); scheduleSave();
+}
 // FEATURE 3: monotonic group id from the existing ids (max gN + 1). Deterministic —
 // no Math.random / Date.now — so the IR stays render-stable across saves.
 function nextGroupId(): string {
@@ -1483,6 +1527,22 @@ function buildProps() {
   const pill = el('span', 'pill'); pill.innerHTML = icon(typeIco[layer.type] ?? 'shape') + layer.type; pill.style.background = clipColor[layer.type] ?? '#555'; head.appendChild(pill);
   const title = el('span'); title.textContent = layer.type === 'text' ? String(layer.text).slice(0, 16) : (layer.src ? String(layer.src).split('/').pop() : layer.type); title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
   const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => deleteSelection(); head.appendChild(del); p.appendChild(head); // FEATURE 1: multi-aware delete
+
+  // alignment bar — align the selection to each other (>=2 layers) or to the canvas
+  // (single). Distribute (even spacing) shows for 3+. Overlays are full-frame → skip.
+  if (layer.type !== 'overlay') {
+    const cnt = alignableSelection().length;
+    if (cnt >= 1) {
+      const an = el('div'); an.style.cssText = 'font-size:11px;color:var(--dim);margin:2px 0 6px';
+      an.textContent = cnt >= 2 ? `${cnt} layers selected — align / space` : 'Align to canvas';
+      p.appendChild(an);
+      const aBtn = (title: string, label: string, fn: () => void) => { const b = el('button'); b.title = title; b.textContent = label; b.style.cssText = 'flex:1;min-width:0;padding:5px 2px;font-size:11px;font-weight:600;background:var(--glass-2);color:var(--dim);border:1px solid var(--border);border-radius:7px;cursor:pointer'; b.onmouseenter = () => (b.style.color = '#fff'); b.onmouseleave = () => (b.style.color = 'var(--dim)'); b.onclick = fn; return b; };
+      const aRow = () => { const d = el('div'); d.style.cssText = 'display:flex;gap:5px;margin-bottom:6px'; return d; };
+      const r1 = aRow(); r1.append(aBtn('Align left edges', 'Left', () => alignSelected('left')), aBtn('Center horizontally', 'Center', () => alignSelected('cx')), aBtn('Align right edges', 'Right', () => alignSelected('right'))); p.appendChild(r1);
+      const r2 = aRow(); r2.append(aBtn('Align top edges', 'Top', () => alignSelected('top')), aBtn('Center vertically', 'Middle', () => alignSelected('cy')), aBtn('Align bottom edges', 'Bottom', () => alignSelected('bottom'))); p.appendChild(r2);
+      if (cnt >= 3) { const r3 = aRow(); r3.append(aBtn('Distribute evenly — horizontal spacing', 'Distribute H', () => distributeSelected('h')), aBtn('Distribute evenly — vertical spacing', 'Distribute V', () => distributeSelected('v'))); p.appendChild(r3); }
+    }
+  }
 
   // arrange / z-order. Every layer — content AND overlays — lives in one z-stack now:
   // use these (or drag the clip vertically) to move it up/down. An overlay is an

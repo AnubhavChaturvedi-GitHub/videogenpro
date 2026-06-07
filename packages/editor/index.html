@@ -96,8 +96,12 @@
     .asset .badge { position:absolute; top:5px; left:5px; font-size:8px; background:rgba(12,12,12,.6); backdrop-filter:blur(6px); border:1px solid var(--border); padding:1px 7px; border-radius:100px; font-weight:700; text-transform:uppercase; }
 
     /* preview — dark glass stage with ambient glow */
-    .stagewrap { display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative;
+    /* center column = preview stage stacked over its own seekbar (so the progress bar
+       is the width of the PREVIEW window, not the whole timeline). */
+    .center-col { min-width:0; display:flex; flex-direction:column; overflow:hidden; }
+    .stagewrap { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative;
       background:radial-gradient(700px 500px at 50% 40%, rgba(255,255,255,.1), transparent 70%), #000000; }
+    .center-col .seekbar { flex:0 0 auto; }
     #scaler { position:relative; }
     #stage { position:relative; border-radius:12px; box-shadow:0 30px 90px rgba(0,0,0,.7), 0 0 0 1px var(--border), var(--hi); }
 
@@ -299,12 +303,19 @@
         <div class="asset-grid" id="assetGrid"></div>
       </div>
 
-      <div class="stagewrap"><div id="scaler"><div id="stage"></div>
-        <div id="selbox">
-          <div class="sh" data-h="nw"></div><div class="sh" data-h="ne"></div>
-          <div class="sh" data-h="sw"></div><div class="sh" data-h="se"></div>
+      <div class="center-col">
+        <div class="stagewrap"><div id="scaler"><div id="stage"></div>
+          <div id="selbox">
+            <div class="sh" data-h="nw"></div><div class="sh" data-h="ne"></div>
+            <div class="sh" data-h="sw"></div><div class="sh" data-h="se"></div>
+          </div>
+        </div></div>
+        <div class="seekbar" id="seekbar" title="Drag to scrub">
+          <div class="seek-fill" id="seekFill"></div>
+          <div class="seek-buf"></div>
+          <div class="seek-knob" id="seekKnob"></div>
         </div>
-      </div></div>
+      </div>
 
       <div class="right">
         <div class="tabs">
@@ -316,11 +327,6 @@
     </div>
 
     <div class="timeline">
-      <div class="seekbar" id="seekbar" title="Drag to scrub">
-        <div class="seek-fill" id="seekFill"></div>
-        <div class="seek-buf"></div>
-        <div class="seek-knob" id="seekKnob"></div>
-      </div>
       <div class="transport">
         <div class="tp-time"><span id="tpTime">0.00</span><span class="tot" id="tpTotal"> / 0.00s</span></div>
         <div class="clip-tools">
