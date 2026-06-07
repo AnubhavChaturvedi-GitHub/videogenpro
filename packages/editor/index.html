@@ -313,10 +313,19 @@
       opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; }
     #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
-    .render-bar { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); width:440px; display:flex; flex-direction:column; align-items:center; background:rgba(18,18,18,.8); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px; box-shadow:0 24px 60px rgba(0,0,0,.6),var(--hi); z-index:100; opacity:0; pointer-events:none; transition:.25s; }
-    .render-bar.show { opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
-    .render-lottie { width:100%; height:190px; margin-bottom:10px; pointer-events:none; }
-    .render-lottie svg { display:block; }
+    /* centered, dimmed export dialog */
+    .render-bar { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); opacity:0; pointer-events:none; transition:opacity .25s; }
+    .render-bar.show { opacity:1; pointer-events:auto; }
+    .render-card { width:480px; max-width:92vw; display:flex; flex-direction:column; align-items:stretch; background:rgba(18,18,18,.96); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px; box-shadow:0 32px 80px rgba(0,0,0,.7),var(--hi); transform:scale(.94); transition:transform .25s cubic-bezier(.22,1,.36,1); }
+    .render-bar.show .render-card { transform:scale(1); }
+    .render-preview { position:relative; width:100%; aspect-ratio:16/9; margin-bottom:14px; border-radius:var(--r-md); overflow:hidden; background:#000; border:1px solid var(--border); }
+    .render-preview-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; transition:opacity .25s; }
+    .render-preview-img.has { opacity:1; }
+    .render-lottie { position:absolute; inset:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; pointer-events:none; transition:opacity .25s; }
+    .render-preview-img.has + .render-lottie { opacity:0; }
+    .render-lottie svg { display:block; max-width:82%; max-height:82%; }
+    .render-cancel { margin-top:14px; padding:10px 14px; width:100%; font:inherit; font-size:13px; font-weight:600; color:var(--text); background:var(--glass-2); border:1px solid var(--border); border-radius:var(--r-md); cursor:pointer; transition:.15s; }
+    .render-cancel:hover { background:rgba(255,80,80,.16); border-color:rgba(255,80,80,.5); color:#fff; }
     .render-head { display:flex; align-items:center; gap:16px; }
     .render-meta { width:100%; min-width:0; }
     .render-bar .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:12.5px; font-weight:600; }
@@ -502,9 +511,7 @@
     /* modal content rises in when its bg opens */
     .modal-bg.show .modal { animation:modalIn .26s cubic-bezier(.22,1,.36,1) both; }
     @keyframes modalIn { from { opacity:0; transform:translateY(14px) scale(.97); } to { opacity:1; transform:none; } }
-    /* render-bar already slides via .show; add a gentle entrance scale */
-    .render-bar.show { animation:renderIn .3s cubic-bezier(.22,1,.36,1); }
-    @keyframes renderIn { from { transform:translateX(-50%) translateY(20px) scale(.96); } to { transform:translateX(-50%) translateY(0) scale(1); } }
+    /* the export card scales in via its own .render-card transform transition */
     /* playhead knob gets a faint glow heartbeat */
     .playhead::before { animation:phPulse 2.4s ease-in-out infinite; }
     @keyframes phPulse { 0%,100% { box-shadow:0 1px 4px rgba(0,0,0,.5); } 50% { box-shadow:0 1px 4px rgba(0,0,0,.5), 0 0 8px rgba(255,255,255,.6); } }
@@ -583,9 +590,7 @@
       .add-grid { grid-template-columns:1fr 1fr; }
       /* modals go near-fullwidth */
       .modal, .proj-modal { width:94vw; max-width:94vw; padding:18px; }
-      .render-bar { width:calc(100vw - 28px); left:14px; right:14px; transform:translateY(20px); }
-      .render-bar.show { transform:translateY(0); }
-      @keyframes renderIn { from { transform:translateY(20px) scale(.96); } to { transform:translateY(0) scale(1); } }
+      .render-card { width:calc(100vw - 28px); padding:14px; }
       #toast { left:14px; right:14px; transform:translateY(-14px); max-width:none; text-align:center; }
       #toast.show { transform:translateY(0); }
       @keyframes toastIn { from { transform:translateY(-14px) scale(.95); } to { transform:translateY(0) scale(1); } }
@@ -626,7 +631,7 @@
       /* surfaces that were hard-coded dark → light glass */
       .menu { background:rgba(255,255,255,.92); }
       .modal, .modal .nm-field input, .modal .nm-field select { background:rgba(255,255,255,.92); }
-      #toast, .render-bar, .ruler, .track-label, .scene-tag .scene-acts { background:rgba(255,255,255,.9); }
+      #toast, .render-card, .ruler, .track-label, .scene-tag .scene-acts { background:rgba(255,255,255,.9); }
       .modal-bg { background:rgba(20,24,33,.32); }
       /* dark preview canvas stays near-black for accurate WYSIWYG, but soften the void */
       .stagewrap { background:radial-gradient(700px 500px at 50% 40%, rgba(20,24,33,.06), transparent 70%), #15171c; }
@@ -745,13 +750,20 @@
     </div>
   </div>
 
+  <!-- centered export dialog: dim backdrop -> card. The card shows a LIVE render preview
+       (actual frames stream in over SSE) with the user's Lottie (Export.json) as the loading
+       animation until the first frame, the percentage, and a Cancel button. -->
   <div class="render-bar" id="renderBar">
-    <!-- the user's Lottie (packages/editor/Export.json) plays here during export; editor.ts
-         loads it via lottie-web and plays/stops it with the overlay. Percentage below. -->
-    <div id="renderLottie" class="render-lottie" aria-hidden="true"></div>
-    <div class="render-meta">
-      <div class="top"><span id="renderLabel">Rendering…</span><span class="pct" id="renderPct">0%</span></div>
-      <div class="render-track"><div class="render-fill" id="renderFill"></div></div>
+    <div class="render-card">
+      <div class="render-preview">
+        <img id="renderPreviewImg" class="render-preview-img" alt="" />
+        <div id="renderLottie" class="render-lottie" aria-hidden="true"></div>
+      </div>
+      <div class="render-meta">
+        <div class="top"><span id="renderLabel">Rendering…</span><span class="pct" id="renderPct">0%</span></div>
+        <div class="render-track"><div class="render-fill" id="renderFill"></div></div>
+      </div>
+      <button class="render-cancel" id="renderCancel" type="button">Cancel export</button>
     </div>
   </div>
 

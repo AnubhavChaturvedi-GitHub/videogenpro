@@ -2081,6 +2081,12 @@ function showRender(show: boolean) {
   $('renderBar').classList.toggle('show', show);
   const a = ensureRenderLottie();
   if (a) { try { show ? a.goToAndPlay(0, true) : a.stop(); } catch {} }
+  if (show) { const img = document.getElementById('renderPreviewImg') as HTMLImageElement | null; if (img) { img.removeAttribute('src'); img.classList.remove('has'); } } // fresh preview each export
+}
+async function cancelRender() {
+  $('renderLabel').textContent = 'Cancelling…';
+  try { await fetch('/api/render/cancel', { method: 'POST' }); } catch {}
+  showRender(false); showToast('Export cancelled');
 }
 async function runExport() {
   showRender(true); $('renderFill').style.width = '0%'; $('renderPct').textContent = '0%'; $('renderLabel').textContent = 'Starting render…';
@@ -2277,6 +2283,7 @@ async function init() {
   $('fileBtn').onclick = (e) => { e.stopPropagation(); menuOpen = !menuOpen; $('fileMenu').classList.toggle('open', menuOpen); };
   document.addEventListener('click', closeMenu);
   $('export').onclick = () => openExportMenu();
+  $('renderCancel').onclick = cancelRender;
   $('openClose').onclick = () => closeModalById('openModal');
   // close the Open modal on backdrop click too (parity with the project modal).
   $('openModal').addEventListener('mousedown', (e) => { if (e.target === $('openModal')) closeModalById('openModal'); });
@@ -2466,7 +2473,9 @@ async function init() {
     if (m.t === 'doc') { const j = JSON.stringify(m.ir); if (j === S.lastSyncJson) return; clearTimeout(saveTimer); S.ir = m.ir; S.lastSyncJson = j; S.multi = []; pushHistory(j); captureSceneBase(); S.ir.scenes.forEach((_: any, i: number) => normalizeZ(i)); derive(); mountPreview(); buildTimeline(); renderRight(); setDot('edited', 'agent edit ✦'); setTimeout(() => setDot('saved', 'synced'), 1400); }
     if (m.t === 'render') {
       showRender(true);
-      if (m.state === 'rendering') { $('renderFill').style.width = m.pct + '%'; $('renderPct').textContent = m.pct + '%'; $('renderLabel').textContent = `Rendering frame ${m.done}/${m.total}`; }
+      if (m.state === 'preview' && m.thumb) { const img = document.getElementById('renderPreviewImg') as HTMLImageElement | null; if (img) { img.src = 'data:image/jpeg;base64,' + m.thumb; img.classList.add('has'); } }
+      else if (m.state === 'rendering') { $('renderFill').style.width = m.pct + '%'; $('renderPct').textContent = m.pct + '%'; $('renderLabel').textContent = `Rendering frame ${m.done}/${m.total}`; }
+      else if (m.state === 'cancelled') { showRender(false); }
       else if (m.state === 'done') { $('renderFill').style.width = '100%'; $('renderPct').textContent = '100%'; $('renderLabel').textContent = '✓ Export complete'; setTimeout(() => { showRender(false); if (m.url) window.open(m.url, '_blank'); }, 1000); }
       else if (m.state === 'error') { $('renderLabel').textContent = '✕ Render failed'; setTimeout(() => showRender(false), 3000); }
     }

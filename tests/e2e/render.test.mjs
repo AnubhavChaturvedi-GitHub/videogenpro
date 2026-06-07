@@ -10,7 +10,10 @@ const R = []; const rec = (k, ok, d = '') => { R.push({ k, ok }); console.log(`$
 const compRel = 'examples/_rend.json';
 const comp = join(root, compRel); const out = join(root, 'out', '_rend.mp4');
 // 1s of visuals, 2.5s of audio (no explicit length on the scene) → export must be ~2.5s.
-writeFileSync(comp, JSON.stringify({ fps: 24, width: 320, height: 180, audio: [{ src: '../assets/prism/scene-01.mp3', start: 0, duration: 2.5, volume: 1 }], scenes: [{ duration: 1, background: '#102030', layers: [{ type: 'shape', shape: 'rect', fill: '#e23', rect: { x: 60, y: 40, w: 200, h: 100 } }] }] }));
+// Includes a VIDEO layer so the render exercises the per-frame video settle (page.evaluate)
+// — the regression guard for the "__name is not defined" crash that broke EVERY export
+// containing a video (a shape-only comp never hit that code path).
+writeFileSync(comp, JSON.stringify({ fps: 24, width: 320, height: 180, audio: [{ src: '../assets/prism/scene-01.mp3', start: 0, duration: 2.5, volume: 1 }], scenes: [{ duration: 1, background: '#102030', layers: [{ type: 'video', src: '../assets/prism/1.mp4', rect: { x: 0, y: 0, w: 320, h: 180 } }, { type: 'shape', shape: 'rect', fill: '#e23', rect: { x: 60, y: 40, w: 200, h: 100 } }] }] }));
 const probe = (args) => (spawnSync('ffprobe', args.concat([out]), { encoding: 'utf8' }).stdout || '').trim();
 try {
   if (!existsSync(join(root, 'packages/renderer/dist/runtime.js'))) spawnSync('pnpm', ['build:runtime'], { cwd: root, stdio: 'ignore' });

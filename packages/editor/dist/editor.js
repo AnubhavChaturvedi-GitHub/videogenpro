@@ -25086,6 +25086,22 @@
       } catch {
       }
     }
+    if (show) {
+      const img = document.getElementById("renderPreviewImg");
+      if (img) {
+        img.removeAttribute("src");
+        img.classList.remove("has");
+      }
+    }
+  }
+  async function cancelRender() {
+    $("renderLabel").textContent = "Cancelling\u2026";
+    try {
+      await fetch("/api/render/cancel", { method: "POST" });
+    } catch {
+    }
+    showRender(false);
+    showToast("Export cancelled");
   }
   async function runExport() {
     showRender(true);
@@ -25370,6 +25386,7 @@
     };
     document.addEventListener("click", closeMenu);
     $("export").onclick = () => openExportMenu();
+    $("renderCancel").onclick = cancelRender;
     $("openClose").onclick = () => closeModalById("openModal");
     $("openModal").addEventListener("mousedown", (e) => {
       if (e.target === $("openModal")) closeModalById("openModal");
@@ -25739,10 +25756,18 @@
       }
       if (m.t === "render") {
         showRender(true);
-        if (m.state === "rendering") {
+        if (m.state === "preview" && m.thumb) {
+          const img = document.getElementById("renderPreviewImg");
+          if (img) {
+            img.src = "data:image/jpeg;base64," + m.thumb;
+            img.classList.add("has");
+          }
+        } else if (m.state === "rendering") {
           $("renderFill").style.width = m.pct + "%";
           $("renderPct").textContent = m.pct + "%";
           $("renderLabel").textContent = `Rendering frame ${m.done}/${m.total}`;
+        } else if (m.state === "cancelled") {
+          showRender(false);
         } else if (m.state === "done") {
           $("renderFill").style.width = "100%";
           $("renderPct").textContent = "100%";

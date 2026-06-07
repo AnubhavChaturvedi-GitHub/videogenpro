@@ -65,6 +65,8 @@ const MIME: Record<string, string> = {
 
 const sse = new Set<ServerResponse>();
 const send = (obj: any) => { const s = `data: ${JSON.stringify(obj)}\n\n`; for (const r of sse) r.write(s); };
+let renderChild: ReturnType<typeof spawn> | null = null; // the active export child — tracked so the user can cancel it
+let renderCancelled = false;
 function broadcastDoc() {
   try {
     const txt = readFileSync(active, 'utf8');
@@ -228,7 +230,8 @@ const server = createServer((req, res) => {
   if (path === '/api/render' && req.method === 'POST') {
     const relComp = relative(root, active);
     send({ t: 'render', state: 'start', pct: 0, done: 0, total: 0 });
-    const child = spawn('npx', ['tsx', 'packages/cli/src/render.ts', relComp, 'out/studio-render.mp4'], { cwd: root });
+    const child = spawn('npx', ['tsx', 'packages/cli/src/render.ts', relComp, 'out/studio-render.mp4'], { cwd: root, detached: true });
+    renderChild = child; renderCancelled = false; // detached → its own process group, so cancel can kill the whole tree (tsx+chromium+ffmpeg)
     let buf = '', log = '', replied = false;
     child.stdout.on('data', (d) => {
       buf += d; let i;
@@ -236,23 +239,33 @@ const server = createServer((req, res) => {
         const line = buf.slice(0, i); buf = buf.slice(i + 1);
         const m = line.match(/^@P (\d+) (\d+)/);
         if (m) { const done = +m[1], total = +m[2]; send({ t: 'render', state: 'rendering', done, total, pct: Math.round((done / total) * 100) }); }
+        else if (line.startsWith('@T ')) { send({ t: 'render', state: 'preview', thumb: line.slice(3) }); } // live render-preview frame
       }
     });
     child.stderr.on('data', (d) => (log += d));
     // Spawn failure (e.g. tsx/ffmpeg not found) emits 'error' and may never fire 'close',
     // which would otherwise hang the request forever. Report it and broadcast over SSE.
     child.on('error', (err: any) => {
+      renderChild = null;
       if (replied) return; replied = true;
       const error = String(err?.message ?? err);
       send({ t: 'render', state: 'error', error });
       json(res, 200, { ok: false, error });
     });
     child.on('close', (code) => {
+      renderChild = null;
       if (replied) return; replied = true;
+      if (renderCancelled) { send({ t: 'render', state: 'cancelled' }); return json(res, 200, { ok: false, cancelled: true }); }
       if (code === 0) { const url2 = '/out/studio-render.mp4?t=' + Date.now(); send({ t: 'render', state: 'done', pct: 100, url: url2 }); json(res, 200, { ok: true, url: url2 }); }
       else { send({ t: 'render', state: 'error', error: log.slice(-300) }); json(res, 200, { ok: false, error: log.slice(-300) }); }
     });
     return;
+  }
+
+  // cancel an in-flight export — kill the whole render process group (tsx + chromium + ffmpeg)
+  if (path === '/api/render/cancel' && req.method === 'POST') {
+    if (renderChild?.pid) { renderCancelled = true; try { process.kill(-renderChild.pid, 'SIGKILL'); } catch { try { renderChild.kill('SIGKILL'); } catch {} } return json(res, 200, { ok: true }); }
+    return json(res, 200, { ok: false, error: 'no active render' });
   }
 
   if (path === '/api/events') {

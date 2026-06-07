@@ -52,6 +52,12 @@ async function main() {
   page.on('console', (m) => { if (m.type() === 'error') console.log('  [page error]', m.text()); });
   page.on('pageerror', (e) => console.log('  [pageerror]', e.message));
 
+  // tsx transpiles this file with esbuild's keepNames, which wraps named inner functions in a
+  // __name(...) helper. That helper is NOT defined in the browser, so any page.evaluate that
+  // contains a named inner fn (e.g. the video-frame settle below) throws "__name is not
+  // defined" — which broke EVERY export that has a video layer. Shim it as a no-op.
+  await page.addInitScript({ content: 'globalThis.__name = globalThis.__name || function (f) { return f; };' });
+
   const indexUrl = pathToFileURL(resolve(root, 'packages/renderer/index.html')).href;
   await page.goto(indexUrl);
   // resolve asset paths relative to the composition file
@@ -123,6 +129,7 @@ async function main() {
   // B05: does the current frame contain any <video> layers? Only then do we pay
   // the extra settle cost — keeps non-video renders fast.
   const hasVideoLayers = resolved.scenes.some((s: any) => s.layers.some((l: any) => l.type === 'video'));
+  const thumbEvery = Math.max(1, Math.floor(totalFrames / 24)); // ~24 live-preview thumbnails over the whole render
 
   for (let f = 0; f < totalFrames; f++) {
     if (ffFailed) break;
@@ -151,6 +158,9 @@ async function main() {
     if (ffFailed) break;
     if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once('drain', r));
     process.stdout.write(`@P ${f + 1} ${totalFrames}\n`); // machine-readable progress (parsed by the dev server)
+    if (f % thumbEvery === 0 || f === totalFrames - 1) {
+      try { const th = await stage.screenshot({ type: 'jpeg', quality: 40 }); process.stdout.write(`@T ${th.toString('base64')}\n`); } catch {} // live preview frame (parsed as @T)
+    }
   }
   ff.stdin.end();
   process.stdout.write(`\r  rendered ${totalFrames}/${totalFrames} frames        \n`);
