@@ -6371,6 +6371,7 @@
     if (i < 0 || i >= S.ir.scenes.length) return;
     const clone = JSON.parse(JSON.stringify(S.ir.scenes[i]));
     delete clone.id;
+    (clone.layers || []).forEach((L) => delete L.groupId);
     const dur = S.ir.scenes[i].duration ?? clone.duration ?? 4;
     shiftAudioFrom((S.offsets[i] ?? 0) + dur, dur);
     S.ir.scenes.splice(i + 1, 0, clone);
@@ -7178,7 +7179,7 @@
       box.style.display = "none";
       return;
     }
-    if (layer2.type === "overlay" || layer2.type === "fx") {
+    if (layer2.type === "overlay" || layer2.type === "fx" || layer2.hidden) {
       box.style.display = "none";
       return;
     }
@@ -7821,6 +7822,7 @@
     }
     const second = JSON.parse(JSON.stringify(layer2));
     delete second.zIndex;
+    delete second.groupId;
     layer2.duration = +local.toFixed(2);
     second.start = +(ls + local).toFixed(2);
     second.duration = +(ld - local).toFixed(2);
@@ -9144,7 +9146,7 @@
       for (let li = scene2.layers.length - 1; li >= 0; li--) {
         const L = scene2.layers[li];
         const st = L.start ?? 0, du = L.duration ?? scene2.duration;
-        if (L.type === "overlay" || L.type === "fx") continue;
+        if (L.type === "overlay" || L.type === "fx" || L.hidden) continue;
         if (localT < st - 0.01 || localT > st + du + 0.01) continue;
         const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
         const d = renderedDelta(L, si);
@@ -9210,7 +9212,7 @@
       for (let li = scene2.layers.length - 1; li >= 0; li--) {
         const L = scene2.layers[li];
         const st = L.start ?? 0, du = L.duration ?? scene2.duration;
-        if (L.type === "overlay" || L.type === "fx") continue;
+        if (L.type === "overlay" || L.type === "fx" || L.hidden) continue;
         if (localT < st - 0.01 || localT > st + du + 0.01) continue;
         const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
         const d = renderedDelta(L, si);

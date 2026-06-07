@@ -444,6 +444,7 @@ function addScene(at: number = S.ir.scenes.length) {
 function duplicateScene(i: number) {
   if (i < 0 || i >= S.ir.scenes.length) return;
   const clone = JSON.parse(JSON.stringify(S.ir.scenes[i])); delete clone.id;
+  (clone.layers || []).forEach((L: any) => delete L.groupId); // a clone is a fresh scene — don't share groups across scenes (would cross-select)
   const dur = S.ir.scenes[i].duration ?? clone.duration ?? 4;
   shiftAudioFrom((S.offsets[i] ?? 0) + dur, dur);
   S.ir.scenes.splice(i + 1, 0, clone); S.sceneBase.splice(i + 1, 0, S.sceneBase[i] ?? dur);
@@ -1044,7 +1045,7 @@ function updateSelBox() {
   // layers aren't canvas-positioned the way the box implies and the hit-test already
   // refuses to select them on canvas. Hide the resizable box for them so dragging
   // handles can't mutate a meaningless rect.
-  if (layer.type === 'overlay' || layer.type === 'fx') { box.style.display = 'none'; return; }
+  if (layer.type === 'overlay' || layer.type === 'fx' || (layer as any).hidden) { box.style.display = 'none'; return; }
   const off = S.offsets[sel.s] ?? 0; const st = off + (layer.start ?? 0); const dur = layer.duration ?? S.ir.scenes[sel.s].duration;
   if (S.playhead < st - 0.01 || S.playhead > st + dur + 0.01) { box.style.display = 'none'; return; }
   // B-fullframe-handles: a no-rect layer renders full-frame, so a 0,0,w,h box puts all
@@ -1519,6 +1520,7 @@ function splitSelected() {
   if (local <= 0.05 || local >= ld - 0.05) { showToast('Move the playhead over the clip to split.'); return; }
   const second = JSON.parse(JSON.stringify(layer));
   delete second.zIndex; // drop stale z — normalizeZ below makes array order authoritative
+  delete second.groupId; // split halves are independent — don't silently grow the group
   layer.duration = +local.toFixed(2); second.start = +(ls + local).toFixed(2); second.duration = +(ld - local).toFixed(2);
   // B07: keyframe times are layer-local, so the second half must shift by -local
   // (clamped ≥0). Also: the first half keeps its enter (in.*) but drops exit
@@ -2317,7 +2319,7 @@ async function init() {
     let hit = -1;
     for (let li = scene.layers.length - 1; li >= 0; li--) {
       const L = scene.layers[li]; const st = L.start ?? 0, du = L.duration ?? scene.duration;
-      if (L.type === 'overlay' || L.type === 'fx') continue; // adjustment/control layers aren't canvas-draggable; select via timeline
+      if (L.type === 'overlay' || L.type === 'fx' || (L as any).hidden) continue; // skip adjustment/control AND hidden layers — can't grab the invisible
       if (localT < st - 0.01 || localT > st + du + 0.01) continue;
       const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
       // fold in the SAME combined delta (transform + keyframes + active presets/fx)
@@ -2370,7 +2372,7 @@ async function init() {
     let hit = -1;
     for (let li = scene.layers.length - 1; li >= 0; li--) {
       const L = scene.layers[li]; const st = L.start ?? 0, du = L.duration ?? scene.duration;
-      if (L.type === 'overlay' || L.type === 'fx') continue;
+      if (L.type === 'overlay' || L.type === 'fx' || (L as any).hidden) continue;
       if (localT < st - 0.01 || localT > st + du + 0.01) continue;
       const r = L.rect ?? { x: 0, y: 0, w: S.ir.width, h: S.ir.height };
       const d = renderedDelta(L, si);
