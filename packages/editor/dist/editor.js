@@ -4332,7 +4332,9 @@
     // editor-only metadata: a shared id tying layers into a selectable group. The
     // runtime ignores it (render == preview); kept here so grouping persists through
     // POST /api/composition validation instead of being stripped/rejected.
-    groupId: external_exports.string().optional()
+    groupId: external_exports.string().optional(),
+    // crop (image/video): inset % from each side -> clip-path on the media element.
+    crop: external_exports.object({ t: external_exports.number(), r: external_exports.number(), b: external_exports.number(), l: external_exports.number() }).optional()
   };
   var layer = external_exports.discriminatedUnion("type", [
     external_exports.object({ ...baseLayer, type: external_exports.literal("text"), text: external_exports.string(), style: external_exports.record(external_exports.string()).optional() }),
@@ -6087,6 +6089,11 @@
     sc.style.width = S.ir.width + "px";
     sc.style.height = S.ir.height + "px";
     sc.style.transform = `scale(${s})`;
+    const sb = document.getElementById("seekbar");
+    if (sb) {
+      sb.style.width = Math.round(S.ir.width * s) + "px";
+      sb.style.margin = "0 auto";
+    }
   }
   function mountPreview() {
     VGP.mount(S.ir, { assetBase: baseUrl() });
@@ -6518,7 +6525,7 @@
             maxStart = Math.max(0, winMax - 0.1);
           }
           const sceneOff = S.offsets[si] ?? 0;
-          const allowCrossScene = layer2.type !== "fx";
+          const allowCrossScene = true;
           const mv = (ev) => {
             lastX = ev.clientX;
             lastY = ev.clientY;
@@ -6946,6 +6953,33 @@
         e.stopPropagation();
         const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
         const sceneIdx = S.selected.s;
+        if (h.getAttribute("data-h") === "crop") {
+          if (layer2.type !== "image" && layer2.type !== "video") {
+            showToast("Crop applies to images & videos.");
+            return;
+          }
+          if (!layer2.rect) layer2.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
+          const r2 = layer2.rect;
+          const sc2 = S.scale || 1;
+          const sx = e.clientX, sy = e.clientY;
+          const st = { t: layer2.crop?.t ?? 0, rr: layer2.crop?.r ?? 0, b: layer2.crop?.b ?? 0, l: layer2.crop?.l ?? 0 };
+          const cl = (v) => Math.max(0, Math.min(45, +v.toFixed(2)));
+          const mv2 = (ev) => {
+            const dxPct = (ev.clientX - sx) / sc2 / r2.w * 100, dyPct = (ev.clientY - sy) / sc2 / r2.h * 100;
+            layer2.crop = { l: cl(st.l + dxPct), r: cl(st.rr + dxPct), t: cl(st.t + dyPct), b: cl(st.b + dyPct) };
+            liveSeek();
+            updateSelBox();
+          };
+          const up2 = () => {
+            window.removeEventListener("mousemove", mv2);
+            window.removeEventListener("mouseup", up2);
+            scheduleSave();
+            buildProps();
+          };
+          window.addEventListener("mousemove", mv2);
+          window.addEventListener("mouseup", up2);
+          return;
+        }
         if (!layer2.rect) layer2.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
         const r = layer2.rect;
         const sc = S.scale || 1;
@@ -7875,6 +7909,16 @@
       };
       cf.appendChild(sel);
       p.appendChild(cf);
+      h("crop (%)");
+      const setCrop = (k, v) => {
+        layer2.crop = layer2.crop || { t: 0, r: 0, b: 0, l: 0 };
+        layer2.crop[k] = v;
+        liveEdit();
+      };
+      p.appendChild(numField("top", layer2.crop?.t ?? 0, 0, 45, 1, (v) => setCrop("t", v)));
+      p.appendChild(numField("right", layer2.crop?.r ?? 0, 0, 45, 1, (v) => setCrop("r", v)));
+      p.appendChild(numField("bottom", layer2.crop?.b ?? 0, 0, 45, 1, (v) => setCrop("b", v)));
+      p.appendChild(numField("left", layer2.crop?.l ?? 0, 0, 45, 1, (v) => setCrop("l", v)));
     }
     if (layer2.type === "shape") {
       p.appendChild(colorField("fill color", layer2.fill || "#ffffff", (v) => {
@@ -8176,6 +8220,14 @@
     VGP.seek(S.playhead, { playing: S.playing });
   }
   var last = performance.now();
+  function followPlayhead() {
+    const tl = $("tlScroll");
+    const max = tl.scrollWidth - tl.clientWidth;
+    if (max <= 0) return;
+    const phx = LABELW + S.playhead * S.pxPerSec;
+    const viewL = tl.scrollLeft + LABELW, viewR = tl.scrollLeft + tl.clientWidth;
+    if (phx > viewR - 40 || phx < viewL) tl.scrollLeft = Math.max(0, Math.min(max, phx - LABELW - 24));
+  }
   function loop(now) {
     if (S.playing) {
       const tot = effectiveTotal();
@@ -8190,6 +8242,7 @@
       VGP.seek(S.playhead, { playing: true });
       positionPlayhead();
       updateTime();
+      followPlayhead();
     }
     last = now;
     requestAnimationFrame(loop);

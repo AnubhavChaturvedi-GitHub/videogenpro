@@ -17,6 +17,7 @@ type LayerNode = {
   layer: Layer;
   three?: ThreeHandle;
   video?: HTMLVideoElement;
+  media?: HTMLImageElement | HTMLVideoElement; // the img/video element (cropped via clip-path)
   fxLayers?: any[];            // fx control-layers that target THIS layer (drive effects onto it)
 };
 type ThreeHandle = { render: (t: number, props: Record<string, number>) => void; dispose?: () => void };
@@ -365,6 +366,7 @@ function buildLayer(layer: Layer, sceneDur: number, fxLayers: any[] = []): Layer
       img.style.height = '100%';
       img.style.objectFit = layer.fit ?? 'cover';
       el.appendChild(img);
+      node.media = img;
       break;
     }
     case 'video': {
@@ -375,7 +377,7 @@ function buildLayer(layer: Layer, sceneDur: number, fxLayers: any[] = []): Layer
       v.style.height = '100%';
       v.style.objectFit = layer.fit ?? 'cover';
       el.appendChild(v);
-      node.video = v;
+      node.video = v; node.media = v;
       break;
     }
     case 'html': {
@@ -552,6 +554,14 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
     combine(wholeDelta, preset.apply(p, resolveParams(preset, e.inst.params), { index: 0, count: 1, time: e.localT, dur: e.dur }));
   }
   applyDelta(ln.el, wholeDelta);
+
+  // crop (image/video): clip the MEDIA element by inset % — applied here (not on el) so
+  // it never fights el's preset clip-path/transform. Pure fn of layer.crop -> deterministic,
+  // and live-editable (no remount needed).
+  if (ln.media) {
+    const c = (layer as any).crop;
+    ln.media.style.clipPath = (c && (c.t || c.r || c.b || c.l)) ? `inset(${c.t || 0}% ${c.r || 0}% ${c.b || 0}% ${c.l || 0}%)` : '';
+  }
 
   // overlay adjustment-layer: re-derive the effect each frame from the core overlay
   // preset so the strength can ramp / be keyframed over the clip and live amount edits

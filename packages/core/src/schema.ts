@@ -58,6 +58,8 @@ const baseLayer = {
   // runtime ignores it (render == preview); kept here so grouping persists through
   // POST /api/composition validation instead of being stripped/rejected.
   groupId: z.string().optional(),
+  // crop (image/video): inset % from each side -> clip-path on the media element.
+  crop: z.object({ t: z.number(), r: z.number(), b: z.number(), l: z.number() }).optional(),
 };
 
 const layer = z.discriminatedUnion('type', [

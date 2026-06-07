@@ -335,6 +335,8 @@ function fit() {
   const s = Math.min((wrap.clientWidth - pad) / S.ir.width, (wrap.clientHeight - pad) / S.ir.height, cap);
   S.scale = s;
   const sc = $('scaler'); sc.style.width = S.ir.width + 'px'; sc.style.height = S.ir.height + 'px'; sc.style.transform = `scale(${s})`;
+  // size the seekbar to the actual preview (stage) width = comp width * scale, centered.
+  const sb = document.getElementById('seekbar'); if (sb) { sb.style.width = Math.round(S.ir.width * s) + 'px'; sb.style.margin = '0 auto'; }
 }
 function mountPreview() { VGP.mount(S.ir, { assetBase: baseUrl() }); fit(); VGP.seek(S.playhead, { playing: S.playing }); }
 const liveSeek = () => VGP.seek(S.playhead, { playing: S.playing });
@@ -623,9 +625,10 @@ function buildTimeline() {
         let maxStart = isFullScene ? Math.max(0, scene.duration - 0.2) : (Math.max(scene.duration, S.total) || scene.duration);
         if (layer.type === 'fx') { const tgt = resolveFxTarget(scene, li); const winMax = (tgt?.layer.start ?? 0) + (tgt?.layer.duration ?? scene.duration); maxStart = Math.max(0, winMax - 0.1); }
         const sceneOff = S.offsets[si] ?? 0;
-        // fx must stay with its in-scene target; every other layer can be dragged
-        // ANYWHERE on the timeline (across scene seams), reassigning scene on drop.
-        const allowCrossScene = layer.type !== 'fx';
+        // every layer — content, overlays AND fx — can be dragged ANYWHERE on the
+        // timeline (across scene seams); on drop it's reassigned to the scene at that
+        // time. A moved fx re-resolves its target (nearest content below) in that scene.
+        const allowCrossScene = true;
         const mv = (ev: MouseEvent) => {
           lastX = ev.clientX; lastY = ev.clientY; lastAlt = ev.altKey;
           const dx = ev.clientX - sx, dy = ev.clientY - sy;
@@ -966,6 +969,24 @@ function initSelHandles() {
       if (!S.selected) return; e.preventDefault(); e.stopPropagation();
       const layer = S.ir.scenes[S.selected.s].layers[S.selected.l];
       const sceneIdx = S.selected.s;
+      // CROP handle (the center dot): drag to crop an image/video via clip-path insets.
+      // Horizontal drag crops left+right, vertical drag crops top+bottom (each side % of
+      // the rect, clamped). Live + deterministic (runtime applies layer.crop at seek).
+      if (h.getAttribute('data-h') === 'crop') {
+        if (layer.type !== 'image' && layer.type !== 'video') { showToast('Crop applies to images & videos.'); return; }
+        if (!layer.rect) layer.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
+        const r = layer.rect; const sc = S.scale || 1; const sx = e.clientX, sy = e.clientY;
+        const st = { t: layer.crop?.t ?? 0, rr: layer.crop?.r ?? 0, b: layer.crop?.b ?? 0, l: layer.crop?.l ?? 0 };
+        const cl = (v: number) => Math.max(0, Math.min(45, +v.toFixed(2)));
+        const mv = (ev: MouseEvent) => {
+          const dxPct = ((ev.clientX - sx) / sc) / r.w * 100, dyPct = ((ev.clientY - sy) / sc) / r.h * 100;
+          layer.crop = { l: cl(st.l + dxPct), r: cl(st.rr + dxPct), t: cl(st.t + dyPct), b: cl(st.b + dyPct) };
+          liveSeek(); updateSelBox();
+        };
+        const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); scheduleSave(); buildProps(); };
+        window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+        return;
+      }
       // FEATURE 2: the 4 corner dots drive a real UNIFORM SCALE that writes
       // layer.transform.scale (the same property the props "scale (zoom)" slider edits),
       // anchored at the rendered layer CENTER. This works WHILE a preset is present —
@@ -1574,6 +1595,14 @@ function buildProps() {
   }
   if (layer.type === 'image' || layer.type === 'video') {
     const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fit'; cf.appendChild(cl); const sel = el('select') as HTMLSelectElement; ['cover', 'contain'].forEach((o) => { const op = el('option') as HTMLOptionElement; op.value = o; op.textContent = o; if ((layer.fit ?? 'cover') === o) op.selected = true; sel.appendChild(op); }); sel.onchange = () => { layer.fit = sel.value; structuralEdit(); }; cf.appendChild(sel); p.appendChild(cf);
+    // crop (%): inset each side; live via the runtime (applies layer.crop at seek). Drag
+    // the center selbox dot to crop on the preview, or fine-tune per side here.
+    h('crop (%)');
+    const setCrop = (k: 't' | 'r' | 'b' | 'l', v: number) => { layer.crop = layer.crop || { t: 0, r: 0, b: 0, l: 0 }; (layer.crop as any)[k] = v; liveEdit(); };
+    p.appendChild(numField('top', layer.crop?.t ?? 0, 0, 45, 1, (v) => setCrop('t', v)));
+    p.appendChild(numField('right', layer.crop?.r ?? 0, 0, 45, 1, (v) => setCrop('r', v)));
+    p.appendChild(numField('bottom', layer.crop?.b ?? 0, 0, 45, 1, (v) => setCrop('b', v)));
+    p.appendChild(numField('left', layer.crop?.l ?? 0, 0, 45, 1, (v) => setCrop('l', v)));
   }
   if (layer.type === 'shape') { p.appendChild(colorField('fill color', layer.fill || '#ffffff', (v) => { layer.fill = v; structuralEdit(); })); }
   if (layer.type === 'overlay') {
@@ -1773,8 +1802,16 @@ function seekTo(t: number) { S.playhead = Math.max(0, Math.min(effectiveTotal(),
 function setPlayIcon() { $('tpPlay').innerHTML = icon(S.playing ? 'pause' : 'play'); }
 function togglePlay() { S.playing = !S.playing; setPlayIcon(); last = performance.now(); VGP.seek(S.playhead, { playing: S.playing }); }
 let last = performance.now();
+// keep the playhead visible while playing: page the timeline horizontally when the
+// cursor reaches the right edge (and snap back when it wraps to the start on loop).
+function followPlayhead() {
+  const tl = $('tlScroll'); const max = tl.scrollWidth - tl.clientWidth; if (max <= 0) return;
+  const phx = LABELW + S.playhead * S.pxPerSec; // playhead x in content coords
+  const viewL = tl.scrollLeft + LABELW, viewR = tl.scrollLeft + tl.clientWidth;
+  if (phx > viewR - 40 || phx < viewL) tl.scrollLeft = Math.max(0, Math.min(max, phx - LABELW - 24));
+}
 function loop(now: number) {
-  if (S.playing) { const tot = effectiveTotal(); S.playhead += (now - last) / 1000; if (S.playhead >= tot) { if (S.loop) S.playhead = 0; else { S.playhead = tot; togglePlay(); } } VGP.seek(S.playhead, { playing: true }); positionPlayhead(); updateTime(); }
+  if (S.playing) { const tot = effectiveTotal(); S.playhead += (now - last) / 1000; if (S.playhead >= tot) { if (S.loop) S.playhead = 0; else { S.playhead = tot; togglePlay(); } } VGP.seek(S.playhead, { playing: true }); positionPlayhead(); updateTime(); followPlayhead(); }
   last = now; requestAnimationFrame(loop);
 }
 function autoFit() {

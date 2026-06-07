@@ -59,6 +59,9 @@
     #selbox .sh[data-h=ne]{ right:-10px; top:-10px; cursor:nesw-resize; }
     #selbox .sh[data-h=sw]{ left:-10px; bottom:-10px; cursor:nesw-resize; }
     #selbox .sh[data-h=se]{ right:-10px; bottom:-10px; cursor:nwse-resize; }
+    /* center crop handle: a distinct round dot; centered via margins (not transform,
+       which updateSelBox() overwrites with the counter-scale). */
+    #selbox .sh-crop{ left:50%; top:50%; margin:-11px 0 0 -11px; width:20px; height:20px; border-radius:50%; background:rgba(0,0,0,.5); border:2px solid var(--accent); cursor:move; }
 
     .topbar { display:flex; align-items:center; gap:13px; padding:0 18px; background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-bottom:1px solid var(--border); position:relative; z-index:50; box-shadow:var(--hi); }
     .brand { font-weight:800; letter-spacing:.3px; display:flex; align-items:center; gap:9px; font-size:16px; }
@@ -308,6 +311,7 @@
           <div id="selbox">
             <div class="sh" data-h="nw"></div><div class="sh" data-h="ne"></div>
             <div class="sh" data-h="sw"></div><div class="sh" data-h="se"></div>
+            <div class="sh sh-crop" data-h="crop" title="Drag to crop (image / video)"></div>
           </div>
         </div></div>
         <div class="seekbar" id="seekbar" title="Drag to scrub">

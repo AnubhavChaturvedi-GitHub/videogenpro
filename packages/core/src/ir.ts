@@ -45,6 +45,8 @@ export interface BaseLayer {
   // editor-only metadata: a shared id grouping layers so they select as a unit.
   // The runtime ignores it, so render == preview is preserved.
   groupId?: string;
+  // crop (image/video): inset % from each side, applied as a clip-path on the media.
+  crop?: { t: number; r: number; b: number; l: number };
 }
 
 export interface TextLayer extends BaseLayer {
