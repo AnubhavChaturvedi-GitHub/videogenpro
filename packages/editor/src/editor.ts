@@ -360,6 +360,16 @@ function scheduleSave() {
     catch { setDot('edited', 'offline'); }
   }, 250);
 }
+// DISABLED UNDO/REDO: reflect history position on the native disabled property of the
+// toolbar buttons. can-undo = histIndex > 0; can-redo = histIndex < length - 1. Called
+// after every history mutation (pushHistory / undo / redo / setDoc / applyHistory) and
+// from updateTime() so the buttons can never look enabled when there's nothing to do.
+function refreshHistoryButtons() {
+  const u = document.getElementById('undoBtn') as HTMLButtonElement | null;
+  const r = document.getElementById('redoBtn') as HTMLButtonElement | null;
+  if (u) u.disabled = !(S.histIndex > 0);
+  if (r) r.disabled = !(S.histIndex < S.history.length - 1);
+}
 // undo/redo history — one entry per committed edit (debounced save)
 function pushHistory(json: string) {
   if (json === S.history[S.histIndex]) return;
@@ -367,6 +377,7 @@ function pushHistory(json: string) {
   S.history.push(json);
   if (S.history.length > 120) S.history.shift();
   S.histIndex = S.history.length - 1;
+  refreshHistoryButtons();
 }
 function applyHistory() {
   const json = S.history[S.histIndex]; if (!json) return;
@@ -409,7 +420,13 @@ function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); const 
 function dropLayerAt(clientX: number, layer: any) { const t = Math.max(0, Math.min(S.total, timeAtClientX(clientX))); const si = sceneAt(t); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); normalizeZ(si); S.multi = []; S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
 
 // ---------- assets ----------
-async function loadAssets() { try { S.assets = await (await fetch('/api/assets')).json(); } catch { S.assets = []; } renderAssets(); }
+async function loadAssets() {
+  // SKELETON: show the loading state on the asset grid while the (async) asset list is
+  // fetched; renderAssets() clears it once the thumbnails are populated.
+  $('assetGrid').classList.add('loading');
+  try { S.assets = await (await fetch('/api/assets')).json(); } catch { S.assets = []; }
+  renderAssets();
+}
 const fileType = (f: File) => f.type.startsWith('video') ? 'video' : f.type.startsWith('audio') ? 'audio' : 'image';
 async function uploadOne(f: File, type?: string) {
   const ty = type ?? fileType(f);
@@ -432,8 +449,16 @@ function addAudioTrack(src: string, clientX?: number) {
   showToast('Audio track added: ' + src.split('/').pop());
 }
 function renderAssets() {
-  const g = $('assetGrid'); g.innerHTML = '';
-  if (!S.assets.length) { const e = el('div', 'empty'); e.style.cssText = 'font-size:11px;padding:14px'; e.textContent = 'No assets yet'; g.appendChild(e); return; }
+  // SKELETON: mark the grid as loading while it's (re)populated, then clear at the end
+  // once the thumbnail nodes are in the DOM (their src is set synchronously here).
+  const g = $('assetGrid'); g.classList.add('loading'); g.innerHTML = '';
+  if (!S.assets.length) {
+    // EMPTY-STATE onboarding: a friendly hint pointing at the upload workflow rather
+    // than a bare "No assets yet". Kept inside the .empty element for the shared styling.
+    const e = el('div', 'empty'); e.style.cssText = 'font-size:11px;padding:14px;line-height:1.6';
+    e.innerHTML = '<b>No assets yet</b><br/>Drag media onto the <b>upload box</b> above (or click it) to add images, video & audio. Then drag an asset onto the timeline.';
+    g.appendChild(e); g.classList.remove('loading'); return;
+  }
   S.assets.forEach((a) => {
     const d = el('div', 'asset'); d.draggable = true; const u = assetUrl(a.src);
     if (a.type === 'video') { const v = el('video') as HTMLVideoElement; v.src = u; v.muted = true; d.appendChild(v); }
@@ -444,6 +469,7 @@ function renderAssets() {
     d.ondragstart = (e) => e.dataTransfer!.setData('application/x-vgp-asset', JSON.stringify(a));
     g.appendChild(d);
   });
+  g.classList.remove('loading'); // thumbnails populated — drop the skeleton
 }
 
 // ---------- timeline (grouped by scene) ----------
@@ -513,12 +539,12 @@ function buildTimeline() {
       .forEach(({ layer, li }: any) => {
       const track = el('div', 'track');
       const fullLabel = layerLabel(layer);
-      const label = el('div', 'track-label'); label.title = fullLabel; label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${fullLabel.slice(0, 9)}</span>`; track.appendChild(label);
+      const label = el('div', 'track-label'); label.title = fullLabel; label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${fullLabel}</span>`; track.appendChild(label);
       const offset = S.offsets[si] + (layer.start ?? 0); const dur = layer.duration ?? scene.duration;
       const clip = el('div', 'clip');
       clip.style.left = (LABELW + offset * S.pxPerSec) + 'px'; clip.style.width = Math.max(24, dur * S.pxPerSec) + 'px'; clip.style.background = clipColor[layer.type] ?? '#555';
       clip.title = fullLabel;
-      clip.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${fullLabel.slice(0, 16)}</span>`;
+      clip.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${fullLabel}</span>`;
       if (isSelected(si, li)) clip.classList.add('sel'); // FEATURE 1: highlight every selected clip (primary + multi)
       // fx layers that resolve to no content target are orphaned (the runtime
       // never registers them) — flag them visually.
@@ -551,13 +577,14 @@ function buildTimeline() {
         const ty = e.dataTransfer?.types ?? [];
         const presetId = ty.includes('application/x-vgp-preset') ? '__p' : '';
         const overlayDrop = ty.includes('application/x-vgp-overlay');
-        // only show the accept outline for valid combinations
-        if (overlayDrop) { e.preventDefault(); clip.style.outline = '2px solid #fff'; }
-        else if (presetId) { e.preventDefault(); clip.style.outline = '2px solid #fff'; }
+        // only show the accept affordance for valid combinations — toggle the unified
+        // .drop-over class (CSS owns the outline) instead of an inline style.
+        if (overlayDrop) { e.preventDefault(); clip.classList.add('drop-over'); }
+        else if (presetId) { e.preventDefault(); clip.classList.add('drop-over'); }
       });
-      clip.addEventListener('dragleave', () => { clip.style.outline = ''; });
+      clip.addEventListener('dragleave', () => { clip.classList.remove('drop-over'); });
       clip.addEventListener('drop', (e: DragEvent) => {
-        e.preventDefault(); clip.style.outline = '';
+        e.preventDefault(); clip.classList.remove('drop-over');
         const ov = e.dataTransfer?.getData('application/x-vgp-overlay');
         if (ov) { dropLayerAt(e.clientX, overlayLayerFromId(ov)); showToast('Overlay layer added: ' + ov.split('.')[1].replace(/-/g, ' ')); return; }
         const id = e.dataTransfer?.getData('application/x-vgp-preset');
@@ -766,7 +793,7 @@ function buildTimeline() {
     audio.forEach((a: any, ai: number) => {
       const track = el('div', 'track');
       const name = String(a.src).split('/').pop() || 'audio';
-      const label = el('div', 'track-label'); label.title = name; label.innerHTML = tintIcon('audio', 'audio') + `<span>${name.slice(0, 9)}</span>`; track.appendChild(label);
+      const label = el('div', 'track-label'); label.title = name; label.innerHTML = tintIcon('audio', 'audio') + `<span>${name}</span>`; track.appendChild(label);
       const start = a.start ?? 0;
       const fileDur: number | null = info[ai]?.duration ?? null;          // null until metadata loads
       const metaReady = fileDur != null;
@@ -1180,6 +1207,7 @@ function onCtxKey(ev: KeyboardEvent) { if (ev.key === 'Escape') { ev.stopPropaga
 function showContextMenu(clientX: number, clientY: number) {
   if (!ctxMenuEl) {
     const m = el('div') as HTMLDivElement;
+    m.setAttribute('role', 'menu'); m.setAttribute('aria-label', 'Layer actions'); // ARIA: it's a popup menu
     m.style.cssText = 'position:fixed;z-index:200;min-width:148px;padding:6px;border-radius:12px;'
       + 'background:rgba(18,18,18,.92);backdrop-filter:saturate(110%) blur(20px);-webkit-backdrop-filter:saturate(110%) blur(20px);'
       + 'border:1px solid var(--border);box-shadow:0 24px 60px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.2);'
@@ -1187,6 +1215,7 @@ function showContextMenu(clientX: number, clientY: number) {
     const mk = (label: string, onClick: () => void) => {
       const it = el('div') as HTMLDivElement;
       it.textContent = label;
+      it.setAttribute('role', 'menuitem'); it.setAttribute('aria-label', label); it.tabIndex = -1; // ARIA: keyboard/AT-addressable menu item
       it.style.cssText = 'padding:8px 11px;border-radius:8px;cursor:pointer;font-weight:600;transition:background .12s;';
       it.onmouseenter = () => { it.style.background = 'var(--glass-3)'; };
       it.onmouseleave = () => { it.style.background = ''; };
@@ -1213,8 +1242,23 @@ function showContextMenu(clientX: number, clientY: number) {
 function numField(label: string, value: number, min: number, max: number, step: number, onIn: (v: number) => void) {
   const f = el('div', 'field'); const lab = el('label'); lab.textContent = label; f.appendChild(lab);
   const row = el('div', 'row'); const r = el('input') as HTMLInputElement; r.type = 'range'; r.min = String(min); r.max = String(max); r.step = String(step); r.value = String(value);
-  const v = el('span', 'val'); v.textContent = (+value).toFixed(2);
-  r.oninput = () => { const nv = parseFloat(r.value); v.textContent = nv.toFixed(2); onIn(nv); };
+  // NUMERIC ENTRY: the readout is now an editable <input type="number" class="val"> so
+  // exact values can be typed for transform/crop/timing/size/params. Slider and number
+  // stay in sync: slider input updates the number, number input updates the slider —
+  // both clamp to [min,max] and call the same onIn(v) so the IR write path is identical.
+  const v = el('input', 'val') as HTMLInputElement; v.type = 'number'; v.min = String(min); v.max = String(max); v.step = String(step); v.value = (+value).toFixed(2);
+  const clampNum = (n: number) => Math.max(min, Math.min(max, n));
+  // round the typed value the same way the slider would, so the readout doesn't show
+  // spurious precision (matches the prior .toFixed(2) display while honouring step).
+  r.oninput = () => { const nv = parseFloat(r.value); v.value = (+nv).toFixed(2); onIn(nv); };
+  const onNum = () => {
+    const raw = parseFloat(v.value); if (!isFinite(raw)) return; // ignore empty/half-typed
+    const nv = clampNum(raw); r.value = String(nv); onIn(nv);
+  };
+  // live while typing (input) AND on commit (change) — change also re-normalises the
+  // displayed text (and re-clamps out-of-range entries) once the field is left.
+  v.oninput = onNum;
+  v.onchange = () => { const raw = parseFloat(v.value); if (isFinite(raw)) { const nv = clampNum(raw); v.value = (+nv).toFixed(2); r.value = String(nv); onIn(nv); } };
   row.appendChild(r); row.appendChild(v); f.appendChild(row); return f;
 }
 // color field: native swatch + hex text input, both write through the same handler.
@@ -1249,15 +1293,17 @@ function kfField(label: string, prop: string, value: number, min: number, max: n
     // 'at-playhead' detection, the diamond toggle and the easing selector all agree
     // on which keyframe is current. Nav seeks exactly to the keyframe time.
     const eps = kfEpsilon();
-    const prev = el('button', 'icon-btn'); prev.textContent = '‹'; prev.title = 'prev keyframe'; prev.style.cssText = 'float:right;padding:1px 6px;font-size:11px';
+    // ARIA: these are glyph-only buttons (‹ › ✕ ◆) — give each an aria-label so screen
+    // readers announce the action, not the bare punctuation glyph.
+    const prev = el('button', 'icon-btn'); prev.textContent = '‹'; prev.title = 'prev keyframe'; prev.setAttribute('aria-label', `previous ${label} keyframe`); prev.style.cssText = 'float:right;padding:1px 6px;font-size:11px';
     prev.onclick = () => { const lt = playheadLocal(); const before = [...arr].reverse().find((k: any) => k.t < lt - eps); if (before && layer) seekTo(S.offsets[S.selected!.s] + (layer.start ?? 0) + before.t); };
-    const next = el('button', 'icon-btn'); next.textContent = '›'; next.title = 'next keyframe'; next.style.cssText = 'float:right;padding:1px 6px;font-size:11px';
+    const next = el('button', 'icon-btn'); next.textContent = '›'; next.title = 'next keyframe'; next.setAttribute('aria-label', `next ${label} keyframe`); next.style.cssText = 'float:right;padding:1px 6px;font-size:11px';
     next.onclick = () => { const lt = playheadLocal(); const after = arr.find((k: any) => k.t > lt + eps); if (after && layer) seekTo(S.offsets[S.selected!.s] + (layer.start ?? 0) + after.t); };
-    const clr = el('button', 'icon-btn'); clr.textContent = '✕'; clr.title = 'clear all keyframes for this property'; clr.style.cssText = 'float:right;padding:1px 6px;font-size:10px';
+    const clr = el('button', 'icon-btn'); clr.textContent = '✕'; clr.title = 'clear all keyframes for this property'; clr.setAttribute('aria-label', `clear all ${label} keyframes`); clr.style.cssText = 'float:right;padding:1px 6px;font-size:10px';
     clr.onclick = () => clearKeyframes(prop);
     lab.appendChild(clr); lab.appendChild(next); lab.appendChild(prev);
   }
-  const key = el('button', 'icon-btn'); key.innerHTML = n ? `◆ ${n}` : '◆'; key.title = 'toggle keyframe at playhead (alt-click clears all)';
+  const key = el('button', 'icon-btn'); key.innerHTML = n ? `◆ ${n}` : '◆'; key.title = 'toggle keyframe at playhead (alt-click clears all)'; key.setAttribute('aria-label', `toggle ${label} keyframe at playhead${n ? ` (${n} set)` : ''}`);
   key.style.cssText = 'float:right;padding:1px 7px;font-size:10px' + (n ? ';color:var(--accent)' : '');
   key.onclick = (ev: MouseEvent) => { if (ev.altKey) clearKeyframes(prop); else addKeyframe(prop); };
   lab.appendChild(key);
@@ -1461,8 +1507,11 @@ function arrangeLayer(mode: 'top' | 'up' | 'down' | 'bottom') {
 }
 // project views: Compositions (scenes) / Assets / Code
 let projTab = 'comp';
-function openProj(tab: string) { projTab = tab; $('projModal').classList.add('show'); renderProj(); }
-function closeProj() { $('projModal').classList.remove('show'); }
+// route through the shared modal helpers so the dialog traps focus, closes on Esc, and
+// restores focus to the opener (MODAL focus-trap + Esc). renderProj() must run AFTER
+// the modal is shown so its first control is focusable when openModalById focuses it.
+function openProj(tab: string) { projTab = tab; renderProj(); openModalById('projModal'); }
+function closeProj() { closeModalById('projModal'); }
 function renderProj() {
   document.querySelectorAll('.proj-tab').forEach((t) => t.classList.toggle('on', t.getAttribute('data-v') === projTab));
   const body = $('projBody'); body.innerHTML = '';
@@ -1493,8 +1542,38 @@ function renderProj() {
     const pre = el('pre'); pre.textContent = JSON.stringify(S.ir, null, 2); body.appendChild(pre);
   }
 }
+// COLLAPSIBLE PROPERTY SECTIONS — persisted collapsed-state per section title so a
+// keyframed layer (many sliders + easing graphs) isn't one giant scroll and the
+// open/closed shape survives panel rebuilds. State is keyed by the section's title
+// text (stable across rebuilds) in localStorage under vgp.secCollapsed.
+const SEC_KEY = 'vgp.secCollapsed';
+function loadCollapsedSecs(): Set<string> {
+  try { const raw = localStorage.getItem(SEC_KEY); if (raw) return new Set(JSON.parse(raw) as string[]); } catch {}
+  return new Set<string>();
+}
+const collapsedSecs = loadCollapsedSecs();
+function persistCollapsedSecs() { try { localStorage.setItem(SEC_KEY, JSON.stringify([...collapsedSecs])); } catch {} }
 function buildProps() {
   const p = $('rightBody'); p.innerHTML = '';
+  // current append target for section fields — `add(node)` routes a field into the
+  // CURRENT section body so every field after a header lands in that header's
+  // collapsible body (set by h()). Defaults to the panel root for pre-header content.
+  let cur: HTMLElement = p;
+  const add = (node: Node) => cur.appendChild(node);
+  // h(title): build a collapsible .sec (clickable .sec-head toggling .collapsed on the
+  // .sec, plus a .sec-body that becomes the new append target). Returns the body so
+  // callers may target it directly; subsequent add() calls land in it automatically.
+  const h = (t: string) => {
+    const sec = el('div', 'sec'); if (collapsedSecs.has(t)) sec.classList.add('collapsed');
+    const head = el('div', 'sec-head'); head.textContent = t;
+    head.setAttribute('role', 'button'); head.tabIndex = 0; head.title = 'Click to collapse / expand';
+    const body = el('div', 'sec-body');
+    const toggle = () => { const nowCollapsed = sec.classList.toggle('collapsed'); if (nowCollapsed) collapsedSecs.add(t); else collapsedSecs.delete(t); persistCollapsedSecs(); };
+    head.onclick = toggle;
+    head.onkeydown = (ev: KeyboardEvent) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } };
+    sec.appendChild(head); sec.appendChild(body); p.appendChild(sec);
+    cur = body; return body;
+  };
   if (S.selAudio != null) {
     const a = S.ir.audio?.[S.selAudio];
     if (!a) { S.selAudio = null; return buildProps(); }
@@ -1502,26 +1581,36 @@ function buildProps() {
     const pill = el('span', 'pill'); pill.innerHTML = icon('audio') + 'audio'; pill.style.background = '#2b2b2b'; head.appendChild(pill);
     const title = el('span'); title.textContent = String(a.src).split('/').pop() ?? 'audio'; title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
     // mute toggle + delete the selected audio track
-    const mute = el('button', 'icon-btn'); mute.innerHTML = icon((a.volume ?? 1) === 0 ? 'mute' : 'speaker'); mute.title = 'mute / unmute'; mute.onclick = () => { a.volume = (a.volume ?? 1) === 0 ? 1 : 0; liveEdit(); buildTimeline(); buildProps(); }; head.appendChild(mute);
-    const ai = S.selAudio; const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.title = 'delete audio track'; del.onclick = () => { S.ir.audio.splice(ai, 1); S.selAudio = null; structuralEdit(); }; head.appendChild(del);
+    const mute = el('button', 'icon-btn'); mute.innerHTML = icon((a.volume ?? 1) === 0 ? 'mute' : 'speaker'); mute.title = 'mute / unmute'; mute.setAttribute('aria-label', (a.volume ?? 1) === 0 ? 'unmute audio track' : 'mute audio track'); mute.onclick = () => { a.volume = (a.volume ?? 1) === 0 ? 1 : 0; liveEdit(); buildTimeline(); buildProps(); }; head.appendChild(mute);
+    const ai = S.selAudio; const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.title = 'delete audio track'; del.setAttribute('aria-label', 'delete audio track'); del.onclick = () => { S.ir.audio.splice(ai, 1); S.selAudio = null; structuralEdit(); }; head.appendChild(del);
     p.appendChild(head);
-    const h3 = el('h3'); h3.textContent = 'audio'; p.appendChild(h3);
-    p.appendChild(numField('volume', a.volume ?? 1, 0, 1, 0.01, (v) => { a.volume = v; liveEdit(); buildTimeline(); }));
+    h('audio');
+    add(numField('volume', a.volume ?? 1, 0, 1, 0.01, (v) => { a.volume = v; liveEdit(); buildTimeline(); }));
     // bound consistent with the lane drag (start up to S.total - 0.1) so both the
     // slider and the lane can reach the same tail positions (B-audio-startmax).
-    p.appendChild(numField('start (s)', a.start ?? 0, 0, Math.max(1, S.total - 0.1, effectiveTotal() - 0.1), 0.05, (v) => { a.start = v; liveSeek(); buildTimeline(); scheduleSave(); }));
+    add(numField('start (s)', a.start ?? 0, 0, Math.max(1, S.total - 0.1, effectiveTotal() - 0.1), 0.05, (v) => { a.start = v; liveSeek(); buildTimeline(); scheduleSave(); }));
     const info = (typeof VGP.audioInfo === 'function' ? VGP.audioInfo() : [])[S.selAudio];
     const fileDur = info?.duration ?? null;
     const curDur = a.duration ?? fileDur ?? Math.max(1, S.total - (a.start ?? 0));
     // cap to the real audio length (file - trimStart) once metadata is known
     const maxDur = fileDur != null ? Math.max(0.2, fileDur - (a.trimStart ?? 0)) : Math.max(curDur, S.total);
-    p.appendChild(numField('duration (s)', Math.min(curDur, maxDur), 0.2, maxDur, 0.05, (v) => { a.duration = v; buildTimeline(); scheduleSave(); }));
+    add(numField('duration (s)', Math.min(curDur, maxDur), 0.2, maxDur, 0.05, (v) => { a.duration = v; buildTimeline(); scheduleSave(); }));
     return;
   }
-  if (!S.selected) { p.innerHTML = '<div class="empty">Select a clip in the timeline to edit it.<br/><br/>Or open the <b>Animations</b> tab to browse presets.</div>'; return; }
+  // EMPTY-STATE onboarding: friendly hint pointing at the workflow when nothing is
+  // selected. Kept inside the .empty element so the markup agent's styling applies.
+  if (!S.selected) {
+    p.innerHTML = '<div class="empty">'
+      + '<b>Select a clip</b> in the timeline to edit it.'
+      + '<br/><br/>New here? Try:'
+      + '<br/>• <b>Add layer ↑</b> — text, shape, line or 3D'
+      + '<br/>• <b>Drag media</b> into the upload box to add it'
+      + '<br/>• Open the <b>Animations</b> tab to browse presets'
+      + '</div>';
+    return;
+  }
   const { s, l } = S.selected; const scene = S.ir.scenes[s]; const layer = scene?.layers[l];
   if (!layer) { S.selected = null; return buildProps(); }
-  const h = (t: string) => { const x = el('h3'); x.textContent = t; p.appendChild(x); };
 
   // fx control-layer: a tracked effect applied to the clip below it
   if (layer.type === 'fx') {
@@ -1529,31 +1618,31 @@ function buildProps() {
     const head = el('div', 'sel-head');
     const pill = el('span', 'pill'); pill.innerHTML = icon('spark') + 'fx'; pill.style.background = 'var(--clip-fx)'; head.appendChild(pill);
     const title = el('span'); title.textContent = String(layer.effect).split('.')[1].replace(/-/g, ' '); title.style.cssText = 'flex:1;font-weight:600'; head.appendChild(title);
-    const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => deleteSelection(); head.appendChild(del); p.appendChild(head); // FEATURE 1: multi-aware delete
+    const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.title = 'delete'; del.setAttribute('aria-label', 'delete effect'); del.onclick = () => deleteSelection(); head.appendChild(del); p.appendChild(head); // FEATURE 1: multi-aware delete
     // resolve the real target using the SAME rule as the runtime (overlay-skipping)
     const tgt = resolveFxTarget(scene, l);
     const note = el('div'); note.style.cssText = 'font-size:11px;color:var(--dim);margin-bottom:8px';
     note.innerHTML = tgt ? `driving: <b>${layerLabel(tgt.layer)}</b>` : '⚠ no target layer below this fx — it renders nothing';
     p.appendChild(note);
     layer.params = layer.params || {};
-    if (entry) { h('effect settings'); for (const [pk, spec] of Object.entries<any>(entry.params)) { const min = spec.min ?? 0, max = spec.max ?? (spec.default * 2 || 1); p.appendChild(numField(pk, layer.params[pk] ?? spec.default, min, max, (max - min) / 100 || 0.01, (v) => { layer.params[pk] = v; liveEdit(); })); } }
+    if (entry) { h('effect settings'); for (const [pk, spec] of Object.entries<any>(entry.params)) { const min = spec.min ?? 0, max = spec.max ?? (spec.default * 2 || 1); add(numField(pk, layer.params[pk] ?? spec.default, min, max, (max - min) / 100 || 0.01, (v) => { layer.params[pk] = v; liveEdit(); })); } }
     h('timing');
     // bound the fx window to the target/scene window (fx never auto-extends the
     // scene now, so both sliders measure against a stable length).
     const tgtStart = tgt?.layer.start ?? 0; const tgtDur = tgt?.layer.duration ?? scene.duration; const winMax = tgtStart + tgtDur;
-    p.appendChild(numField('start (s)', layer.start ?? 0, 0, Math.max(0, winMax - 0.1), 0.05, (v) => { layer.start = v; timingEdit(); }));
+    add(numField('start (s)', layer.start ?? 0, 0, Math.max(0, winMax - 0.1), 0.05, (v) => { layer.start = v; timingEdit(); }));
     // B-fx-dur-cap: the fx window can't extend past where its target stops rendering.
     // Cap to (winMax - layer.start), IDENTICAL to the clip-trim handle, so the panel
     // and clip caps agree and a fx window can never run past the target's active span.
     const fxDurMax = Math.max(0.1, winMax - (layer.start ?? 0));
-    p.appendChild(numField('duration (s)', Math.min(layer.duration ?? fxDurMax, fxDurMax), 0.1, fxDurMax, 0.05, (v) => { layer.duration = v; timingEdit(); }));
+    add(numField('duration (s)', Math.min(layer.duration ?? fxDurMax, fxDurMax), 0.1, fxDurMax, 0.05, (v) => { layer.duration = v; timingEdit(); }));
     return;
   }
 
   const head = el('div', 'sel-head');
   const pill = el('span', 'pill'); pill.innerHTML = icon(typeIco[layer.type] ?? 'shape') + layer.type; pill.style.background = clipColor[layer.type] ?? '#555'; head.appendChild(pill);
   const title = el('span'); title.textContent = layer.type === 'text' ? String(layer.text).slice(0, 16) : (layer.src ? String(layer.src).split('/').pop() : layer.type); title.style.cssText = 'flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis'; head.appendChild(title);
-  const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.onclick = () => deleteSelection(); head.appendChild(del); p.appendChild(head); // FEATURE 1: multi-aware delete
+  const del = el('button', 'icon-btn'); del.innerHTML = icon('trash'); del.title = 'delete layer'; del.setAttribute('aria-label', 'delete layer'); del.onclick = () => deleteSelection(); head.appendChild(del); p.appendChild(head); // FEATURE 1: multi-aware delete
 
   // alignment bar — align the selection to each other (>=2 layers) or to the canvas
   // (single). Distribute (even spacing) shows for 3+. Overlays are full-frame → skip.
@@ -1563,7 +1652,7 @@ function buildProps() {
       const an = el('div'); an.style.cssText = 'font-size:11px;color:var(--dim);margin:2px 0 6px';
       an.textContent = cnt >= 2 ? `${cnt} layers selected — align / space` : 'Align to canvas';
       p.appendChild(an);
-      const aBtn = (title: string, label: string, fn: () => void) => { const b = el('button'); b.title = title; b.textContent = label; b.style.cssText = 'flex:1;min-width:0;padding:5px 2px;font-size:11px;font-weight:600;background:var(--glass-2);color:var(--dim);border:1px solid var(--border);border-radius:7px;cursor:pointer'; b.onmouseenter = () => (b.style.color = '#fff'); b.onmouseleave = () => (b.style.color = 'var(--dim)'); b.onclick = fn; return b; };
+      const aBtn = (title: string, label: string, fn: () => void) => { const b = el('button'); b.title = title; b.setAttribute('aria-label', title); b.textContent = label; b.style.cssText = 'flex:1;min-width:0;padding:5px 2px;font-size:11px;font-weight:600;background:var(--glass-2);color:var(--dim);border:1px solid var(--border);border-radius:7px;cursor:pointer'; b.onmouseenter = () => (b.style.color = '#fff'); b.onmouseleave = () => (b.style.color = 'var(--dim)'); b.onclick = fn; return b; };
       const aRow = () => { const d = el('div'); d.style.cssText = 'display:flex;gap:5px;margin-bottom:6px'; return d; };
       const r1 = aRow(); r1.append(aBtn('Align left edges', 'Left', () => alignSelected('left')), aBtn('Center horizontally', 'Center', () => alignSelected('cx')), aBtn('Align right edges', 'Right', () => alignSelected('right'))); p.appendChild(r1);
       const r2 = aRow(); r2.append(aBtn('Align top edges', 'Top', () => alignSelected('top')), aBtn('Center vertically', 'Middle', () => alignSelected('cy')), aBtn('Align bottom edges', 'Bottom', () => alignSelected('bottom'))); p.appendChild(r2);
@@ -1582,61 +1671,66 @@ function buildProps() {
   }
   const arrange = el('div', 'arrange');
   ([['arrTop', 'To front', 'top'], ['arrUp', 'Forward', 'up'], ['arrDown', 'Backward', 'down'], ['arrBot', 'To back', 'bottom']] as const).forEach(([ic, lbl, mode]) => {
-    const bn = el('button'); bn.innerHTML = icon(ic) + `<span>${lbl}</span>`; bn.onclick = () => arrangeLayer(mode as any); arrange.appendChild(bn);
+    // ARIA/title: the icon precedes a text span, but label the button explicitly so the
+    // accessible name is the action and a tooltip is available on hover.
+    const bn = el('button'); bn.innerHTML = icon(ic) + `<span>${lbl}</span>`; bn.title = lbl; bn.setAttribute('aria-label', lbl); bn.onclick = () => arrangeLayer(mode as any); arrange.appendChild(bn);
   });
   p.appendChild(arrange);
 
   if (layer.type === 'text') {
+    h('text');
     const f = el('div', 'field'); const lab = el('label'); lab.textContent = 'text'; f.appendChild(lab);
-    const ta = el('textarea') as HTMLTextAreaElement; ta.value = layer.text; ta.oninput = () => { layer.text = ta.value; structuralEdit(); }; f.appendChild(ta); p.appendChild(f);
+    const ta = el('textarea') as HTMLTextAreaElement; ta.value = layer.text; ta.oninput = () => { layer.text = ta.value; structuralEdit(); }; f.appendChild(ta); add(f);
     layer.style = layer.style || {};
-    p.appendChild(numField('font size', parseInt(layer.style.fontSize || '72'), 12, 240, 1, (v) => { layer.style.fontSize = Math.round(v) + 'px'; structuralEdit(); }));
-    p.appendChild(colorField('color', layer.style.color || '#ffffff', (v) => { layer.style.color = v; structuralEdit(); }));
+    add(numField('font size', parseInt(layer.style.fontSize || '72'), 12, 240, 1, (v) => { layer.style.fontSize = Math.round(v) + 'px'; structuralEdit(); }));
+    add(colorField('color', layer.style.color || '#ffffff', (v) => { layer.style.color = v; structuralEdit(); }));
   }
   if (layer.type === 'image' || layer.type === 'video') {
-    const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fit'; cf.appendChild(cl); const sel = el('select') as HTMLSelectElement; ['cover', 'contain'].forEach((o) => { const op = el('option') as HTMLOptionElement; op.value = o; op.textContent = o; if ((layer.fit ?? 'cover') === o) op.selected = true; sel.appendChild(op); }); sel.onchange = () => { layer.fit = sel.value; structuralEdit(); }; cf.appendChild(sel); p.appendChild(cf);
+    h('media');
+    const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'fit'; cf.appendChild(cl); const sel = el('select') as HTMLSelectElement; ['cover', 'contain'].forEach((o) => { const op = el('option') as HTMLOptionElement; op.value = o; op.textContent = o; if ((layer.fit ?? 'cover') === o) op.selected = true; sel.appendChild(op); }); sel.onchange = () => { layer.fit = sel.value; structuralEdit(); }; cf.appendChild(sel); add(cf);
     // crop (%): inset each side; live via the runtime (applies layer.crop at seek). Drag
     // the center selbox dot to crop on the preview, or fine-tune per side here.
     h('crop (%)');
     const setCrop = (k: 't' | 'r' | 'b' | 'l', v: number) => { layer.crop = layer.crop || { t: 0, r: 0, b: 0, l: 0 }; (layer.crop as any)[k] = v; liveEdit(); };
-    p.appendChild(numField('top', layer.crop?.t ?? 0, 0, 45, 1, (v) => setCrop('t', v)));
-    p.appendChild(numField('right', layer.crop?.r ?? 0, 0, 45, 1, (v) => setCrop('r', v)));
-    p.appendChild(numField('bottom', layer.crop?.b ?? 0, 0, 45, 1, (v) => setCrop('b', v)));
-    p.appendChild(numField('left', layer.crop?.l ?? 0, 0, 45, 1, (v) => setCrop('l', v)));
+    add(numField('top', layer.crop?.t ?? 0, 0, 45, 1, (v) => setCrop('t', v)));
+    add(numField('right', layer.crop?.r ?? 0, 0, 45, 1, (v) => setCrop('r', v)));
+    add(numField('bottom', layer.crop?.b ?? 0, 0, 45, 1, (v) => setCrop('b', v)));
+    add(numField('left', layer.crop?.l ?? 0, 0, 45, 1, (v) => setCrop('l', v)));
   }
-  if (layer.type === 'shape') { p.appendChild(colorField('fill color', layer.fill || '#ffffff', (v) => { layer.fill = v; structuralEdit(); })); }
+  if (layer.type === 'shape') { h('shape'); add(colorField('fill color', layer.fill || '#ffffff', (v) => { layer.fill = v; structuralEdit(); })); }
   if (layer.type === 'overlay') {
-    const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'effect'; cf.appendChild(cl); const ci = el('input') as HTMLInputElement; ci.type = 'text'; ci.value = String(layer.effect).replace(/-/g, ' '); ci.readOnly = true; cf.appendChild(ci); p.appendChild(cf);
+    h('overlay');
+    const cf = el('div', 'field'); const cl = el('label'); cl.textContent = 'effect'; cf.appendChild(cl); const ci = el('input') as HTMLInputElement; ci.type = 'text'; ci.value = String(layer.effect).replace(/-/g, ' '); ci.readOnly = true; cf.appendChild(ci); add(cf);
     const spec = (MAN.get('overlay.' + layer.effect) as any)?.params?.amount; const min = spec?.min ?? 0, max = spec?.max ?? 1;
     layer.params = layer.params || {};
-    p.appendChild(numField('amount', layer.params.amount ?? (spec?.default ?? 1), min, max, (max - min) / 100 || 0.01, (v) => { layer.params.amount = v; structuralEdit(); }));
+    add(numField('amount', layer.params.amount ?? (spec?.default ?? 1), min, max, (max - min) / 100 || 0.01, (v) => { layer.params.amount = v; structuralEdit(); }));
   }
 
   layer.presets = layer.presets || [];
   h('applied animations');
-  if (!layer.presets.length) { const e = el('div', 'empty'); e.style.cssText = 'padding:8px 0;font-size:11px'; e.textContent = 'none yet'; p.appendChild(e); }
+  if (!layer.presets.length) { const e = el('div', 'empty'); e.style.cssText = 'padding:8px 0;font-size:11px'; e.textContent = 'none yet'; add(e); }
   layer.presets.forEach((inst: any, idx: number) => {
     const entry = MAN.get(inst.id); const card = el('div', 'preset-card'); const hd = el('div', 'head'); const b = el('b'); b.textContent = inst.id; hd.appendChild(b);
-    const rm = el('button', 'icon-btn'); rm.innerHTML = icon('trash'); rm.onclick = () => { layer.presets.splice(idx, 1); structuralEdit(); }; hd.appendChild(rm); card.appendChild(hd);
-    if (entry) { inst.params = inst.params || {}; for (const [pk, spec] of Object.entries<any>(entry.params)) { const cur = inst.params[pk] ?? spec.default; const min = spec.min ?? 0, max = spec.max ?? (spec.default * 2 || 1); card.appendChild(numField(pk, cur, min, max, (max - min) / 100 || 0.01, (v) => { inst.params[pk] = v; liveEdit(); })); } }
-    p.appendChild(card);
+    const rm = el('button', 'icon-btn'); rm.innerHTML = icon('trash'); rm.title = 'remove animation'; rm.setAttribute('aria-label', `remove ${inst.id} animation`); rm.onclick = () => { layer.presets.splice(idx, 1); structuralEdit(); }; hd.appendChild(rm); card.appendChild(hd);
+    if (entry) { inst.params = inst.params || {}; for (const [pk, spec] of Object.entries<any>(entry.params)) { const curVal = inst.params[pk] ?? spec.default; const min = spec.min ?? 0, max = spec.max ?? (spec.default * 2 || 1); card.appendChild(numField(pk, curVal, min, max, (max - min) / 100 || 0.01, (v) => { inst.params[pk] = v; liveEdit(); })); } }
+    add(card);
   });
-  const browse = el('button', 'btn'); browse.style.cssText = 'width:100%;justify-content:center;margin-top:6px'; browse.innerHTML = icon('spark') + 'Browse animations'; browse.onclick = () => setTab('anim'); p.appendChild(browse);
+  const browse = el('button', 'btn'); browse.style.cssText = 'width:100%;justify-content:center;margin-top:6px'; browse.innerHTML = icon('spark') + 'Browse animations'; browse.onclick = () => setTab('anim'); add(browse);
 
   h('timing');
-  p.appendChild(numField('start (s)', layer.start ?? 0, 0, scene.duration, 0.05, (v) => { layer.start = v; timingEdit(); }));
+  add(numField('start (s)', layer.start ?? 0, 0, scene.duration, 0.05, (v) => { layer.start = v; timingEdit(); }));
   // B08: allow lengthening past the scene — derive() auto-extends. Generous cap.
-  p.appendChild(numField('duration (s)', layer.duration ?? scene.duration, 0.1, Math.max(scene.duration, S.total), 0.05, (v) => { layer.duration = v; timingEdit(); }));
+  add(numField('duration (s)', layer.duration ?? scene.duration, 0.1, Math.max(scene.duration, S.total), 0.05, (v) => { layer.duration = v; timingEdit(); }));
   h('transform  ·  ◆ = keyframe at playhead');
   layer.transform = layer.transform || {}; const tf = layer.transform;
-  p.appendChild(kfField('x', 'x', tf.x ?? 0, -800, 800, 1, (v) => { tf.x = v; liveEdit(); }));
-  p.appendChild(kfField('y', 'y', tf.y ?? 0, -800, 800, 1, (v) => { tf.y = v; liveEdit(); }));
-  p.appendChild(kfField('scale (zoom)', 'scale', tf.scale ?? 1, 0, 3, 0.01, (v) => { tf.scale = v; liveEdit(); }));
-  p.appendChild(kfField('rotate', 'rotate', tf.rotate ?? 0, -180, 180, 1, (v) => { tf.rotate = v; liveEdit(); }));
-  p.appendChild(kfField('opacity', 'opacity', tf.opacity ?? 1, 0, 1, 0.01, (v) => { tf.opacity = v; liveEdit(); }));
+  add(kfField('x', 'x', tf.x ?? 0, -800, 800, 1, (v) => { tf.x = v; liveEdit(); }));
+  add(kfField('y', 'y', tf.y ?? 0, -800, 800, 1, (v) => { tf.y = v; liveEdit(); }));
+  add(kfField('scale (zoom)', 'scale', tf.scale ?? 1, 0, 3, 0.01, (v) => { tf.scale = v; liveEdit(); }));
+  add(kfField('rotate', 'rotate', tf.rotate ?? 0, -180, 180, 1, (v) => { tf.rotate = v; liveEdit(); }));
+  add(kfField('opacity', 'opacity', tf.opacity ?? 1, 0, 1, 0.01, (v) => { tf.opacity = v; liveEdit(); }));
   const tip = el('div'); tip.style.cssText = 'font-size:10px;color:var(--dim);margin-top:6px;line-height:1.5';
   tip.innerHTML = 'drag on canvas to move · arrows nudge · <b>S</b> split · <b>⌘D</b> duplicate · <b>Del</b> remove';
-  p.appendChild(tip);
+  add(tip);
 }
 
 // FEATURE 1 — hover-to-preview state. Holds the in-flight preview so it can be torn
@@ -1778,7 +1872,7 @@ function updateSeekbar(forceLoading = false) {
   const knob = document.getElementById('seekKnob'); if (knob) knob.style.left = `calc(18px + ${frac} * (100% - 36px))`;
   bar.classList.toggle('loading', forceLoading || previewBuffering());
 }
-function updateTime() { $('tpTime').textContent = fmtClockMs(S.playhead); $('tpTotal').textContent = ' / ' + fmtClockMs(effectiveTotal()); updateSeekbar(); }
+function updateTime() { $('tpTime').textContent = fmtClockMs(S.playhead); $('tpTotal').textContent = ' / ' + fmtClockMs(effectiveTotal()); updateSeekbar(); refreshHistoryButtons(); }
 // single zoom mutator — clamps to the shared range, rebuilds, and (optionally)
 // keeps the time under the cursor fixed on screen across the zoom step. anchorX is
 // in client coords; the anchor offset is measured against the SCROLL VIEWPORT.
@@ -1839,8 +1933,10 @@ function saveJson() { const blob = new Blob([JSON.stringify(S.ir, null, 2)], { t
 async function openProjects() {
   const list = await (await fetch('/api/projects')).json();
   const pl = $('projList'); pl.innerHTML = '';
-  list.forEach((pr: any) => { const d = el('div', 'proj' + (pr.active ? ' active' : '')); d.innerHTML = icon('file') + pr.name; d.onclick = async () => { const r = await (await fetch('/api/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: pr.path }) })).json(); if (r.ok) { S.assetBase = r.assetBase; setDoc(r.ir); $('openModal').classList.remove('show'); } }; pl.appendChild(d); });
-  $('openModal').classList.add('show');
+  // opening a project closes the modal via the shared helper (restores focus + drops the trap).
+  list.forEach((pr: any) => { const d = el('div', 'proj' + (pr.active ? ' active' : '')); d.innerHTML = icon('file') + pr.name; d.onclick = async () => { const r = await (await fetch('/api/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: pr.path }) })).json(); if (r.ok) { S.assetBase = r.assetBase; setDoc(r.ir); closeModalById('openModal'); } }; pl.appendChild(d); });
+  // route through the focus-trap helper (Esc to close, Tab cycles, first control focused).
+  openModalById('openModal');
 }
 
 // ---------- export with progress ----------
@@ -1855,8 +1951,109 @@ async function runExport() {
   fetch('/api/render', { method: 'POST' }).catch(() => {});
 }
 
+// ---------- resizable panels ----------
+// RESIZABLE PANELS: read/write the CSS custom properties that drive the layout grids
+// (#app grid rows use --tl-h; the .mid columns use --side-w / --right-w). Each splitter
+// is on a specific edge, so the drag direction that GROWS its panel differs:
+//   #splitSide      — side panel's RIGHT edge  → drag right grows it (startW + dx)
+//   #splitRight     — right panel's LEFT edge  → drag left  grows it (startW - dx)
+//   #splitTimeline  — timeline's TOP edge      → drag up    grows it (startH - dy)
+// Values are clamped and persisted to localStorage, then restored on load. All purely
+// editor chrome — never touches the IR / render path.
+const PANEL_CLAMP = { side: [150, 460], right: [240, 520], tl: [160, 640] } as const;
+const PANEL_KEYS = { side: 'vgp.sideW', right: 'vgp.rightW', tl: 'vgp.tlH' } as const;
+const PANEL_VARS = { side: '--side-w', right: '--right-w', tl: '--tl-h' } as const;
+function setPanelVar(which: 'side' | 'right' | 'tl', px: number, persist = true) {
+  const [lo, hi] = PANEL_CLAMP[which]; const v = Math.round(Math.max(lo, Math.min(hi, px)));
+  document.getElementById('app')!.style.setProperty(PANEL_VARS[which], v + 'px');
+  if (persist) { try { localStorage.setItem(PANEL_KEYS[which], String(v)); } catch {} }
+  return v;
+}
+// restore any persisted panel sizes onto #app before first paint
+function restorePanelSizes() {
+  (['side', 'right', 'tl'] as const).forEach((which) => {
+    let stored = NaN; try { stored = parseFloat(localStorage.getItem(PANEL_KEYS[which]) || ''); } catch {}
+    if (isFinite(stored) && stored > 0) setPanelVar(which, stored, false);
+  });
+}
+// current pixel width/height a var resolves to on #app (falls back to the measured
+// panel box when the var is unset, so the first drag grows from the real size).
+function curPanelPx(which: 'side' | 'right' | 'tl', fallbackEl: HTMLElement | null): number {
+  const raw = getComputedStyle(document.getElementById('app')!).getPropertyValue(PANEL_VARS[which]).trim();
+  const n = parseFloat(raw); if (isFinite(n) && n > 0) return n;
+  if (fallbackEl) { const r = fallbackEl.getBoundingClientRect(); return which === 'tl' ? r.height : r.width; }
+  return PANEL_CLAMP[which][0];
+}
+function initSplitters() {
+  const wire = (id: string, which: 'side' | 'right' | 'tl', axis: 'x' | 'y', sign: 1 | -1, panelSel: string) => {
+    const sp = document.getElementById(id); if (!sp) return; // markup agent owns the element
+    sp.addEventListener('mousedown', (e: MouseEvent) => {
+      if (e.button !== 0) return; e.preventDefault();
+      const panelEl = document.querySelector(panelSel) as HTMLElement | null;
+      const start = axis === 'x' ? e.clientX : e.clientY;
+      const base = curPanelPx(which, panelEl);
+      sp.classList.add('dragging');
+      const prevUserSelect = document.body.style.userSelect; document.body.style.userSelect = 'none';
+      const mv = (ev: MouseEvent) => {
+        const delta = (axis === 'x' ? ev.clientX : ev.clientY) - start;
+        setPanelVar(which, base + sign * delta);
+        fit(); // any panel resize changes the center stage box — refit the preview live
+      };
+      const up = () => {
+        window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); window.removeEventListener('blur', up);
+        sp.classList.remove('dragging'); document.body.style.userSelect = prevUserSelect;
+        fit(); buildTimeline(); // final reflow: preview scale + ruler/clip widths against the new sizes
+      };
+      window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up); window.addEventListener('blur', up, { once: true });
+    });
+  };
+  wire('splitSide', 'side', 'x', 1, '.side');
+  wire('splitRight', 'right', 'x', -1, '.right');
+  wire('splitTimeline', 'tl', 'y', -1, '.timeline');
+}
+
+// ---------- modal focus management ----------
+// MODAL focus-trap + Esc for #openModal / #projModal. On open: remember the opener,
+// focus the first control, and install a keydown trap (Esc closes; Tab cycles within
+// the modal). On close: remove the trap and restore focus to the opener. The .show
+// class is the open signal (added/removed elsewhere); these helpers wrap that.
+let modalOpener: HTMLElement | null = null;
+let modalTrapEl: HTMLElement | null = null;
+function focusablesIn(root: HTMLElement): HTMLElement[] {
+  const sel = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  return Array.from(root.querySelectorAll<HTMLElement>(sel)).filter((e) => e.offsetParent !== null || e === document.activeElement);
+}
+function onModalKey(ev: KeyboardEvent) {
+  if (!modalTrapEl) return;
+  if (ev.key === 'Escape') { ev.preventDefault(); closeModalById(modalTrapEl.id); return; }
+  if (ev.key !== 'Tab') return;
+  const items = focusablesIn(modalTrapEl); if (!items.length) { ev.preventDefault(); return; }
+  const first = items[0], last = items[items.length - 1]; const active = document.activeElement as HTMLElement;
+  if (ev.shiftKey) { if (active === first || !modalTrapEl.contains(active)) { ev.preventDefault(); last.focus(); } }
+  else { if (active === last || !modalTrapEl.contains(active)) { ev.preventDefault(); first.focus(); } }
+}
+function openModalById(id: string) {
+  const m = document.getElementById(id); if (!m) return;
+  modalOpener = (document.activeElement as HTMLElement) ?? null;
+  m.classList.add('show');
+  modalTrapEl = m; window.addEventListener('keydown', onModalKey, true);
+  // focus the first control inside the dialog surface on open
+  const inner = (m.querySelector('.modal') as HTMLElement) ?? m;
+  const items = focusablesIn(inner); (items[0] ?? inner).focus?.();
+}
+function closeModalById(id: string) {
+  const m = document.getElementById(id); if (!m) return;
+  m.classList.remove('show');
+  if (modalTrapEl === m) { window.removeEventListener('keydown', onModalKey, true); modalTrapEl = null; }
+  // restore focus to whatever opened the modal
+  modalOpener?.focus?.(); modalOpener = null;
+}
+
 // ---------- init ----------
 async function init() {
+  // restore persisted resizable-panel sizes onto #app before the first layout so the
+  // grid is sized correctly from the very first paint (RESIZABLE PANELS).
+  restorePanelSizes();
   // static icons
   $('fileIcon').innerHTML = icon('file'); $('expIcon').innerHTML = icon('download'); // logo is the inline animated SVG
   $('i-text').innerHTML = icon('text'); $('i-shape').innerHTML = icon('shape'); $('i-3d').innerHTML = icon('cube'); $('i-up').innerHTML = icon('upload');
@@ -1864,12 +2061,18 @@ async function init() {
   $('i-undo').innerHTML = icon('undo'); $('i-redo').innerHTML = icon('redo'); $('i-split').innerHTML = icon('split'); $('i-dup').innerHTML = icon('copy'); $('i-del').innerHTML = icon('trash'); $('i-fit').innerHTML = icon('fit');
   $('tpStart').innerHTML = icon('start'); $('tpBack').innerHTML = icon('back'); $('tpFwd').innerHTML = icon('fwd'); $('tpLoop').innerHTML = icon('loop'); setPlayIcon();
   buildFileMenu();
+  // SKELETON: show loading placeholders in the right (props) panel and the timeline
+  // while the composition loads, mounts and the first build runs; cleared below once
+  // buildTimeline()/renderRight() have populated them.
+  $('rightBody').classList.add('loading'); $('tlScroll').classList.add('loading');
 
   const data = await (await fetch('/api/composition')).json();
   S.ir = data.ir; S.assetBase = data.assetBase; S.lastSyncJson = JSON.stringify(S.ir);
   S.history = [S.lastSyncJson]; S.histIndex = 0;
   captureSceneBase(); S.ir.scenes.forEach((_: any, i: number) => normalizeZ(i)); derive(); autoFit(); mountPreview(); await VGP.ready();
-  buildTimeline(); renderRight(); updateTime(); await loadAssets();
+  buildTimeline(); renderRight(); updateTime();
+  $('rightBody').classList.remove('loading'); $('tlScroll').classList.remove('loading'); // first build done — drop skeletons
+  await loadAssets();
   (window as any).__vgpAudioReady = () => buildTimeline(); // refresh audio-lane widths once durations load
   requestAnimationFrame((t) => { last = t; loop(t); });
 
@@ -1916,13 +2119,16 @@ async function init() {
   $('projModal').addEventListener('mousedown', (e) => { if (e.target === $('projModal')) closeProj(); });
   $('btnDel').onclick = () => { if (S.selected || S.multi.length) deleteSelection(); }; // FEATURE 1: multi-aware
   initSelHandles();
+  initSplitters(); // RESIZABLE PANELS: attach the splitter drag handlers
 
   // file menu toggle + outside click
   $('fileBtn').onclick = (e) => { e.stopPropagation(); menuOpen = !menuOpen; $('fileMenu').classList.toggle('open', menuOpen); };
   document.addEventListener('click', closeMenu);
   $('export').onclick = runExport;
-  $('openClose').onclick = () => $('openModal').classList.remove('show');
-  $('importBtn').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json'; inp.onchange = () => { const f = inp.files?.[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { try { setDoc(JSON.parse(String(rd.result))); scheduleSave(); $('openModal').classList.remove('show'); } catch {} }; rd.readAsText(f); }; inp.click(); };
+  $('openClose').onclick = () => closeModalById('openModal');
+  // close the Open modal on backdrop click too (parity with the project modal).
+  $('openModal').addEventListener('mousedown', (e) => { if (e.target === $('openModal')) closeModalById('openModal'); });
+  $('importBtn').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json'; inp.onchange = () => { const f = inp.files?.[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { try { setDoc(JSON.parse(String(rd.result))); scheduleSave(); closeModalById('openModal'); } catch {} }; rd.readAsText(f); }; inp.click(); };
 
   // add-layer
   $('addText').onclick = () => addLayerAtPlayhead(newText()); $('addShape').onclick = () => addLayerAtPlayhead(newShape()); $('addLine').onclick = () => addLayerAtPlayhead(newLine()); $('add3D').onclick = () => addLayerAtPlayhead(new3D());

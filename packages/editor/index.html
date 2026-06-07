@@ -18,6 +18,10 @@
       --hi:inset 0 1px 0 rgba(255,255,255,.2); --glow:0 8px 32px rgba(0,0,0,.55);
       --blur:saturate(110%) blur(20px);
       --r:14px;
+      /* radius scale — single source of truth for corners */
+      --r-sm:7px; --r-md:11px; --r-lg:16px; --r-pill:100px;
+      /* resizable panel sizes — JS agent overrides these on #app */
+      --side-w:212px; --right-w:336px; --tl-h:320px;
       --font:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
       /* clips stay colourful for quick layer-type identification (chrome is B&W) */
       --clip-text:rgba(139,92,246,.55); --clip-image:rgba(14,165,233,.5); --clip-three:rgba(34,197,94,.5);
@@ -32,9 +36,9 @@
         radial-gradient(1100px 700px at 50% -12%, rgba(255,255,255,.05), transparent 60%),
         var(--bg);
     }
-    #app { display:grid; height:100vh; grid-template-rows:54px 1fr 320px; }
+    #app { display:grid; height:100vh; grid-template-rows:54px 1fr var(--tl-h, 320px); }
     ::-webkit-scrollbar { width:11px; height:11px; }
-    ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.16); border-radius:100px; border:3px solid transparent; background-clip:padding-box; }
+    ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.16); border-radius:var(--r-pill); border:3px solid transparent; background-clip:padding-box; }
     ::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,.28); }
     svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; display:block; }
     button { font-family:inherit; cursor:pointer; border:0; color:var(--text); background:transparent; }
@@ -43,9 +47,30 @@
     /* clips sit tightly packed; inset the ring so it reads inside the lane */
     .clip:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
     @media (prefers-reduced-motion: reduce) { * { animation-duration:.001ms !important; transition-duration:.001ms !important; } }
+    /* responsive — shrink the side panels so the preview isn't crushed on narrow screens */
+    @media (max-width:1200px) {
+      #app { --side-w:176px; --right-w:288px; }
+      .mid { grid-template-columns:minmax(140px, var(--side-w, 176px)) minmax(0,1fr) minmax(220px, var(--right-w, 288px)); }
+    }
+    @media (max-width:900px) {
+      #app { --side-w:148px; --right-w:240px; }
+    }
+    /* disabled buttons — JS agent sets native [disabled] on #undoBtn/#redoBtn */
+    button:disabled, .btn:disabled, .tp-btn:disabled { opacity:.4; cursor:default; pointer-events:none; }
+    button:disabled:hover, .btn:disabled:hover, .tp-btn:disabled:hover { transform:none; background:var(--glass-2); border-color:var(--border); box-shadow:var(--hi); }
+
+    /* ── loading skeleton shimmer (JS toggles .loading on #assetGrid/#rightBody/#tlScroll and .asset) ── */
+    .loading { position:relative; overflow:hidden; }
+    .loading::after { content:''; position:absolute; inset:0; z-index:20; pointer-events:none; border-radius:inherit;
+      background:linear-gradient(100deg, transparent 20%, rgba(255,255,255,.09) 40%, rgba(255,255,255,.14) 50%, rgba(255,255,255,.09) 60%, transparent 80%);
+      background-size:220% 100%; animation:shimmer 1.2s ease-in-out infinite; }
+    @keyframes shimmer { from { background-position:120% 0; } to { background-position:-120% 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .loading::after { animation:none; background:rgba(255,255,255,.07); }
+    }
 
     .glass { background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); box-shadow:var(--glow),var(--hi); }
-    .btn { background:var(--glass-2); border:1px solid var(--border); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-radius:11px; padding:8px 14px; font-weight:600; font-size:12px; display:inline-flex; align-items:center; gap:7px; box-shadow:var(--hi); transition:all .15s; }
+    .btn { background:var(--glass-2); border:1px solid var(--border); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-radius:var(--r-md); padding:8px 14px; font-weight:600; font-size:12px; display:inline-flex; align-items:center; gap:7px; box-shadow:var(--hi); transition:all .15s; }
     .btn:hover { background:var(--glass-3); border-color:var(--border-2); transform:translateY(-1px); }
     .btn.primary { background:var(--accent-grad); border-color:transparent; box-shadow:0 6px 20px rgba(255,255,255,.4),var(--hi); color:#000000; font-weight:700; }
     .btn.primary:hover { box-shadow:0 9px 28px rgba(255,255,255,.55),var(--hi); }
@@ -54,7 +79,7 @@
     .tp-btn.sm { width:32px; height:32px; }
     /* on-canvas selection box + resize handles (in comp-space inside #scaler) */
     #selbox { position:absolute; display:none; border:2px solid var(--accent); box-shadow:0 0 0 1px rgba(0,0,0,.4); pointer-events:none; z-index:30; }
-    #selbox .sh { position:absolute; width:18px; height:18px; background:var(--accent); border:2px solid #fff; border-radius:4px; pointer-events:auto; }
+    #selbox .sh { position:absolute; width:18px; height:18px; background:var(--accent); border:2px solid #fff; border-radius:var(--r-sm); pointer-events:auto; }
     #selbox .sh[data-h=nw]{ left:-10px; top:-10px; cursor:nwse-resize; }
     #selbox .sh[data-h=ne]{ right:-10px; top:-10px; cursor:nesw-resize; }
     #selbox .sh[data-h=sw]{ left:-10px; bottom:-10px; cursor:nesw-resize; }
@@ -73,30 +98,44 @@
     .menu { position:absolute; top:46px; left:0; background:rgba(18,18,18,.82); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:var(--r); padding:7px; min-width:210px; box-shadow:0 24px 60px rgba(0,0,0,.6),var(--hi); display:none; }
     .menu.open { display:block; animation:pop .14s ease; }
     @keyframes pop { from { opacity:0; transform:translateY(-6px); } }
-    .menu-item { display:flex; align-items:center; gap:11px; padding:9px 11px; border-radius:10px; font-size:12.5px; font-weight:500; color:var(--text); width:100%; }
+    .menu-item { display:flex; align-items:center; gap:11px; padding:9px 11px; border-radius:var(--r-md); font-size:12.5px; font-weight:500; color:var(--text); width:100%; }
     .menu-item:hover { background:var(--glass-3); }
     .menu-item .k { margin-left:auto; color:var(--dim); font-size:11px; }
     .menu-sep { height:1px; background:var(--border); margin:6px 4px; }
-    .status { font-size:12px; color:var(--dim); display:flex; align-items:center; gap:7px; background:var(--glass); border:1px solid var(--border); border-radius:100px; padding:5px 12px; backdrop-filter:var(--blur); }
+    .status { font-size:12px; color:var(--dim); display:flex; align-items:center; gap:7px; background:var(--glass); border:1px solid var(--border); border-radius:var(--r-pill); padding:5px 12px; backdrop-filter:var(--blur); }
     .dot { width:8px; height:8px; border-radius:50%; background:var(--dim); transition:.2s; }
     .dot.saved { background:var(--ok); box-shadow:0 0 10px rgba(255,255,255,.7); } .dot.saving { background:var(--warn); } .dot.edited { background:var(--accent); box-shadow:0 0 10px rgba(255,255,255,.7); }
 
-    .mid { display:grid; grid-template-columns:212px 1fr 336px; overflow:hidden; }
+    .mid { display:grid; grid-template-columns:var(--side-w, 212px) minmax(0,1fr) var(--right-w, 336px); overflow:hidden; min-height:0; }
 
-    .side { background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-right:1px solid var(--border); overflow-y:auto; padding:15px; }
+    .side { position:relative; background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-right:1px solid var(--border); overflow-y:auto; overflow-x:hidden; min-width:0; padding:15px; }
+
+    /* ── resizable splitter bars (JS agent attaches drag handlers) ── */
+    .splitter { position:absolute; z-index:40; pointer-events:auto; background:transparent; transition:background .14s; }
+    .splitter:hover, .splitter.dragging { background:var(--border-2); }
+    .splitter.v { top:0; bottom:0; width:5px; cursor:col-resize; }
+    .splitter.h { left:0; right:0; height:5px; cursor:row-resize; }
+    /* anchored flush to the inner edge (no negative offset → not clipped by panel overflow).
+       In the scrolling .side, an absolute child with top:0/bottom:0 spans the full scroll
+       height, so the right-edge handle is grabbable at any scroll position. */
+    #splitSide { right:0; min-height:100%; }   /* side panel's right edge */
+    #splitRight { left:0; }                     /* right panel's left edge */
+    #splitTimeline { top:0; }                   /* timeline's top edge */
     .sec-title { font-size:10px; text-transform:uppercase; letter-spacing:1.3px; color:var(--dim); margin:5px 0 11px; font-weight:700; }
     .add-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:18px; }
-    .add-grid .btn { flex-direction:column; padding:13px 4px; gap:7px; font-size:11px; border-radius:13px; }
+    .add-grid .btn { flex-direction:column; padding:13px 4px; gap:7px; font-size:11px; border-radius:var(--r-md); }
     .add-grid .btn.wide { grid-column:1/3; flex-direction:row; }
     .add-grid .btn svg { width:18px; height:18px; opacity:.92; }
-    .drop { border:1.5px dashed var(--border-2); border-radius:13px; padding:18px 8px; text-align:center; color:var(--dim); font-size:11px; cursor:pointer; margin-bottom:13px; display:flex; flex-direction:column; align-items:center; gap:8px; transition:.16s; }
-    .drop:hover, .drop.over { border-color:var(--accent); color:var(--text); background:rgba(255,255,255,.1); }
+    .drop { border:1.5px dashed var(--border-2); border-radius:var(--r-md); padding:18px 8px; text-align:center; color:var(--dim); font-size:11px; cursor:pointer; margin-bottom:13px; display:flex; flex-direction:column; align-items:center; gap:8px; transition:.16s; }
+    .drop:hover, .drop.over { border-color:var(--accent); color:var(--text); background:rgba(255,255,255,.06); box-shadow:inset 0 0 0 2px var(--accent); }
     .asset-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
-    .asset { position:relative; border-radius:12px; overflow:hidden; aspect-ratio:16/10; background:var(--glass-2); cursor:grab; border:1px solid var(--border); box-shadow:var(--hi); transition:.16s; }
+    .asset { position:relative; border-radius:var(--r-md); overflow:hidden; aspect-ratio:16/10; background:var(--glass-2); cursor:grab; border:1px solid var(--border); box-shadow:var(--hi); transition:.16s; }
     .asset:hover { border-color:var(--border-2); transform:translateY(-2px); box-shadow:var(--glow); }
     .asset img, .asset video { width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; }
     .asset .nm { position:absolute; bottom:0; left:0; right:0; font-size:9px; padding:3px 6px; background:linear-gradient(transparent,rgba(0,0,0,.78)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .asset .badge { position:absolute; top:5px; left:5px; font-size:8px; background:rgba(12,12,12,.6); backdrop-filter:blur(6px); border:1px solid var(--border); padding:1px 7px; border-radius:100px; font-weight:700; text-transform:uppercase; }
+    .asset .badge { position:absolute; top:5px; left:5px; font-size:8px; background:rgba(12,12,12,.6); backdrop-filter:blur(6px); border:1px solid var(--border); padding:1px 7px; border-radius:var(--r-pill); font-weight:700; text-transform:uppercase; }
+    /* skeleton tint for asset thumbnails while images decode */
+    .asset.loading { background:var(--glass-2); }
 
     /* preview — dark glass stage with ambient glow */
     /* center column = preview stage stacked over its own seekbar (so the progress bar
@@ -106,63 +145,85 @@
       background:radial-gradient(700px 500px at 50% 40%, rgba(255,255,255,.1), transparent 70%), #000000; }
     .center-col .seekbar { flex:0 0 auto; }
     #scaler { position:relative; }
-    #stage { position:relative; border-radius:12px; box-shadow:0 30px 90px rgba(0,0,0,.7), 0 0 0 1px var(--border), var(--hi); }
+    #stage { position:relative; border-radius:var(--r-md); box-shadow:0 30px 90px rgba(0,0,0,.7), 0 0 0 1px var(--border), var(--hi); }
 
-    .right { background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+    .right { position:relative; background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; min-width:0; }
     .tabs { display:flex; padding:11px 11px 0; gap:7px; border-bottom:1px solid var(--border); }
-    .tab { flex:1; padding:9px; border-radius:11px 11px 0 0; font-weight:700; font-size:12px; color:var(--dim); display:flex; align-items:center; justify-content:center; gap:6px; }
+    .tab { flex:1; padding:9px; border-radius:var(--r-md) var(--r-md) 0 0; font-weight:700; font-size:12px; color:var(--dim); display:flex; align-items:center; justify-content:center; gap:6px; }
     .tab.on { color:var(--text); background:var(--glass-2); box-shadow:inset 0 -2px 0 var(--accent); }
     .right-body { flex:1; overflow-y:auto; padding:15px; }
     .right-body h3 { font-size:10px; text-transform:uppercase; letter-spacing:1.1px; color:var(--dim); margin:17px 0 9px; font-weight:700; }
     .right-body h3:first-child { margin-top:0; }
-    .sel-head { display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:12px; background:var(--glass-2); border:1px solid var(--border); box-shadow:var(--hi); margin-bottom:6px; }
-    .sel-head .pill { font-size:10px; font-weight:800; text-transform:uppercase; padding:3px 10px; border-radius:100px; color:#fff; display:flex; align-items:center; gap:5px; border:1px solid var(--border); }
+    /* collapsible property sections — JS toggles .collapsed on .sec; header rotates the caret */
+    .sec { margin-bottom:4px; }
+    .sec > .sec-head { display:flex; align-items:center; gap:7px; cursor:pointer; user-select:none; width:100%; text-align:left; background:none; border:0; padding:0; color:inherit; }
+    .sec > .sec-head .caret { display:inline-flex; align-items:center; justify-content:center; transition:transform .16s; color:var(--dim); }
+    .sec > .sec-head .caret svg { width:11px; height:11px; }
+    .sec > .sec-head:hover { color:var(--text); }
+    .sec > .sec-body { overflow:hidden; }
+    .sec.collapsed > .sec-body { display:none; }
+    .sec.collapsed > .sec-head .caret { transform:rotate(-90deg); }
+    .sel-head { display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:var(--r-md); background:var(--glass-2); border:1px solid var(--border); box-shadow:var(--hi); margin-bottom:6px; }
+    .sel-head .pill { font-size:10px; font-weight:800; text-transform:uppercase; padding:3px 10px; border-radius:var(--r-pill); color:#fff; display:flex; align-items:center; gap:5px; border:1px solid var(--border); }
     .sel-head .pill svg { width:12px; height:12px; }
     .field { margin-bottom:11px; }
     .field label { display:block; font-size:11px; color:var(--dim); margin-bottom:5px; }
-    .field input[type=text], .field textarea, .field select { width:100%; background:rgba(0,0,0,.25); border:1px solid var(--border); color:var(--text); border-radius:9px; padding:8px 10px; font-size:12px; font-family:inherit; }
+    .field input[type=text], .field textarea, .field select { width:100%; background:rgba(0,0,0,.25); border:1px solid var(--border); color:var(--text); border-radius:var(--r-sm); padding:8px 10px; font-size:12px; font-family:inherit; }
     .field input:focus, .field textarea:focus, .field select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(255,255,255,.18); }
     .field textarea { resize:vertical; min-height:46px; }
     /* color field: native swatch (square chip) + hex text input */
     .color-row { gap:8px; }
-    .color-row .color-swatch { width:34px; height:34px; flex:none; padding:2px; border-radius:9px; background:rgba(0,0,0,.25); border:1px solid var(--border); cursor:pointer; -webkit-appearance:none; appearance:none; }
+    .color-row .color-swatch { width:34px; height:34px; flex:none; padding:2px; border-radius:var(--r-sm); background:rgba(0,0,0,.25); border:1px solid var(--border); cursor:pointer; -webkit-appearance:none; appearance:none; }
     .color-row .color-swatch::-webkit-color-swatch-wrapper { padding:0; }
-    .color-row .color-swatch::-webkit-color-swatch { border:none; border-radius:6px; }
-    .color-row .color-swatch::-moz-color-swatch { border:none; border-radius:6px; }
+    .color-row .color-swatch::-webkit-color-swatch { border:none; border-radius:var(--r-sm); }
+    .color-row .color-swatch::-moz-color-swatch { border:none; border-radius:var(--r-sm); }
     .color-row .color-swatch:hover { border-color:var(--border-2); }
     .field .color-row .color-hex { flex:1; font-family:ui-monospace,Menlo,monospace; text-transform:lowercase; }
     .row { display:flex; align-items:center; gap:9px; }
-    .row input[type=range] { flex:1; accent-color:var(--accent); }
-    .row .val { width:50px; text-align:right; font-variant-numeric:tabular-nums; font-size:11px; color:var(--dim); }
+    .row input[type=range] { flex:1; min-width:0; accent-color:var(--accent); }
+    /* numeric readout is now an editable <input class="val" type="number"> — compact inline field */
+    .row .val { width:54px; flex:none; text-align:right; font-variant-numeric:tabular-nums; font-size:11px; color:var(--text);
+      background:rgba(0,0,0,.25); border:1px solid var(--border); border-radius:var(--r-sm); padding:4px 6px; font-family:inherit; -moz-appearance:textfield; }
+    .row .val::-webkit-outer-spin-button, .row .val::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+    .row .val:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(255,255,255,.18); color:var(--text); }
+    .row .val:hover { border-color:var(--border-2); }
 
     .cat-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:13px; }
-    .cat { padding:6px 12px; border-radius:100px; font-size:11px; font-weight:600; background:var(--glass-2); border:1px solid var(--border); color:var(--dim); }
+    .cat { padding:6px 12px; border-radius:var(--r-pill); font-size:11px; font-weight:600; background:var(--glass-2); border:1px solid var(--border); color:var(--dim); }
     .cat.on { background:var(--accent-grad); color:#000000; border-color:transparent; font-weight:700; }
     .cat:hover { color:var(--text); }
     /* compact name-only effect list (line by line) */
     .anim-grid { display:flex; flex-direction:column; gap:5px; }
-    .anim-card { background:var(--glass-2); border:1px solid var(--border); border-radius:9px; padding:8px 11px; cursor:grab; transition:.12s; display:flex; align-items:center; gap:8px; }
+    .anim-card { background:var(--glass-2); border:1px solid var(--border); border-radius:var(--r-sm); padding:8px 11px; cursor:grab; transition:.12s; display:flex; align-items:center; gap:8px; }
     .anim-card:hover { border-color:var(--accent); background:var(--glass-3); }
     .anim-card:active { cursor:grabbing; }
     .anim-card .nm { font-size:12px; font-weight:600; display:flex; align-items:center; gap:7px; text-transform:capitalize; }
     .anim-card .nm svg { width:13px; height:13px; color:var(--dim); }
-    .preset-card { background:var(--glass-2); border:1px solid var(--border); border-radius:13px; padding:11px; margin-bottom:9px; box-shadow:var(--hi); }
+    .preset-card { background:var(--glass-2); border:1px solid var(--border); border-radius:var(--r-md); padding:11px; margin-bottom:9px; box-shadow:var(--hi); }
     .preset-card .head { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
     .preset-card .head b { font-size:12px; color:#ffffff; }
-    .icon-btn { padding:4px 8px; border-radius:8px; background:var(--glass-2); color:var(--dim); border:1px solid var(--border); }
+    .icon-btn { padding:4px 8px; border-radius:var(--r-sm); background:var(--glass-2); color:var(--dim); border:1px solid var(--border); }
     .icon-btn:hover { background:rgba(255,255,255,.18); color:#ffffff; }
-    .empty { color:var(--dim); font-size:12px; padding:34px 14px; text-align:center; line-height:1.7; }
+    /* empty-state — centered icon + one-line CTA (JS agent fills richer content) */
+    .empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+      color:var(--dim); font-size:12px; padding:34px 18px; text-align:center; line-height:1.6; }
+    .empty svg { width:26px; height:26px; color:var(--dim2); opacity:.8; }
+    .empty .empty-icon { display:flex; align-items:center; justify-content:center; width:46px; height:46px; border-radius:var(--r-md);
+      background:var(--glass-2); border:1px solid var(--border); color:var(--dim); margin-bottom:2px; }
+    .empty .empty-title { color:var(--text); font-weight:600; font-size:13px; }
+    .empty .empty-cta { color:var(--dim); font-size:11.5px; }
+    .empty .btn { margin-top:4px; }
 
-    .timeline { background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-top:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+    .timeline { position:relative; background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-top:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; min-height:0; }
     /* preview progress / seek bar — full width, sits above the transport controls */
     .seekbar { position:relative; height:14px; margin:0; padding:6px 18px; cursor:pointer; display:flex; align-items:center; flex:0 0 auto; }
-    .seekbar::before { content:''; position:absolute; left:18px; right:18px; top:50%; transform:translateY(-50%); height:4px; border-radius:100px; background:rgba(255,255,255,.12); border:1px solid var(--border); box-shadow:inset 0 1px 0 rgba(0,0,0,.3); }
-    .seekbar .seek-fill { position:absolute; left:18px; top:50%; transform:translateY(-50%); height:4px; width:0%; border-radius:100px; background:var(--accent-grad); box-shadow:0 0 10px rgba(255,255,255,.5); pointer-events:none; z-index:1; }
+    .seekbar::before { content:''; position:absolute; left:18px; right:18px; top:50%; transform:translateY(-50%); height:4px; border-radius:var(--r-pill); background:rgba(255,255,255,.12); border:1px solid var(--border); box-shadow:inset 0 1px 0 rgba(0,0,0,.3); }
+    .seekbar .seek-fill { position:absolute; left:18px; top:50%; transform:translateY(-50%); height:4px; width:0%; border-radius:var(--r-pill); background:var(--accent-grad); box-shadow:0 0 10px rgba(255,255,255,.5); pointer-events:none; z-index:1; }
     .seekbar .seek-knob { position:absolute; left:18px; top:50%; width:13px; height:13px; border-radius:50%; transform:translate(-50%,-50%); background:var(--accent); border:2px solid #000; box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 1px var(--border); opacity:0; transition:opacity .12s; pointer-events:none; z-index:2; }
     .seekbar:hover .seek-knob, .seekbar.dragging .seek-knob { opacity:1; }
     .seekbar.dragging { cursor:grabbing; }
     /* buffering / not-ready: animated stripe overlaid on the track region */
-    .seekbar .seek-buf { position:absolute; left:18px; right:18px; top:50%; transform:translateY(-50%); height:4px; border-radius:100px; opacity:0; pointer-events:none; z-index:0;
+    .seekbar .seek-buf { position:absolute; left:18px; right:18px; top:50%; transform:translateY(-50%); height:4px; border-radius:var(--r-pill); opacity:0; pointer-events:none; z-index:0;
       background:repeating-linear-gradient(90deg, rgba(255,255,255,.28) 0 10px, rgba(255,255,255,.06) 10px 20px); background-size:40px 100%; }
     .seekbar.loading .seek-buf { opacity:1; animation:seekBuf 1s linear infinite; }
     .seekbar.loading .seek-fill { opacity:.4; }
@@ -187,38 +248,48 @@
     .track { position:relative; height:42px; border-bottom:1px solid rgba(255,255,255,.05); }
     .track-label { position:absolute; left:0; top:0; z-index:4; width:104px; height:42px; display:flex; align-items:center; gap:7px; padding:0 10px; background:rgba(12,12,12,.45); backdrop-filter:blur(8px); border-right:1px solid var(--border); font-size:11px; color:var(--dim); overflow:hidden; white-space:nowrap; }
     .track-label svg { width:13px; height:13px; flex-shrink:0; }
-    .clip { position:absolute; top:6px; height:30px; border-radius:9px; display:flex; align-items:center; gap:6px; padding:0 9px; font-size:11px; color:#fff; cursor:grab; overflow:hidden; white-space:nowrap; border:1px solid var(--border-2); box-shadow:var(--hi),0 2px 8px rgba(0,0,0,.3); user-select:none; backdrop-filter:blur(6px); font-weight:600; }
-    .clip svg { width:12px; height:12px; opacity:.92; }
-    .clip.sel { box-shadow:0 0 0 2px var(--accent),0 6px 18px rgba(255,255,255,.5); border-color:transparent; }
+    /* width-aware truncation — the label span shrinks and ellipsises inside the flex row */
+    .track-label span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .clip { position:absolute; top:6px; height:30px; border-radius:var(--r-sm); display:flex; align-items:center; gap:6px; padding:0 9px; font-size:11px; color:#fff; cursor:grab; overflow:hidden; white-space:nowrap; border:1px solid var(--border-2); box-shadow:var(--hi),0 2px 8px rgba(0,0,0,.3); user-select:none; backdrop-filter:blur(6px); font-weight:600; }
+    .clip svg { width:12px; height:12px; opacity:.92; flex-shrink:0; }
+    /* width-aware truncation — label span shrinks/ellipsises inside the clip flex row */
+    .clip span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* dual-tone selection ring — white inner ring + dark halo so it reads on any clip colour */
+    .clip.sel { box-shadow:0 0 0 2px var(--accent), 0 0 0 4px rgba(0,0,0,.55), 0 6px 18px rgba(0,0,0,.45); border-color:transparent; }
+    /* drop target on a clip (drag an animation/effect onto it) — unified accent ring + tint */
+    .clip.drop-over { box-shadow:inset 0 0 0 2px var(--accent); background:rgba(255,255,255,.12); border-color:transparent; }
     .clip .handle { position:absolute; right:0; top:0; width:9px; height:100%; cursor:ew-resize; background:rgba(255,255,255,.25); }
     .clip.audio-clip { background:linear-gradient(rgba(52,211,153,.42),rgba(52,211,153,.24)); color:#eafff5;
       background-image:linear-gradient(rgba(52,211,153,.34),rgba(52,211,153,.18)),repeating-linear-gradient(90deg,rgba(255,255,255,.4) 0 1px,transparent 1px 4px);
       background-blend-mode:overlay; }
     .clip.audio-clip svg { color:#34d399; }
-    .playhead { position:absolute; top:0; width:2px; background:#ffffff; z-index:6; pointer-events:none; box-shadow:0 0 10px rgba(255,255,255,.8); }
-    .playhead::before { content:''; position:absolute; top:0; left:-5px; border:6px solid transparent; border-top-color:#ffffff; }
-    .tl-scroll.over { box-shadow:inset 0 0 0 2px var(--accent); }
+    /* playhead — bolder line + grabbable knob at top + wide transparent hit strip */
+    .playhead { position:absolute; top:0; width:3px; margin-left:-1px; background:#ffffff; z-index:6; pointer-events:none; box-shadow:0 0 10px rgba(255,255,255,.85); }
+    .playhead::before { content:''; position:absolute; top:-2px; left:50%; width:13px; height:13px; transform:translateX(-50%) rotate(45deg); border-radius:0 0 var(--r-sm) 0; background:#ffffff; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+    .playhead::after { content:''; position:absolute; top:0; bottom:0; left:50%; transform:translateX(-50%); width:13px; pointer-events:none; }
+    /* unified drop feedback — accent ring + faint tint (matches .scene-row/.seam/.drop/.clip) */
+    .tl-scroll.over { box-shadow:inset 0 0 0 2px var(--accent); background:rgba(255,255,255,.03); }
 
     /* top-center toast — translucent glass, fades in/out */
     #toast { position:fixed; left:50%; top:18px; transform:translateX(-50%) translateY(-14px); z-index:300;
       background:rgba(18,18,18,.82); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur);
-      border:1px solid var(--border); border-radius:100px; padding:9px 18px; color:var(--text);
+      border:1px solid var(--border); border-radius:var(--r-pill); padding:9px 18px; color:var(--text);
       font-size:12.5px; font-weight:600; box-shadow:0 18px 50px rgba(0,0,0,.55),var(--hi);
       opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; }
     #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
-    .render-bar { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); width:440px; background:rgba(18,18,18,.8); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:16px; padding:16px 18px; box-shadow:0 24px 60px rgba(0,0,0,.6),var(--hi); z-index:100; opacity:0; pointer-events:none; transition:.25s; }
+    .render-bar { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); width:440px; background:rgba(18,18,18,.8); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:var(--r-lg); padding:16px 18px; box-shadow:0 24px 60px rgba(0,0,0,.6),var(--hi); z-index:100; opacity:0; pointer-events:none; transition:.25s; }
     .render-bar.show { opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
     .render-bar .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:12.5px; font-weight:600; }
     .render-bar .pct { color:#ffffff; font-variant-numeric:tabular-nums; }
-    .render-track { height:9px; background:rgba(0,0,0,.35); border-radius:100px; overflow:hidden; border:1px solid var(--border); }
+    .render-track { height:9px; background:rgba(0,0,0,.35); border-radius:var(--r-pill); overflow:hidden; border:1px solid var(--border); }
     .render-fill { height:100%; width:0%; background:var(--accent-grad); transition:width .2s ease; }
 
     .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(6px); z-index:200; display:none; align-items:center; justify-content:center; }
     .modal-bg.show { display:flex; }
-    .modal { background:rgba(18,18,18,.85); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:18px; padding:22px; width:460px; box-shadow:0 30px 80px rgba(0,0,0,.7),var(--hi); }
+    .modal { background:rgba(18,18,18,.85); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:var(--r-lg); padding:22px; width:460px; box-shadow:0 30px 80px rgba(0,0,0,.7),var(--hi); }
     .modal h2 { font-size:17px; font-weight:700; margin-bottom:15px; }
-    .proj { display:flex; align-items:center; gap:10px; padding:11px; border-radius:11px; background:var(--glass-2); border:1px solid var(--border); margin-bottom:8px; cursor:pointer; font-size:13px; }
+    .proj { display:flex; align-items:center; gap:10px; padding:11px; border-radius:var(--r-md); background:var(--glass-2); border:1px solid var(--border); margin-bottom:8px; cursor:pointer; font-size:13px; }
     .proj:hover { background:var(--glass-3); }
     .proj.active { box-shadow:inset 0 0 0 1px var(--accent); }
 
@@ -227,46 +298,48 @@
     input, textarea, #projBody pre { user-select:text; -webkit-user-select:text; }
 
     /* top-right view segmented control */
-    .seg { display:flex; gap:4px; background:var(--glass); border:1px solid var(--border); border-radius:100px; padding:3px; }
-    .seg-btn { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--dim); padding:6px 12px; border-radius:100px; }
+    .seg { display:flex; gap:4px; background:var(--glass); border:1px solid var(--border); border-radius:var(--r-pill); padding:3px; }
+    .seg-btn { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--dim); padding:6px 12px; border-radius:var(--r-pill); }
     .seg-btn:hover { color:var(--text); background:var(--glass-2); }
     .seg-btn svg { width:14px; height:14px; }
 
     /* current scene badge in side panel */
-    .cur-scene { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; color:var(--text); background:var(--glass-2); border:1px solid var(--border); border-radius:9px; padding:8px 11px; margin-bottom:14px; }
+    .cur-scene { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; color:var(--text); background:var(--glass-2); border:1px solid var(--border); border-radius:var(--r-sm); padding:8px 11px; margin-bottom:14px; }
 
     /* arrange (z-order) buttons in properties */
     .arrange { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:6px; }
-    .arrange button { background:var(--glass-2); border:1px solid var(--border); border-radius:8px; padding:7px 4px; font-size:10px; font-weight:600; color:var(--dim); display:flex; flex-direction:column; align-items:center; gap:3px; }
+    .arrange button { background:var(--glass-2); border:1px solid var(--border); border-radius:var(--r-sm); padding:7px 4px; font-size:10px; font-weight:600; color:var(--dim); display:flex; flex-direction:column; align-items:center; gap:3px; }
     .arrange button:hover { background:var(--glass-3); color:var(--text); }
     .arrange svg { width:15px; height:15px; }
 
     /* project modal: compositions / assets / code */
     .proj-modal { width:640px; max-width:92vw; }
     .proj-tabs { display:flex; gap:6px; align-items:center; margin-bottom:14px; }
-    .proj-tab { font-size:13px; font-weight:700; color:var(--dim); padding:8px 14px; border-radius:9px; }
+    .proj-tab { font-size:13px; font-weight:700; color:var(--dim); padding:8px 14px; border-radius:var(--r-sm); }
     .proj-tab.on { color:#000; background:var(--accent-grad); }
     .proj-tab:hover { color:var(--text); }
     .proj-body { max-height:62vh; overflow:auto; }
-    .scene-item { display:flex; align-items:center; gap:11px; padding:12px 13px; border-radius:11px; background:var(--glass-2); border:1px solid var(--border); margin-bottom:8px; cursor:pointer; }
+    .scene-item { display:flex; align-items:center; gap:11px; padding:12px 13px; border-radius:var(--r-md); background:var(--glass-2); border:1px solid var(--border); margin-bottom:8px; cursor:pointer; }
     .scene-item:hover { background:var(--glass-3); }
     .scene-item.cur { box-shadow:inset 0 0 0 2px var(--accent); }
-    .scene-item .num { width:26px; height:26px; border-radius:7px; background:var(--accent-grad); color:#000; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; }
+    .scene-item .num { width:26px; height:26px; border-radius:var(--r-sm); background:var(--accent-grad); color:#000; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; }
     .scene-item .meta { flex:1; } .scene-item .meta b { font-size:13px; } .scene-item .meta span { display:block; font-size:11px; color:var(--dim); }
     .pa-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
-    .pa { position:relative; border-radius:10px; overflow:hidden; aspect-ratio:16/10; background:var(--glass-2); border:1px solid var(--border); }
+    .pa { position:relative; border-radius:var(--r-md); overflow:hidden; aspect-ratio:16/10; background:var(--glass-2); border:1px solid var(--border); }
     .pa img, .pa video { width:100%; height:100%; object-fit:cover; }
     .pa .lbl { position:absolute; bottom:0; left:0; right:0; font-size:9px; padding:3px 5px; background:rgba(0,0,0,.78); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .pa .badge { position:absolute; top:4px; left:4px; font-size:8px; font-weight:800; text-transform:uppercase; padding:1px 6px; border-radius:100px; background:var(--accent); color:#000; }
-    #projBody pre { font-family:ui-monospace,Menlo,monospace; font-size:11px; line-height:1.5; color:var(--text); background:rgba(0,0,0,.4); border:1px solid var(--border); border-radius:10px; padding:14px; white-space:pre-wrap; word-break:break-word; }
+    .pa .badge { position:absolute; top:4px; left:4px; font-size:8px; font-weight:800; text-transform:uppercase; padding:1px 6px; border-radius:var(--r-pill); background:var(--accent); color:#000; }
+    #projBody pre { font-family:ui-monospace,Menlo,monospace; font-size:11px; line-height:1.5; color:var(--text); background:rgba(0,0,0,.4); border:1px solid var(--border); border-radius:var(--r-md); padding:14px; white-space:pre-wrap; word-break:break-word; }
     /* fullscreen preview fills the screen */
     .stagewrap:fullscreen { background:#000; } .stagewrap:-webkit-full-screen { background:#000; }
-    /* transition drop targets on scene seams */
-    .scene-row.droptgt { box-shadow:inset 0 0 0 2px var(--accent); }
+    /* transition drop targets on scene seams — unified accent ring + faint tint */
+    .scene-row.droptgt { box-shadow:inset 0 0 0 2px var(--accent); background:rgba(255,255,255,.12); }
     .seam { position:absolute; top:0; width:14px; z-index:7; display:flex; align-items:center; justify-content:center; cursor:pointer; }
-    .seam .dot { width:11px; height:11px; border-radius:3px; transform:rotate(45deg); background:var(--accent); border:1px solid #000; opacity:.9; }
+    .seam .dot { width:11px; height:11px; border-radius:var(--r-sm); transform:rotate(45deg); background:var(--accent); border:1px solid #000; opacity:.9; transition:transform .12s, box-shadow .12s; }
     .seam.empty .dot { background:transparent; border:1.5px dashed var(--border-2); }
-    .seam.droptgt .dot { background:var(--t-three); transform:rotate(45deg) scale(1.4); }
+    /* unified drop target — accent ring + faint tint + emphasised dot */
+    .seam.droptgt { box-shadow:inset 0 0 0 2px var(--accent); background:rgba(255,255,255,.12); border-radius:var(--r-sm); }
+    .seam.droptgt .dot { background:var(--accent); transform:rotate(45deg) scale(1.4); box-shadow:0 0 8px rgba(255,255,255,.6); opacity:1; }
   </style>
 </head>
 <body>
@@ -275,19 +348,19 @@
     <div class="topbar">
       <div class="brand"><span class="logo" id="logoIcon"><img src="/packages/editor/logo.svg" width="30" height="30" alt="logo"/></span><b>VIDEO<span>GEN</span>PRO</b></div>
       <div class="menu-wrap">
-        <button class="btn" id="fileBtn"><span id="fileIcon"></span>File</button>
-        <div class="menu" id="fileMenu"></div>
+        <button class="btn" id="fileBtn" aria-haspopup="menu"><span id="fileIcon" aria-hidden="true"></span>File</button>
+        <div class="menu" id="fileMenu" role="menu"></div>
       </div>
-      <button class="btn icon-only" id="undoBtn" title="Undo (⌘Z)"><span id="i-undo"></span></button>
-      <button class="btn icon-only" id="redoBtn" title="Redo (⌘⇧Z)"><span id="i-redo"></span></button>
+      <button class="btn icon-only" id="undoBtn" title="Undo (⌘Z)" aria-label="Undo"><span id="i-undo" aria-hidden="true"></span></button>
+      <button class="btn icon-only" id="redoBtn" title="Redo (⌘⇧Z)" aria-label="Redo"><span id="i-redo" aria-hidden="true"></span></button>
       <div class="spacer"></div>
       <div class="seg">
-        <button class="seg-btn" id="viewComp" title="Compositions / scenes"><span id="i-comp"></span>Scenes</button>
-        <button class="seg-btn" id="viewAssets" title="Project assets"><span id="i-assets"></span>Assets</button>
-        <button class="seg-btn" id="viewCode" title="Composition code"><span id="i-code"></span>Code</button>
+        <button class="seg-btn" id="viewComp" title="Compositions / scenes" aria-label="Scenes"><span id="i-comp" aria-hidden="true"></span>Scenes</button>
+        <button class="seg-btn" id="viewAssets" title="Project assets" aria-label="Assets"><span id="i-assets" aria-hidden="true"></span>Assets</button>
+        <button class="seg-btn" id="viewCode" title="Composition code" aria-label="Code"><span id="i-code" aria-hidden="true"></span>Code</button>
       </div>
-      <span class="status"><span class="dot saved" id="syncDot"></span><span id="syncText">synced</span></span>
-      <button class="btn primary" id="export"><span id="expIcon"></span>Export</button>
+      <span class="status"><span class="dot saved" id="syncDot" aria-hidden="true"></span><span id="syncText">synced</span></span>
+      <button class="btn primary" id="export"><span id="expIcon" aria-hidden="true"></span>Export</button>
     </div>
 
     <div class="mid">
@@ -295,15 +368,16 @@
         <div class="cur-scene" id="curScene">Scene 1</div>
         <div class="sec-title">Add layer</div>
         <div class="add-grid">
-          <button class="btn" id="addText"><span id="i-text"></span>Text</button>
-          <button class="btn" id="addShape"><span id="i-shape"></span>Shape</button>
-          <button class="btn" id="addLine"><span id="i-line"></span>Line</button>
-          <button class="btn" id="add3D"><span id="i-3d"></span>3D</button>
+          <button class="btn" id="addText" aria-label="Add text layer"><span id="i-text" aria-hidden="true"></span>Text</button>
+          <button class="btn" id="addShape" aria-label="Add shape layer"><span id="i-shape" aria-hidden="true"></span>Shape</button>
+          <button class="btn" id="addLine" aria-label="Add line layer"><span id="i-line" aria-hidden="true"></span>Line</button>
+          <button class="btn" id="add3D" aria-label="Add 3D layer"><span id="i-3d" aria-hidden="true"></span>3D</button>
         </div>
         <div class="sec-title">Assets</div>
-        <div class="drop" id="drop"><span id="i-up"></span>Drop / click to upload</div>
+        <div class="drop" id="drop"><span id="i-up" aria-hidden="true"></span>Drop / click to upload</div>
         <input type="file" id="fileInput" accept="image/*,video/*" multiple style="display:none" />
         <div class="asset-grid" id="assetGrid"></div>
+        <div class="splitter v" id="splitSide" role="separator" aria-orientation="vertical" aria-label="Resize side panel"></div>
       </div>
 
       <div class="center-col">
@@ -322,35 +396,37 @@
       </div>
 
       <div class="right">
-        <div class="tabs">
-          <button class="tab on" id="tabProps"><span id="i-props"></span>Properties</button>
-          <button class="tab" id="tabAnim"><span id="i-anim"></span>Animations</button>
+        <div class="tabs" role="tablist">
+          <button class="tab on" id="tabProps" role="tab" aria-selected="true"><span id="i-props" aria-hidden="true"></span>Properties</button>
+          <button class="tab" id="tabAnim" role="tab" aria-selected="false"><span id="i-anim" aria-hidden="true"></span>Animations</button>
         </div>
         <div class="right-body" id="rightBody"></div>
+        <div class="splitter v" id="splitRight" role="separator" aria-orientation="vertical" aria-label="Resize properties panel"></div>
       </div>
     </div>
 
     <div class="timeline">
+      <div class="splitter h" id="splitTimeline" role="separator" aria-orientation="horizontal" aria-label="Resize timeline"></div>
       <div class="transport">
         <div class="tp-time"><span id="tpTime">0.00</span><span class="tot" id="tpTotal"> / 0.00s</span></div>
         <div class="clip-tools">
-          <button class="tp-btn sm" id="btnSplit" title="Split clip (S)"><span id="i-split"></span></button>
-          <button class="tp-btn sm" id="btnDup" title="Duplicate (⌘D)"><span id="i-dup"></span></button>
-          <button class="tp-btn sm" id="btnDel" title="Delete (Del)"><span id="i-del"></span></button>
+          <button class="tp-btn sm" id="btnSplit" title="Split clip (S)" aria-label="Split clip"><span id="i-split" aria-hidden="true"></span></button>
+          <button class="tp-btn sm" id="btnDup" title="Duplicate (⌘D)" aria-label="Duplicate clip"><span id="i-dup" aria-hidden="true"></span></button>
+          <button class="tp-btn sm" id="btnDel" title="Delete (Del)" aria-label="Delete clip"><span id="i-del" aria-hidden="true"></span></button>
         </div>
         <div class="spacer"></div>
         <div class="tp-center">
-          <button class="tp-btn" id="tpStart" title="Start"></button>
-          <button class="tp-btn" id="tpBack" title="−1s"></button>
-          <button class="tp-btn tp-play" id="tpPlay" title="Play / Pause (space)"></button>
-          <button class="tp-btn" id="tpFwd" title="+1s"></button>
-          <button class="tp-btn on" id="tpLoop" title="Loop"></button>
+          <button class="tp-btn" id="tpStart" title="Start" aria-label="Jump to start"></button>
+          <button class="tp-btn" id="tpBack" title="−1s" aria-label="Back 1 second"></button>
+          <button class="tp-btn tp-play" id="tpPlay" title="Play / Pause (space)" aria-label="Play / pause"></button>
+          <button class="tp-btn" id="tpFwd" title="+1s" aria-label="Forward 1 second"></button>
+          <button class="tp-btn on" id="tpLoop" title="Loop" aria-label="Toggle loop" aria-pressed="true"></button>
         </div>
         <div class="spacer"></div>
-        <button class="tp-btn sm" id="btnFull" title="Fullscreen preview"><span id="i-full"></span></button>
-        <button class="tp-btn sm" id="btnZoomOut" title="Zoom out">−</button>
-        <button class="tp-btn sm" id="btnFit" title="Fit timeline to window"><span id="i-fit"></span></button>
-        <button class="tp-btn sm" id="btnZoomIn" title="Zoom in">+</button>
+        <button class="tp-btn sm" id="btnFull" title="Fullscreen preview" aria-label="Fullscreen preview"><span id="i-full" aria-hidden="true"></span></button>
+        <button class="tp-btn sm" id="btnZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+        <button class="tp-btn sm" id="btnFit" title="Fit timeline to window" aria-label="Fit timeline to window"><span id="i-fit" aria-hidden="true"></span></button>
+        <button class="tp-btn sm" id="btnZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
         <span class="hint" style="margin-left:10px">⌘/ctrl+scroll to zoom · S/⌘B split</span>
       </div>
       <div class="tl-scroll" id="tlScroll"><div id="tlInner"></div></div>
@@ -362,9 +438,9 @@
     <div class="render-track"><div class="render-fill" id="renderFill"></div></div>
   </div>
 
-  <div class="modal-bg" id="openModal">
+  <div class="modal-bg" id="openModal" role="dialog" aria-modal="true" aria-labelledby="openModalTitle">
     <div class="modal">
-      <h2>Open project</h2>
+      <h2 id="openModalTitle">Open project</h2>
       <div id="projList"></div>
       <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end;">
         <button class="btn" id="importBtn">Import .json…</button>
@@ -373,14 +449,14 @@
     </div>
   </div>
 
-  <div class="modal-bg" id="projModal">
+  <div class="modal-bg" id="projModal" role="dialog" aria-modal="true" aria-label="Project">
     <div class="modal proj-modal">
       <div class="proj-tabs">
         <button class="proj-tab" data-v="comp">Compositions</button>
         <button class="proj-tab" data-v="assets">Assets</button>
         <button class="proj-tab" data-v="code">Code</button>
         <div class="spacer"></div>
-        <button class="btn" id="projClose">✕</button>
+        <button class="btn" id="projClose" aria-label="Close">✕</button>
       </div>
       <div class="proj-body" id="projBody"></div>
     </div>

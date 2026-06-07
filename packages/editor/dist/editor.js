@@ -6130,12 +6130,19 @@
       }
     }, 250);
   }
+  function refreshHistoryButtons() {
+    const u = document.getElementById("undoBtn");
+    const r = document.getElementById("redoBtn");
+    if (u) u.disabled = !(S.histIndex > 0);
+    if (r) r.disabled = !(S.histIndex < S.history.length - 1);
+  }
   function pushHistory(json) {
     if (json === S.history[S.histIndex]) return;
     S.history = S.history.slice(0, S.histIndex + 1);
     S.history.push(json);
     if (S.history.length > 120) S.history.shift();
     S.histIndex = S.history.length - 1;
+    refreshHistoryButtons();
   }
   function applyHistory() {
     const json = S.history[S.histIndex];
@@ -6240,6 +6247,7 @@
     structuralEdit();
   }
   async function loadAssets() {
+    $("assetGrid").classList.add("loading");
     try {
       S.assets = await (await fetch("/api/assets")).json();
     } catch {
@@ -6276,12 +6284,14 @@
   }
   function renderAssets() {
     const g = $("assetGrid");
+    g.classList.add("loading");
     g.innerHTML = "";
     if (!S.assets.length) {
       const e = el("div", "empty");
-      e.style.cssText = "font-size:11px;padding:14px";
-      e.textContent = "No assets yet";
+      e.style.cssText = "font-size:11px;padding:14px;line-height:1.6";
+      e.innerHTML = "<b>No assets yet</b><br/>Drag media onto the <b>upload box</b> above (or click it) to add images, video & audio. Then drag an asset onto the timeline.";
       g.appendChild(e);
+      g.classList.remove("loading");
       return;
     }
     S.assets.forEach((a) => {
@@ -6312,6 +6322,7 @@
       d.ondragstart = (e) => e.dataTransfer.setData("application/x-vgp-asset", JSON.stringify(a));
       g.appendChild(d);
     });
+    g.classList.remove("loading");
   }
   function buildTimeline() {
     derive();
@@ -6372,7 +6383,7 @@
         const fullLabel = layerLabel(layer2);
         const label = el("div", "track-label");
         label.title = fullLabel;
-        label.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${fullLabel.slice(0, 9)}</span>`;
+        label.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${fullLabel}</span>`;
         track.appendChild(label);
         const offset = S.offsets[si] + (layer2.start ?? 0);
         const dur = layer2.duration ?? scene2.duration;
@@ -6381,7 +6392,7 @@
         clip.style.width = Math.max(24, dur * S.pxPerSec) + "px";
         clip.style.background = clipColor[layer2.type] ?? "#555";
         clip.title = fullLabel;
-        clip.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${fullLabel.slice(0, 16)}</span>`;
+        clip.innerHTML = tintIcon(typeIco[layer2.type] ?? "shape", layer2.type) + `<span>${fullLabel}</span>`;
         if (isSelected(si, li)) clip.classList.add("sel");
         if (layer2.type === "fx" && !resolveFxTarget(scene2, li)) {
           clip.style.opacity = ".5";
@@ -6428,18 +6439,18 @@
           const overlayDrop = ty.includes("application/x-vgp-overlay");
           if (overlayDrop) {
             e.preventDefault();
-            clip.style.outline = "2px solid #fff";
+            clip.classList.add("drop-over");
           } else if (presetId) {
             e.preventDefault();
-            clip.style.outline = "2px solid #fff";
+            clip.classList.add("drop-over");
           }
         });
         clip.addEventListener("dragleave", () => {
-          clip.style.outline = "";
+          clip.classList.remove("drop-over");
         });
         clip.addEventListener("drop", (e) => {
           e.preventDefault();
-          clip.style.outline = "";
+          clip.classList.remove("drop-over");
           const ov = e.dataTransfer?.getData("application/x-vgp-overlay");
           if (ov) {
             dropLayerAt(e.clientX, overlayLayerFromId(ov));
@@ -6690,7 +6701,7 @@
         const name = String(a.src).split("/").pop() || "audio";
         const label = el("div", "track-label");
         label.title = name;
-        label.innerHTML = tintIcon("audio", "audio") + `<span>${name.slice(0, 9)}</span>`;
+        label.innerHTML = tintIcon("audio", "audio") + `<span>${name}</span>`;
         track.appendChild(label);
         const start = a.start ?? 0;
         const fileDur = info[ai]?.duration ?? null;
@@ -7208,10 +7219,15 @@
   function showContextMenu(clientX, clientY) {
     if (!ctxMenuEl) {
       const m = el("div");
+      m.setAttribute("role", "menu");
+      m.setAttribute("aria-label", "Layer actions");
       m.style.cssText = "position:fixed;z-index:200;min-width:148px;padding:6px;border-radius:12px;background:rgba(18,18,18,.92);backdrop-filter:saturate(110%) blur(20px);-webkit-backdrop-filter:saturate(110%) blur(20px);border:1px solid var(--border);box-shadow:0 24px 60px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.2);font-family:inherit;font-size:12px;color:var(--text);user-select:none;";
       const mk = (label, onClick) => {
         const it = el("div");
         it.textContent = label;
+        it.setAttribute("role", "menuitem");
+        it.setAttribute("aria-label", label);
+        it.tabIndex = -1;
         it.style.cssText = "padding:8px 11px;border-radius:8px;cursor:pointer;font-weight:600;transition:background .12s;";
         it.onmouseenter = () => {
           it.style.background = "var(--glass-3)";
@@ -7254,12 +7270,34 @@
     r.max = String(max);
     r.step = String(step);
     r.value = String(value);
-    const v = el("span", "val");
-    v.textContent = (+value).toFixed(2);
+    const v = el("input", "val");
+    v.type = "number";
+    v.min = String(min);
+    v.max = String(max);
+    v.step = String(step);
+    v.value = (+value).toFixed(2);
+    const clampNum = (n) => Math.max(min, Math.min(max, n));
     r.oninput = () => {
       const nv = parseFloat(r.value);
-      v.textContent = nv.toFixed(2);
+      v.value = (+nv).toFixed(2);
       onIn(nv);
+    };
+    const onNum = () => {
+      const raw = parseFloat(v.value);
+      if (!isFinite(raw)) return;
+      const nv = clampNum(raw);
+      r.value = String(nv);
+      onIn(nv);
+    };
+    v.oninput = onNum;
+    v.onchange = () => {
+      const raw = parseFloat(v.value);
+      if (isFinite(raw)) {
+        const nv = clampNum(raw);
+        v.value = (+nv).toFixed(2);
+        r.value = String(nv);
+        onIn(nv);
+      }
     };
     row.appendChild(r);
     row.appendChild(v);
@@ -7313,6 +7351,7 @@
       const prev = el("button", "icon-btn");
       prev.textContent = "\u2039";
       prev.title = "prev keyframe";
+      prev.setAttribute("aria-label", `previous ${label} keyframe`);
       prev.style.cssText = "float:right;padding:1px 6px;font-size:11px";
       prev.onclick = () => {
         const lt = playheadLocal();
@@ -7322,6 +7361,7 @@
       const next = el("button", "icon-btn");
       next.textContent = "\u203A";
       next.title = "next keyframe";
+      next.setAttribute("aria-label", `next ${label} keyframe`);
       next.style.cssText = "float:right;padding:1px 6px;font-size:11px";
       next.onclick = () => {
         const lt = playheadLocal();
@@ -7331,6 +7371,7 @@
       const clr = el("button", "icon-btn");
       clr.textContent = "\u2715";
       clr.title = "clear all keyframes for this property";
+      clr.setAttribute("aria-label", `clear all ${label} keyframes`);
       clr.style.cssText = "float:right;padding:1px 6px;font-size:10px";
       clr.onclick = () => clearKeyframes(prop);
       lab.appendChild(clr);
@@ -7340,6 +7381,7 @@
     const key = el("button", "icon-btn");
     key.innerHTML = n ? `\u25C6 ${n}` : "\u25C6";
     key.title = "toggle keyframe at playhead (alt-click clears all)";
+    key.setAttribute("aria-label", `toggle ${label} keyframe at playhead${n ? ` (${n} set)` : ""}`);
     key.style.cssText = "float:right;padding:1px 7px;font-size:10px" + (n ? ";color:var(--accent)" : "");
     key.onclick = (ev) => {
       if (ev.altKey) clearKeyframes(prop);
@@ -7611,11 +7653,11 @@
   var projTab = "comp";
   function openProj(tab) {
     projTab = tab;
-    $("projModal").classList.add("show");
     renderProj();
+    openModalById("projModal");
   }
   function closeProj() {
-    $("projModal").classList.remove("show");
+    closeModalById("projModal");
   }
   function renderProj() {
     document.querySelectorAll(".proj-tab").forEach((t) => t.classList.toggle("on", t.getAttribute("data-v") === projTab));
@@ -7677,9 +7719,55 @@
       body.appendChild(pre);
     }
   }
+  var SEC_KEY = "vgp.secCollapsed";
+  function loadCollapsedSecs() {
+    try {
+      const raw = localStorage.getItem(SEC_KEY);
+      if (raw) return new Set(JSON.parse(raw));
+    } catch {
+    }
+    return /* @__PURE__ */ new Set();
+  }
+  var collapsedSecs = loadCollapsedSecs();
+  function persistCollapsedSecs() {
+    try {
+      localStorage.setItem(SEC_KEY, JSON.stringify([...collapsedSecs]));
+    } catch {
+    }
+  }
   function buildProps() {
     const p = $("rightBody");
     p.innerHTML = "";
+    let cur = p;
+    const add = (node) => cur.appendChild(node);
+    const h = (t) => {
+      const sec = el("div", "sec");
+      if (collapsedSecs.has(t)) sec.classList.add("collapsed");
+      const head2 = el("div", "sec-head");
+      head2.textContent = t;
+      head2.setAttribute("role", "button");
+      head2.tabIndex = 0;
+      head2.title = "Click to collapse / expand";
+      const body = el("div", "sec-body");
+      const toggle = () => {
+        const nowCollapsed = sec.classList.toggle("collapsed");
+        if (nowCollapsed) collapsedSecs.add(t);
+        else collapsedSecs.delete(t);
+        persistCollapsedSecs();
+      };
+      head2.onclick = toggle;
+      head2.onkeydown = (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          toggle();
+        }
+      };
+      sec.appendChild(head2);
+      sec.appendChild(body);
+      p.appendChild(sec);
+      cur = body;
+      return body;
+    };
     if (S.selAudio != null) {
       const a = S.ir.audio?.[S.selAudio];
       if (!a) {
@@ -7698,6 +7786,7 @@
       const mute = el("button", "icon-btn");
       mute.innerHTML = icon((a.volume ?? 1) === 0 ? "mute" : "speaker");
       mute.title = "mute / unmute";
+      mute.setAttribute("aria-label", (a.volume ?? 1) === 0 ? "unmute audio track" : "mute audio track");
       mute.onclick = () => {
         a.volume = (a.volume ?? 1) === 0 ? 1 : 0;
         liveEdit();
@@ -7709,6 +7798,7 @@
       const del2 = el("button", "icon-btn");
       del2.innerHTML = icon("trash");
       del2.title = "delete audio track";
+      del2.setAttribute("aria-label", "delete audio track");
       del2.onclick = () => {
         S.ir.audio.splice(ai, 1);
         S.selAudio = null;
@@ -7716,15 +7806,13 @@
       };
       head2.appendChild(del2);
       p.appendChild(head2);
-      const h3 = el("h3");
-      h3.textContent = "audio";
-      p.appendChild(h3);
-      p.appendChild(numField("volume", a.volume ?? 1, 0, 1, 0.01, (v) => {
+      h("audio");
+      add(numField("volume", a.volume ?? 1, 0, 1, 0.01, (v) => {
         a.volume = v;
         liveEdit();
         buildTimeline();
       }));
-      p.appendChild(numField("start (s)", a.start ?? 0, 0, Math.max(1, S.total - 0.1, effectiveTotal() - 0.1), 0.05, (v) => {
+      add(numField("start (s)", a.start ?? 0, 0, Math.max(1, S.total - 0.1, effectiveTotal() - 0.1), 0.05, (v) => {
         a.start = v;
         liveSeek();
         buildTimeline();
@@ -7734,7 +7822,7 @@
       const fileDur = info?.duration ?? null;
       const curDur = a.duration ?? fileDur ?? Math.max(1, S.total - (a.start ?? 0));
       const maxDur = fileDur != null ? Math.max(0.2, fileDur - (a.trimStart ?? 0)) : Math.max(curDur, S.total);
-      p.appendChild(numField("duration (s)", Math.min(curDur, maxDur), 0.2, maxDur, 0.05, (v) => {
+      add(numField("duration (s)", Math.min(curDur, maxDur), 0.2, maxDur, 0.05, (v) => {
         a.duration = v;
         buildTimeline();
         scheduleSave();
@@ -7742,7 +7830,7 @@
       return;
     }
     if (!S.selected) {
-      p.innerHTML = '<div class="empty">Select a clip in the timeline to edit it.<br/><br/>Or open the <b>Animations</b> tab to browse presets.</div>';
+      p.innerHTML = '<div class="empty"><b>Select a clip</b> in the timeline to edit it.<br/><br/>New here? Try:<br/>\u2022 <b>Add layer \u2191</b> \u2014 text, shape, line or 3D<br/>\u2022 <b>Drag media</b> into the upload box to add it<br/>\u2022 Open the <b>Animations</b> tab to browse presets</div>';
       return;
     }
     const { s, l } = S.selected;
@@ -7752,11 +7840,6 @@
       S.selected = null;
       return buildProps();
     }
-    const h = (t) => {
-      const x = el("h3");
-      x.textContent = t;
-      p.appendChild(x);
-    };
     if (layer2.type === "fx") {
       const entry = MAN.get(layer2.effect);
       const head2 = el("div", "sel-head");
@@ -7770,6 +7853,8 @@
       head2.appendChild(title2);
       const del2 = el("button", "icon-btn");
       del2.innerHTML = icon("trash");
+      del2.title = "delete";
+      del2.setAttribute("aria-label", "delete effect");
       del2.onclick = () => deleteSelection();
       head2.appendChild(del2);
       p.appendChild(head2);
@@ -7783,7 +7868,7 @@
         h("effect settings");
         for (const [pk, spec] of Object.entries(entry.params)) {
           const min = spec.min ?? 0, max = spec.max ?? (spec.default * 2 || 1);
-          p.appendChild(numField(pk, layer2.params[pk] ?? spec.default, min, max, (max - min) / 100 || 0.01, (v) => {
+          add(numField(pk, layer2.params[pk] ?? spec.default, min, max, (max - min) / 100 || 0.01, (v) => {
             layer2.params[pk] = v;
             liveEdit();
           }));
@@ -7793,12 +7878,12 @@
       const tgtStart = tgt?.layer.start ?? 0;
       const tgtDur = tgt?.layer.duration ?? scene2.duration;
       const winMax = tgtStart + tgtDur;
-      p.appendChild(numField("start (s)", layer2.start ?? 0, 0, Math.max(0, winMax - 0.1), 0.05, (v) => {
+      add(numField("start (s)", layer2.start ?? 0, 0, Math.max(0, winMax - 0.1), 0.05, (v) => {
         layer2.start = v;
         timingEdit();
       }));
       const fxDurMax = Math.max(0.1, winMax - (layer2.start ?? 0));
-      p.appendChild(numField("duration (s)", Math.min(layer2.duration ?? fxDurMax, fxDurMax), 0.1, fxDurMax, 0.05, (v) => {
+      add(numField("duration (s)", Math.min(layer2.duration ?? fxDurMax, fxDurMax), 0.1, fxDurMax, 0.05, (v) => {
         layer2.duration = v;
         timingEdit();
       }));
@@ -7815,6 +7900,8 @@
     head.appendChild(title);
     const del = el("button", "icon-btn");
     del.innerHTML = icon("trash");
+    del.title = "delete layer";
+    del.setAttribute("aria-label", "delete layer");
     del.onclick = () => deleteSelection();
     head.appendChild(del);
     p.appendChild(head);
@@ -7828,6 +7915,7 @@
         const aBtn = (title2, label, fn) => {
           const b = el("button");
           b.title = title2;
+          b.setAttribute("aria-label", title2);
           b.textContent = label;
           b.style.cssText = "flex:1;min-width:0;padding:5px 2px;font-size:11px;font-weight:600;background:var(--glass-2);color:var(--dim);border:1px solid var(--border);border-radius:7px;cursor:pointer";
           b.onmouseenter = () => b.style.color = "#fff";
@@ -7863,11 +7951,14 @@
     [["arrTop", "To front", "top"], ["arrUp", "Forward", "up"], ["arrDown", "Backward", "down"], ["arrBot", "To back", "bottom"]].forEach(([ic, lbl, mode]) => {
       const bn = el("button");
       bn.innerHTML = icon(ic) + `<span>${lbl}</span>`;
+      bn.title = lbl;
+      bn.setAttribute("aria-label", lbl);
       bn.onclick = () => arrangeLayer(mode);
       arrange.appendChild(bn);
     });
     p.appendChild(arrange);
     if (layer2.type === "text") {
+      h("text");
       const f = el("div", "field");
       const lab = el("label");
       lab.textContent = "text";
@@ -7879,18 +7970,19 @@
         structuralEdit();
       };
       f.appendChild(ta);
-      p.appendChild(f);
+      add(f);
       layer2.style = layer2.style || {};
-      p.appendChild(numField("font size", parseInt(layer2.style.fontSize || "72"), 12, 240, 1, (v) => {
+      add(numField("font size", parseInt(layer2.style.fontSize || "72"), 12, 240, 1, (v) => {
         layer2.style.fontSize = Math.round(v) + "px";
         structuralEdit();
       }));
-      p.appendChild(colorField("color", layer2.style.color || "#ffffff", (v) => {
+      add(colorField("color", layer2.style.color || "#ffffff", (v) => {
         layer2.style.color = v;
         structuralEdit();
       }));
     }
     if (layer2.type === "image" || layer2.type === "video") {
+      h("media");
       const cf = el("div", "field");
       const cl = el("label");
       cl.textContent = "fit";
@@ -7908,25 +8000,27 @@
         structuralEdit();
       };
       cf.appendChild(sel);
-      p.appendChild(cf);
+      add(cf);
       h("crop (%)");
       const setCrop = (k, v) => {
         layer2.crop = layer2.crop || { t: 0, r: 0, b: 0, l: 0 };
         layer2.crop[k] = v;
         liveEdit();
       };
-      p.appendChild(numField("top", layer2.crop?.t ?? 0, 0, 45, 1, (v) => setCrop("t", v)));
-      p.appendChild(numField("right", layer2.crop?.r ?? 0, 0, 45, 1, (v) => setCrop("r", v)));
-      p.appendChild(numField("bottom", layer2.crop?.b ?? 0, 0, 45, 1, (v) => setCrop("b", v)));
-      p.appendChild(numField("left", layer2.crop?.l ?? 0, 0, 45, 1, (v) => setCrop("l", v)));
+      add(numField("top", layer2.crop?.t ?? 0, 0, 45, 1, (v) => setCrop("t", v)));
+      add(numField("right", layer2.crop?.r ?? 0, 0, 45, 1, (v) => setCrop("r", v)));
+      add(numField("bottom", layer2.crop?.b ?? 0, 0, 45, 1, (v) => setCrop("b", v)));
+      add(numField("left", layer2.crop?.l ?? 0, 0, 45, 1, (v) => setCrop("l", v)));
     }
     if (layer2.type === "shape") {
-      p.appendChild(colorField("fill color", layer2.fill || "#ffffff", (v) => {
+      h("shape");
+      add(colorField("fill color", layer2.fill || "#ffffff", (v) => {
         layer2.fill = v;
         structuralEdit();
       }));
     }
     if (layer2.type === "overlay") {
+      h("overlay");
       const cf = el("div", "field");
       const cl = el("label");
       cl.textContent = "effect";
@@ -7936,11 +8030,11 @@
       ci.value = String(layer2.effect).replace(/-/g, " ");
       ci.readOnly = true;
       cf.appendChild(ci);
-      p.appendChild(cf);
+      add(cf);
       const spec = MAN.get("overlay." + layer2.effect)?.params?.amount;
       const min = spec?.min ?? 0, max = spec?.max ?? 1;
       layer2.params = layer2.params || {};
-      p.appendChild(numField("amount", layer2.params.amount ?? (spec?.default ?? 1), min, max, (max - min) / 100 || 0.01, (v) => {
+      add(numField("amount", layer2.params.amount ?? (spec?.default ?? 1), min, max, (max - min) / 100 || 0.01, (v) => {
         layer2.params.amount = v;
         structuralEdit();
       }));
@@ -7951,7 +8045,7 @@
       const e = el("div", "empty");
       e.style.cssText = "padding:8px 0;font-size:11px";
       e.textContent = "none yet";
-      p.appendChild(e);
+      add(e);
     }
     layer2.presets.forEach((inst, idx) => {
       const entry = MAN.get(inst.id);
@@ -7962,6 +8056,8 @@
       hd.appendChild(b);
       const rm = el("button", "icon-btn");
       rm.innerHTML = icon("trash");
+      rm.title = "remove animation";
+      rm.setAttribute("aria-label", `remove ${inst.id} animation`);
       rm.onclick = () => {
         layer2.presets.splice(idx, 1);
         structuralEdit();
@@ -7971,57 +8067,57 @@
       if (entry) {
         inst.params = inst.params || {};
         for (const [pk, spec] of Object.entries(entry.params)) {
-          const cur = inst.params[pk] ?? spec.default;
+          const curVal = inst.params[pk] ?? spec.default;
           const min = spec.min ?? 0, max = spec.max ?? (spec.default * 2 || 1);
-          card.appendChild(numField(pk, cur, min, max, (max - min) / 100 || 0.01, (v) => {
+          card.appendChild(numField(pk, curVal, min, max, (max - min) / 100 || 0.01, (v) => {
             inst.params[pk] = v;
             liveEdit();
           }));
         }
       }
-      p.appendChild(card);
+      add(card);
     });
     const browse = el("button", "btn");
     browse.style.cssText = "width:100%;justify-content:center;margin-top:6px";
     browse.innerHTML = icon("spark") + "Browse animations";
     browse.onclick = () => setTab("anim");
-    p.appendChild(browse);
+    add(browse);
     h("timing");
-    p.appendChild(numField("start (s)", layer2.start ?? 0, 0, scene2.duration, 0.05, (v) => {
+    add(numField("start (s)", layer2.start ?? 0, 0, scene2.duration, 0.05, (v) => {
       layer2.start = v;
       timingEdit();
     }));
-    p.appendChild(numField("duration (s)", layer2.duration ?? scene2.duration, 0.1, Math.max(scene2.duration, S.total), 0.05, (v) => {
+    add(numField("duration (s)", layer2.duration ?? scene2.duration, 0.1, Math.max(scene2.duration, S.total), 0.05, (v) => {
       layer2.duration = v;
       timingEdit();
     }));
     h("transform  \xB7  \u25C6 = keyframe at playhead");
     layer2.transform = layer2.transform || {};
     const tf = layer2.transform;
-    p.appendChild(kfField("x", "x", tf.x ?? 0, -800, 800, 1, (v) => {
+    add(kfField("x", "x", tf.x ?? 0, -800, 800, 1, (v) => {
       tf.x = v;
       liveEdit();
     }));
-    p.appendChild(kfField("y", "y", tf.y ?? 0, -800, 800, 1, (v) => {
+    add(kfField("y", "y", tf.y ?? 0, -800, 800, 1, (v) => {
       tf.y = v;
       liveEdit();
     }));
-    p.appendChild(kfField("scale (zoom)", "scale", tf.scale ?? 1, 0, 3, 0.01, (v) => {
+    add(kfField("scale (zoom)", "scale", tf.scale ?? 1, 0, 3, 0.01, (v) => {
       tf.scale = v;
       liveEdit();
     }));
-    p.appendChild(kfField("rotate", "rotate", tf.rotate ?? 0, -180, 180, 1, (v) => {
+    add(kfField("rotate", "rotate", tf.rotate ?? 0, -180, 180, 1, (v) => {
       tf.rotate = v;
       liveEdit();
     }));
-    p.appendChild(kfField("opacity", "opacity", tf.opacity ?? 1, 0, 1, 0.01, (v) => {
+    add(kfField("opacity", "opacity", tf.opacity ?? 1, 0, 1, 0.01, (v) => {
       tf.opacity = v;
       liveEdit();
     }));
     const tip = el("div");
     tip.style.cssText = "font-size:10px;color:var(--dim);margin-top:6px;line-height:1.5";
     tip.innerHTML = "drag on canvas to move \xB7 arrows nudge \xB7 <b>S</b> split \xB7 <b>\u2318D</b> duplicate \xB7 <b>Del</b> remove";
-    p.appendChild(tip);
+    add(tip);
   }
   var hoverPreview = null;
   var HOVER_PREVIEW_CATS = /* @__PURE__ */ new Set(["text", "image", "in", "out"]);
@@ -8178,6 +8274,7 @@
     $("tpTime").textContent = fmtClockMs(S.playhead);
     $("tpTotal").textContent = " / " + fmtClockMs(effectiveTotal());
     updateSeekbar();
+    refreshHistoryButtons();
   }
   function setZoom(px, anchorClientX, persist = true) {
     const tl = $("tlScroll");
@@ -8302,12 +8399,12 @@
         if (r.ok) {
           S.assetBase = r.assetBase;
           setDoc(r.ir);
-          $("openModal").classList.remove("show");
+          closeModalById("openModal");
         }
       };
       pl.appendChild(d);
     });
-    $("openModal").classList.add("show");
+    openModalById("openModal");
   }
   function showRender(show) {
     $("renderBar").classList.toggle("show", show);
@@ -8327,7 +8424,134 @@
     fetch("/api/render", { method: "POST" }).catch(() => {
     });
   }
+  var PANEL_CLAMP = { side: [150, 460], right: [240, 520], tl: [160, 640] };
+  var PANEL_KEYS = { side: "vgp.sideW", right: "vgp.rightW", tl: "vgp.tlH" };
+  var PANEL_VARS = { side: "--side-w", right: "--right-w", tl: "--tl-h" };
+  function setPanelVar(which, px, persist = true) {
+    const [lo, hi] = PANEL_CLAMP[which];
+    const v = Math.round(Math.max(lo, Math.min(hi, px)));
+    document.getElementById("app").style.setProperty(PANEL_VARS[which], v + "px");
+    if (persist) {
+      try {
+        localStorage.setItem(PANEL_KEYS[which], String(v));
+      } catch {
+      }
+    }
+    return v;
+  }
+  function restorePanelSizes() {
+    ["side", "right", "tl"].forEach((which) => {
+      let stored = NaN;
+      try {
+        stored = parseFloat(localStorage.getItem(PANEL_KEYS[which]) || "");
+      } catch {
+      }
+      if (isFinite(stored) && stored > 0) setPanelVar(which, stored, false);
+    });
+  }
+  function curPanelPx(which, fallbackEl) {
+    const raw = getComputedStyle(document.getElementById("app")).getPropertyValue(PANEL_VARS[which]).trim();
+    const n = parseFloat(raw);
+    if (isFinite(n) && n > 0) return n;
+    if (fallbackEl) {
+      const r = fallbackEl.getBoundingClientRect();
+      return which === "tl" ? r.height : r.width;
+    }
+    return PANEL_CLAMP[which][0];
+  }
+  function initSplitters() {
+    const wire = (id, which, axis, sign, panelSel) => {
+      const sp = document.getElementById(id);
+      if (!sp) return;
+      sp.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const panelEl = document.querySelector(panelSel);
+        const start = axis === "x" ? e.clientX : e.clientY;
+        const base = curPanelPx(which, panelEl);
+        sp.classList.add("dragging");
+        const prevUserSelect = document.body.style.userSelect;
+        document.body.style.userSelect = "none";
+        const mv = (ev) => {
+          const delta = (axis === "x" ? ev.clientX : ev.clientY) - start;
+          setPanelVar(which, base + sign * delta);
+          fit();
+        };
+        const up = () => {
+          window.removeEventListener("mousemove", mv);
+          window.removeEventListener("mouseup", up);
+          window.removeEventListener("blur", up);
+          sp.classList.remove("dragging");
+          document.body.style.userSelect = prevUserSelect;
+          fit();
+          buildTimeline();
+        };
+        window.addEventListener("mousemove", mv);
+        window.addEventListener("mouseup", up);
+        window.addEventListener("blur", up, { once: true });
+      });
+    };
+    wire("splitSide", "side", "x", 1, ".side");
+    wire("splitRight", "right", "x", -1, ".right");
+    wire("splitTimeline", "tl", "y", -1, ".timeline");
+  }
+  var modalOpener = null;
+  var modalTrapEl = null;
+  function focusablesIn(root) {
+    const sel = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    return Array.from(root.querySelectorAll(sel)).filter((e) => e.offsetParent !== null || e === document.activeElement);
+  }
+  function onModalKey(ev) {
+    if (!modalTrapEl) return;
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeModalById(modalTrapEl.id);
+      return;
+    }
+    if (ev.key !== "Tab") return;
+    const items = focusablesIn(modalTrapEl);
+    if (!items.length) {
+      ev.preventDefault();
+      return;
+    }
+    const first = items[0], last2 = items[items.length - 1];
+    const active = document.activeElement;
+    if (ev.shiftKey) {
+      if (active === first || !modalTrapEl.contains(active)) {
+        ev.preventDefault();
+        last2.focus();
+      }
+    } else {
+      if (active === last2 || !modalTrapEl.contains(active)) {
+        ev.preventDefault();
+        first.focus();
+      }
+    }
+  }
+  function openModalById(id) {
+    const m = document.getElementById(id);
+    if (!m) return;
+    modalOpener = document.activeElement ?? null;
+    m.classList.add("show");
+    modalTrapEl = m;
+    window.addEventListener("keydown", onModalKey, true);
+    const inner = m.querySelector(".modal") ?? m;
+    const items = focusablesIn(inner);
+    (items[0] ?? inner).focus?.();
+  }
+  function closeModalById(id) {
+    const m = document.getElementById(id);
+    if (!m) return;
+    m.classList.remove("show");
+    if (modalTrapEl === m) {
+      window.removeEventListener("keydown", onModalKey, true);
+      modalTrapEl = null;
+    }
+    modalOpener?.focus?.();
+    modalOpener = null;
+  }
   async function init() {
+    restorePanelSizes();
     $("fileIcon").innerHTML = icon("file");
     $("expIcon").innerHTML = icon("download");
     $("i-text").innerHTML = icon("text");
@@ -8349,6 +8573,8 @@
     $("tpLoop").innerHTML = icon("loop");
     setPlayIcon();
     buildFileMenu();
+    $("rightBody").classList.add("loading");
+    $("tlScroll").classList.add("loading");
     const data = await (await fetch("/api/composition")).json();
     S.ir = data.ir;
     S.assetBase = data.assetBase;
@@ -8364,6 +8590,8 @@
     buildTimeline();
     renderRight();
     updateTime();
+    $("rightBody").classList.remove("loading");
+    $("tlScroll").classList.remove("loading");
     await loadAssets();
     window.__vgpAudioReady = () => buildTimeline();
     requestAnimationFrame((t) => {
@@ -8446,6 +8674,7 @@
       if (S.selected || S.multi.length) deleteSelection();
     };
     initSelHandles();
+    initSplitters();
     $("fileBtn").onclick = (e) => {
       e.stopPropagation();
       menuOpen = !menuOpen;
@@ -8453,7 +8682,10 @@
     };
     document.addEventListener("click", closeMenu);
     $("export").onclick = runExport;
-    $("openClose").onclick = () => $("openModal").classList.remove("show");
+    $("openClose").onclick = () => closeModalById("openModal");
+    $("openModal").addEventListener("mousedown", (e) => {
+      if (e.target === $("openModal")) closeModalById("openModal");
+    });
     $("importBtn").onclick = () => {
       const inp = document.createElement("input");
       inp.type = "file";
@@ -8466,7 +8698,7 @@
           try {
             setDoc(JSON.parse(String(rd.result)));
             scheduleSave();
-            $("openModal").classList.remove("show");
+            closeModalById("openModal");
           } catch {
           }
         };
