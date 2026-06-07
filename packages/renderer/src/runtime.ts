@@ -227,7 +227,8 @@ function combine(into: ReturnType<typeof emptyDelta>, d: StyleDelta) {
   if (d.blur) into.blur += d.blur;
   if (d.brightness !== undefined) into.brightness *= d.brightness;
   if (d.clipInset) into.clipInset = d.clipInset;
-  if (d.css) Object.assign(into.css, d.css);
+  // #9: stacked css.transform must COMPOSE, not overwrite (two 3D/skew presets both apply).
+  if (d.css) for (const [k, v] of Object.entries(d.css)) { if (k === 'transform' && into.css.transform) into.css.transform += ' ' + v; else (into.css as any)[k] = v; }
 }
 
 // Clear css keys that were applied on the PREVIOUS frame but are absent this frame,
@@ -287,15 +288,18 @@ function matchKey(layer: any): string | null {
 function matchPairs(prev: SceneNode, cur: SceneNode): { a: LayerNode; b: LayerNode }[] {
   const pairs: { a: LayerNode; b: LayerNode }[] = []; const used = new Set<LayerNode>();
   for (const b of cur.layers) {
+    if ((b.layer as any).hidden) continue; // #4: a hidden layer must not morph (would be force-shown)
     const k = matchKey(b.layer); if (!k) continue;
-    const a = prev.layers.find((p) => !used.has(p) && matchKey(p.layer) === k);
+    const a = prev.layers.find((p) => !used.has(p) && !(p.layer as any).hidden && matchKey(p.layer) === k);
     if (a) { used.add(a); pairs.push({ a, b }); }
   }
   return pairs;
 }
 // place a layer element at an arbitrary comp-space box (overrides its own transform).
 function applyMorph(ln: LayerNode, t: Box, opacity: number) {
-  const layer = ln.layer; const r = layer.rect ?? { x: 0, y: 0, w: comp.width, h: comp.height };
+  const layer = ln.layer;
+  if ((layer as any).hidden) { ln.el.style.display = 'none'; return; } // #4: never force a hidden layer visible
+  const r = layer.rect ?? { x: 0, y: 0, w: comp.width, h: comp.height };
   const baseCx = r.x + r.w / 2, baseCy = r.y + r.h / 2; // == the element's left/top anchor
   const S = r.w ? t.w / r.w : 1;
   ln.el.style.display = (layer.type === 'text') ? 'flex' : 'block';
@@ -314,6 +318,10 @@ function applyOver(over?: StyleDelta) {
 function applyDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
   const t = `translate(-50%, -50%) translate(${px(d.x)}, ${px(d.y)}) scale(${d.scale}) rotate(${d.rotate}deg)`;
   el.style.transform = d.css.transform ? `${t} ${d.css.transform}` : t;
+  // #5: reset transform-origin every frame so a prior Match & Move morph can't leak
+  // 'center center' onto this layer (forward-scrub must equal jump-scrub). A preset that
+  // sets css.transformOrigin re-applies it in the css loop below.
+  el.style.transformOrigin = '';
   el.style.opacity = String(clamp01(d.opacity));
   const filters: string[] = [];
   if (d.blur > 0.01) filters.push(`blur(${px(d.blur)})`);
