@@ -22605,6 +22605,7 @@
   }
   var liveEdit = () => {
     liveSeek();
+    updateSelBox();
     scheduleSave();
   };
   var timingEdit = () => {

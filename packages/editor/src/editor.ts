@@ -395,7 +395,7 @@ function applyHistory() {
 }
 function undo() { if (S.histIndex > 0) { S.histIndex--; applyHistory(); setDot('saved', 'undo ↶'); } else setDot('saved', 'nothing to undo'); }
 function redo() { if (S.histIndex < S.history.length - 1) { S.histIndex++; applyHistory(); setDot('saved', 'redo ↷'); } }
-const liveEdit = () => { liveSeek(); scheduleSave(); };
+const liveEdit = () => { liveSeek(); updateSelBox(); scheduleSave(); }; // updateSelBox so the selection box tracks property-panel edits (rotate/scale/move/crop) too
 const timingEdit = () => { liveSeek(); buildTimeline(); scheduleSave(); };
 const structuralEdit = () => { mountPreview(); buildTimeline(); renderRight(); scheduleSave(); };
 function setDoc(ir: any) { S.ir = ir; S.lastSyncJson = JSON.stringify(ir); S.selected = null; S.multi = []; S.history = [S.lastSyncJson]; S.histIndex = 0; captureSceneBase(); ir.scenes.forEach((_: any, i: number) => normalizeZ(i)); derive(); autoFit(); mountPreview(); buildTimeline(); renderRight(); updateTime(); }
