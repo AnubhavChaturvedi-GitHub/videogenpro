@@ -1,7 +1,7 @@
 // Headless render: drive the runtime frame-by-frame via Playwright, capture
 // PNGs, encode with ffmpeg. Deterministic — every frame is an explicit seek.
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { readFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -56,31 +56,32 @@ async function main() {
 
   // ffmpeg reads raw PNGs from stdin -> mp4
   // audio tracks (voiceover, music) — mixed in with per-track delay + volume
-  const rawTracks = (comp.audio ?? []) as Array<{ src: string; start?: number; volume?: number; trimStart?: number; duration?: number; muted?: boolean }>;
-  // B06: skip tracks whose source file is missing instead of letting ffmpeg abort
-  // the whole export. Resolve relative paths against the composition dir.
-  const tracks = rawTracks.filter((a) => {
-    if (a.muted) return false; // muted tracks are excluded from the export
-    if (/^https?:|^file:/.test(a.src)) return true;
-    const ap = resolve(dirname(absComp), a.src);
-    if (existsSync(ap)) return true;
-    console.warn(`⚠ audio file missing, skipping track: ${a.src}`);
-    return false;
+  // collect EVERY audio source on the timeline: composition audio tracks (unmuted) PLUS
+  // any VIDEO layer whose own audio is enabled (muted === false), offset by its scene
+  // start and trimmed/limited to its clip window.
+  type ASrc = { src: string; start: number; volume: number; trimStart: number; duration?: number; isVideo: boolean };
+  const srcs: ASrc[] = [];
+  for (const a of ((comp.audio ?? []) as any[])) { if (a.muted) continue; srcs.push({ src: a.src, start: a.start ?? 0, volume: a.volume ?? 1, trimStart: a.trimStart ?? 0, duration: a.duration, isVideo: false }); }
+  { let off = 0; for (const s of comp.scenes) { for (const l of (s.layers as any[])) { if (l.type === 'video' && l.muted === false && l.src) srcs.push({ src: l.src, start: off + (l.start ?? 0), volume: l.volume ?? 1, trimStart: l.trimStart ?? 0, duration: l.duration ?? s.duration, isVideo: true }); } off += s.duration; } }
+  const resolveSrc = (src: string) => (/^https?:|^file:/.test(src) ? src : resolve(dirname(absComp), src));
+  const hasAudioStream = (file: string): boolean => { try { const r = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', file], { encoding: 'utf8' }); return r.status === 0 && /\d/.test(r.stdout || ''); } catch { return true; } };
+  // B06: skip missing files; also skip a video whose file has NO audio stream (ffmpeg
+  // would abort on a missing [a] pad). Resolve relative paths against the composition dir.
+  const tracks = srcs.filter((a) => {
+    if (/^https?:/.test(a.src)) return true;
+    const fp = resolveSrc(a.src).replace(/^file:\/\//, '');
+    if (!existsSync(fp)) { console.warn(`⚠ audio source missing, skipping: ${a.src}`); return false; }
+    if (a.isVideo && !hasAudioStream(fp)) { console.warn(`⚠ video has no audio stream, skipping its audio: ${a.src}`); return false; }
+    return true;
   });
   const audioArgs: string[] = []; const filters: string[] = [];
   tracks.forEach((a, i) => {
-    const ap = /^https?:|^file:/.test(a.src) ? a.src : resolve(dirname(absComp), a.src);
-    audioArgs.push('-i', ap);
-    const ms = Math.round((a.start ?? 0) * 1000); const vol = a.volume ?? 1;
-    // B01: respect per-track trim — trimStart sets where playback begins, and
-    // duration (if present) caps the exported length. atrim must come first so the
-    // subsequent adelay offsets the already-trimmed clip into the timeline.
-    const ts = a.trimStart ?? 0;
-    const trimParts: string[] = [];
-    if (ts || a.duration != null) {
-      const endClause = a.duration != null ? `:end=${ts + a.duration}` : '';
-      trimParts.push(`atrim=start=${ts}${endClause}`, 'asetpts=PTS-STARTPTS');
-    }
+    audioArgs.push('-i', resolveSrc(a.src));
+    const ms = Math.round(a.start * 1000); const vol = a.volume;
+    // B01: trimStart sets where playback begins; duration caps the length. atrim first so
+    // the subsequent adelay offsets the already-trimmed clip into the timeline.
+    const ts = a.trimStart; const trimParts: string[] = [];
+    if (ts || a.duration != null) { const endClause = a.duration != null ? `:end=${ts + a.duration}` : ''; trimParts.push(`atrim=start=${ts}${endClause}`, 'asetpts=PTS-STARTPTS'); }
     const trim = trimParts.length ? trimParts.join(',') + ',' : '';
     filters.push(`[${i + 1}:a]${trim}adelay=${ms}|${ms},volume=${vol}[a${i}]`);
   });

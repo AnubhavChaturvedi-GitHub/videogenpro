@@ -64,6 +64,8 @@ const baseLayer = {
   matchId: z.string().optional(),
   // visibility toggle — runtime skips the layer when true (preview + render).
   hidden: z.boolean().optional(),
+  // video layers: play the clip's own audio when muted === false (default muted).
+  muted: z.boolean().optional(),
 };
 
 const layer = z.discriminatedUnion('type', [

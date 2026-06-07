@@ -463,6 +463,31 @@ function deleteScene(i: number) {
   derive(); jumpToScene(Math.max(0, i - 1)); structuralEdit();
   showToast('Scene deleted');
 }
+// ── apply a transition by dropping its card on a CLIP (not just the tiny seam diamond).
+// For match-move, auto-detect how many elements will morph across the seam.
+function matchKeyOf(L: any): string | null {
+  if (L.matchId) return 'id:' + L.matchId;
+  if (L.type === 'image' || L.type === 'video') return 'src:' + L.src;
+  if (L.type === 'text') return 'text:' + String(L.text ?? '').trim();
+  if (L.type === 'shape') return 'shape:' + L.shape + ':' + (L.fill ?? '');
+  return null;
+}
+function matchMoveCount(si: number): number {
+  if (si <= 0) return 0;
+  const prev = S.ir.scenes[si - 1].layers, cur = S.ir.scenes[si].layers; const used = new Set<number>(); let n = 0;
+  for (const b of cur) { const k = matchKeyOf(b); if (!k) continue; const j = prev.findIndex((p: any, idx: number) => !used.has(idx) && matchKeyOf(p) === k); if (j >= 0) { used.add(j); n++; } }
+  return n;
+}
+function applyTransitionToSceneSeam(si: number, id: string) {
+  if (si <= 0) { showToast('Transitions play BETWEEN scenes — drop it on a clip in a later scene (or its seam).'); return; }
+  S.ir.scenes[si].transitionIn = { id }; S.selected = null; S.multi = []; S.selAudio = null;
+  S.playhead = +((S.offsets[si] ?? 0) + 0.05).toFixed(3);
+  structuralEdit(); positionPlayhead(); updateTime();
+  if (id === 'transition.match-move') {
+    const n = matchMoveCount(si);
+    showToast(n > 0 ? `Match & Move → Scene ${si + 1}: ${n} matching element${n > 1 ? 's' : ''} will morph` : `Match & Move → Scene ${si + 1}: no matching elements yet (put the same image/text in both scenes)`);
+  } else showToast(`${id.split('.')[1].replace(/-/g, ' ')} → Scene ${si + 1}`);
+}
 
 // ---------- assets ----------
 async function loadAssets() {
@@ -594,6 +619,8 @@ function buildTimeline() {
       // visibility toggle — hides/shows the layer in the preview (and the render).
       const eye = el('button', 'tl-toggle' + (layer.hidden ? ' off' : '')); eye.innerHTML = icon(layer.hidden ? 'eye-off' : 'eye'); eye.title = layer.hidden ? 'Show layer' : 'Hide layer'; eye.setAttribute('aria-label', eye.title); eye.onmousedown = (ev) => ev.stopPropagation(); eye.onclick = (ev) => { ev.stopPropagation(); layer.hidden = !layer.hidden; structuralEdit(); };
       label.appendChild(eye); if (layer.hidden) track.style.opacity = '.5';
+      // video layers carry their own audio — a speaker toggle plays/mutes it (preview + export).
+      if (layer.type === 'video') { const on = (layer as any).muted === false; const mb = el('button', 'tl-toggle' + (on ? '' : ' off')); mb.innerHTML = icon(on ? 'speaker' : 'mute'); mb.title = on ? 'Mute video audio' : 'Enable video audio'; mb.setAttribute('aria-label', mb.title); mb.onmousedown = (ev) => ev.stopPropagation(); mb.onclick = (ev) => { ev.stopPropagation(); (layer as any).muted = on ? true : false; structuralEdit(); }; label.appendChild(mb); }
       track.appendChild(label);
       const offset = S.offsets[si] + (layer.start ?? 0); const dur = layer.duration ?? scene.duration;
       const clip = el('div', 'clip');
@@ -630,16 +657,15 @@ function buildTimeline() {
       // drop an effect/overlay preset card directly onto this clip's layer
       clip.addEventListener('dragover', (e: DragEvent) => {
         const ty = e.dataTransfer?.types ?? [];
-        const presetId = ty.includes('application/x-vgp-preset') ? '__p' : '';
-        const overlayDrop = ty.includes('application/x-vgp-overlay');
-        // only show the accept affordance for valid combinations — toggle the unified
-        // .drop-over class (CSS owns the outline) instead of an inline style.
-        if (overlayDrop) { e.preventDefault(); clip.classList.add('drop-over'); }
-        else if (presetId) { e.preventDefault(); clip.classList.add('drop-over'); }
+        // accept presets, overlays AND transitions — a transition dropped on a clip
+        // applies to that clip's scene seam (match-move auto-detects matching elements).
+        if (ty.includes('application/x-vgp-preset') || ty.includes('application/x-vgp-overlay') || ty.includes('application/x-vgp-transition')) { e.preventDefault(); clip.classList.add('drop-over'); }
       });
       clip.addEventListener('dragleave', () => { clip.classList.remove('drop-over'); });
       clip.addEventListener('drop', (e: DragEvent) => {
         e.preventDefault(); clip.classList.remove('drop-over');
+        const tr = e.dataTransfer?.getData('application/x-vgp-transition');
+        if (tr) { applyTransitionToSceneSeam(si, tr); return; } // transition → this clip's scene seam (match-move auto-detects)
         const ov = e.dataTransfer?.getData('application/x-vgp-overlay');
         if (ov) { dropLayerAt(e.clientX, overlayLayerFromId(ov)); showToast('Overlay layer added: ' + ov.split('.')[1].replace(/-/g, ' ')); return; }
         const id = e.dataTransfer?.getData('application/x-vgp-preset');

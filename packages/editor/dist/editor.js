@@ -4338,7 +4338,9 @@
     // Match & Move pairing key (optional; runtime auto-pairs by src/text when unset).
     matchId: external_exports.string().optional(),
     // visibility toggle — runtime skips the layer when true (preview + render).
-    hidden: external_exports.boolean().optional()
+    hidden: external_exports.boolean().optional(),
+    // video layers: play the clip's own audio when muted === false (default muted).
+    muted: external_exports.boolean().optional()
   };
   var layer = external_exports.discriminatedUnion("type", [
     external_exports.object({ ...baseLayer, type: external_exports.literal("text"), text: external_exports.string(), style: external_exports.record(external_exports.string()).optional() }),
@@ -6408,6 +6410,47 @@
     structuralEdit();
     showToast("Scene deleted");
   }
+  function matchKeyOf(L) {
+    if (L.matchId) return "id:" + L.matchId;
+    if (L.type === "image" || L.type === "video") return "src:" + L.src;
+    if (L.type === "text") return "text:" + String(L.text ?? "").trim();
+    if (L.type === "shape") return "shape:" + L.shape + ":" + (L.fill ?? "");
+    return null;
+  }
+  function matchMoveCount(si) {
+    if (si <= 0) return 0;
+    const prev = S.ir.scenes[si - 1].layers, cur = S.ir.scenes[si].layers;
+    const used = /* @__PURE__ */ new Set();
+    let n = 0;
+    for (const b of cur) {
+      const k = matchKeyOf(b);
+      if (!k) continue;
+      const j = prev.findIndex((p, idx) => !used.has(idx) && matchKeyOf(p) === k);
+      if (j >= 0) {
+        used.add(j);
+        n++;
+      }
+    }
+    return n;
+  }
+  function applyTransitionToSceneSeam(si, id) {
+    if (si <= 0) {
+      showToast("Transitions play BETWEEN scenes \u2014 drop it on a clip in a later scene (or its seam).");
+      return;
+    }
+    S.ir.scenes[si].transitionIn = { id };
+    S.selected = null;
+    S.multi = [];
+    S.selAudio = null;
+    S.playhead = +((S.offsets[si] ?? 0) + 0.05).toFixed(3);
+    structuralEdit();
+    positionPlayhead();
+    updateTime();
+    if (id === "transition.match-move") {
+      const n = matchMoveCount(si);
+      showToast(n > 0 ? `Match & Move \u2192 Scene ${si + 1}: ${n} matching element${n > 1 ? "s" : ""} will morph` : `Match & Move \u2192 Scene ${si + 1}: no matching elements yet (put the same image/text in both scenes)`);
+    } else showToast(`${id.split(".")[1].replace(/-/g, " ")} \u2192 Scene ${si + 1}`);
+  }
   async function loadAssets() {
     $("assetGrid").classList.add("loading");
     try {
@@ -6575,6 +6618,20 @@
         };
         label.appendChild(eye);
         if (layer2.hidden) track.style.opacity = ".5";
+        if (layer2.type === "video") {
+          const on = layer2.muted === false;
+          const mb = el("button", "tl-toggle" + (on ? "" : " off"));
+          mb.innerHTML = icon(on ? "speaker" : "mute");
+          mb.title = on ? "Mute video audio" : "Enable video audio";
+          mb.setAttribute("aria-label", mb.title);
+          mb.onmousedown = (ev) => ev.stopPropagation();
+          mb.onclick = (ev) => {
+            ev.stopPropagation();
+            layer2.muted = on ? true : false;
+            structuralEdit();
+          };
+          label.appendChild(mb);
+        }
         track.appendChild(label);
         const offset = S.offsets[si] + (layer2.start ?? 0);
         const dur = layer2.duration ?? scene2.duration;
@@ -6626,12 +6683,7 @@
         clip.appendChild(handle);
         clip.addEventListener("dragover", (e) => {
           const ty = e.dataTransfer?.types ?? [];
-          const presetId = ty.includes("application/x-vgp-preset") ? "__p" : "";
-          const overlayDrop = ty.includes("application/x-vgp-overlay");
-          if (overlayDrop) {
-            e.preventDefault();
-            clip.classList.add("drop-over");
-          } else if (presetId) {
+          if (ty.includes("application/x-vgp-preset") || ty.includes("application/x-vgp-overlay") || ty.includes("application/x-vgp-transition")) {
             e.preventDefault();
             clip.classList.add("drop-over");
           }
@@ -6642,6 +6694,11 @@
         clip.addEventListener("drop", (e) => {
           e.preventDefault();
           clip.classList.remove("drop-over");
+          const tr = e.dataTransfer?.getData("application/x-vgp-transition");
+          if (tr) {
+            applyTransitionToSceneSeam(si, tr);
+            return;
+          }
           const ov = e.dataTransfer?.getData("application/x-vgp-overlay");
           if (ov) {
             dropLayerAt(e.clientX, overlayLayerFromId(ov));

@@ -53,6 +53,9 @@ export interface BaseLayer {
   // visibility toggle: when true the runtime skips this layer entirely (display:none).
   // Honored in BOTH preview and render, so render == preview holds.
   hidden?: boolean;
+  // VIDEO layers: play the clip's own audio when muted === false (default: muted).
+  // Honored in preview (video element) and in the export (render.ts muxes it).
+  muted?: boolean;
 }
 
 export interface TextLayer extends BaseLayer {

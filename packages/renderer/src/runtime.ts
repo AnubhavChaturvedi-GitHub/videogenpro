@@ -424,7 +424,7 @@ function buildLayer(layer: Layer, sceneDur: number, fxLayers: any[] = []): Layer
     case 'video': {
       const v = document.createElement('video');
       v.src = resolveSrc(layer.src);
-      v.muted = true;
+      v.muted = (layer as any).muted !== false; // default muted; the editor's speaker toggle sets muted:false to play the clip's audio
       v.style.width = '100%';
       v.style.height = '100%';
       v.style.objectFit = layer.fit ?? 'cover';
