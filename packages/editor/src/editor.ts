@@ -1050,7 +1050,7 @@ function alignSelected(mode: string) {
     else if (mode === 'cy') setBoxCY(L, ref.cy);
     else if (mode === 'bottom') setBoxTop(L, ref.bottom - b.h);
   }
-  liveSeek(); updateSelBox(); scheduleSave();
+  mountPreview(); updateSelBox(); scheduleSave(); // re-mount: rect is applied at build time, not seek (see align bug)
 }
 function distributeSelected(axis: 'h' | 'v') {
   const layers = alignableSelection(); if (layers.length < 3) { showToast('Select 3+ layers to distribute evenly.'); return; }
@@ -1059,7 +1059,7 @@ function distributeSelected(axis: 'h' | 'v') {
   const c1 = axis === 'h' ? boxes[boxes.length - 1].b.cx : boxes[boxes.length - 1].b.cy;
   const step = (c1 - c0) / (boxes.length - 1);
   boxes.forEach(({ L }, i) => { const c = c0 + step * i; axis === 'h' ? setBoxCX(L, c) : setBoxCY(L, c); });
-  liveSeek(); updateSelBox(); scheduleSave();
+  mountPreview(); updateSelBox(); scheduleSave(); // re-mount: rect is applied at build time, not seek (see align bug)
 }
 // FEATURE 3: monotonic group id from the existing ids (max gN + 1). Deterministic —
 // no Math.random / Date.now — so the IR stays render-stable across saves.

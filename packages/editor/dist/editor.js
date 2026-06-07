@@ -7025,7 +7025,7 @@
       else if (mode === "cy") setBoxCY(L, ref.cy);
       else if (mode === "bottom") setBoxTop(L, ref.bottom - b.h);
     }
-    liveSeek();
+    mountPreview();
     updateSelBox();
     scheduleSave();
   }
@@ -7043,7 +7043,7 @@
       const c = c0 + step * i;
       axis === "h" ? setBoxCX(L, c) : setBoxCY(L, c);
     });
-    liveSeek();
+    mountPreview();
     updateSelBox();
     scheduleSave();
   }
