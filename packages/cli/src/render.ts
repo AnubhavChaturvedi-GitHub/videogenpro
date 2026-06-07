@@ -46,7 +46,7 @@ function buildAudio(comp: any, absComp: string) {
 
 // Render frames [startF, endF) to `segOut` (video-only). Each segment runs on its own page so
 // they render concurrently. onFrame is called once per completed frame (progress + preview).
-async function renderSegment(browser: Browser, resolved: any, indexUrl: string, fps: number, startF: number, endF: number, segOut: string, onFrame: (buf: Buffer) => void) {
+async function renderSegment(browser: Browser, resolved: any, indexUrl: string, fps: number, startF: number, endF: number, segOut: string, onFrame: (buf: Buffer) => void, scaleFilter: string) {
   const page = await browser.newPage({ viewport: { width: resolved.width, height: resolved.height }, deviceScaleFactor: 1 });
   page.setDefaultTimeout(20000); // a wedged/crashed page errors out (diagnosable) instead of hanging the export forever
   page.on('pageerror', () => {}); // non-fatal (e.g. browser can't fetch() file:// audio for waveforms)
@@ -61,7 +61,11 @@ async function renderSegment(browser: Browser, resolved: any, indexUrl: string, 
   const hasVideoLayers = resolved.scenes.some((s: any) => s.layers.some((l: any) => l.type === 'video'));
 
   let stderr = '';
-  const ff = spawn('ffmpeg', ['-y', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-crf', '18', '-profile:v', 'high', '-level', '4.2', segOut], { stdio: ['pipe', 'ignore', 'pipe'] });
+  // -bf 0 (NO B-frames) → no frame reordering, so the copy-concat of independently-encoded
+  // segments joins seamlessly with no timestamp glitch (the corruption risk). -g keyframes
+  // each second. Optional scale runs here (in parallel, per segment) to the export resolution.
+  const vf = scaleFilter ? ['-vf', scaleFilter] : [];
+  const ff = spawn('ffmpeg', ['-y', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-', ...vf, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-crf', '18', '-bf', '0', '-g', String(Math.max(2, Math.round(fps))), '-profile:v', 'high', '-level', '4.2', segOut], { stdio: ['pipe', 'ignore', 'pipe'] });
   ff.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4000); });
   ff.stdin.on('error', () => {});
 
@@ -93,11 +97,17 @@ async function renderSegment(browser: Browser, resolved: any, indexUrl: string, 
   const code: number = await new Promise((res) => ff.on('close', (c) => res(c ?? 0)));
   await page.close();
   if (code !== 0) throw new Error(`ffmpeg segment exited ${code}: ${stderr.slice(-300)}`);
+  // INTEGRITY: the segment MUST contain every frame of its range. If even one is missing we
+  // abort the whole export rather than deliver a short/glitchy file (point 5: no missing data).
+  const want = endF - startF;
+  const pr = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-count_packets', '-show_entries', 'stream=nb_read_packets', '-of', 'csv=p=0', segOut], { encoding: 'utf8' });
+  const got = parseInt((pr.stdout || '').trim(), 10) || 0;
+  if (got < want) throw new Error(`segment incomplete (${got}/${want} frames) — aborting to avoid a corrupt export`);
 }
 
 async function main() {
-  const [compPath, outPath = 'out/output.mp4'] = process.argv.slice(2);
-  if (!compPath) { console.error('usage: pnpm render <composition.json> [out.mp4]'); process.exit(1); }
+  const [compPath, outPath = 'out/output.mp4', heightArg] = process.argv.slice(2);
+  if (!compPath) { console.error('usage: pnpm render <composition.json> [out.mp4] [height]'); process.exit(1); }
   const absComp = resolve(process.cwd(), compPath);
   const absOut = resolve(process.cwd(), outPath);
   mkdirSync(dirname(absOut), { recursive: true });
@@ -116,6 +126,12 @@ async function main() {
   }
   const totalDur = Math.max(compositionDuration(comp), audioEnd);
   const totalFrames = Math.max(1, Math.round(totalDur * comp.fps));
+
+  // export resolution: scale the comp's native aspect to the requested HEIGHT (even dims for h264).
+  const targetH = heightArg ? Math.max(2, Math.round(Number(heightArg))) : comp.height;
+  const tH = targetH - (targetH % 2);
+  let tW = Math.round((comp.width / comp.height) * tH); tW -= tW % 2;
+  const scaleFilter = (tH !== comp.height || tW !== comp.width) ? `scale=${tW}:${tH}:flags=lanczos` : '';
 
   if (!existsSync(resolve(root, 'packages/renderer/dist/runtime.js'))) { console.error('runtime not built. run: pnpm build:runtime'); process.exit(1); }
   if (spawnSync('ffmpeg', ['-version'], { encoding: 'utf8' }).status !== 0) { console.error('ffmpeg not found on PATH — install ffmpeg to export video.'); process.exit(1); }
@@ -138,7 +154,7 @@ async function main() {
   const per = Math.ceil(totalFrames / workers);
   const ranges: [number, number][] = [];
   for (let i = 0; i < workers; i++) { const s = i * per, e = Math.min(totalFrames, (i + 1) * per); if (s < e) ranges.push([s, e]); }
-  console.log(`▶ ${comp.width}x${comp.height} @ ${comp.fps}fps · ${totalDur.toFixed(2)}s · ${totalFrames} frames · ${ranges.length} parallel worker(s)`);
+  console.log(`▶ ${tW}x${tH} @ ${comp.fps}fps · ${totalDur.toFixed(2)}s · ${totalFrames} frames · ${ranges.length} worker(s)${scaleFilter ? ` (scaled from ${comp.width}x${comp.height})` : ''}`);
 
   const browser = await chromium.launch({ args: ['--disable-gpu-vsync', '--force-color-profile=srgb'] });
   const indexUrl = pathToFileURL(resolve(root, 'packages/renderer/index.html')).href;
@@ -148,7 +164,7 @@ async function main() {
   const onFrame = () => { doneCount++; process.stdout.write(`@P ${doneCount} ${totalFrames}\n`); };
 
   try {
-    await Promise.all(ranges.map((r, i) => renderSegment(browser, resolved, indexUrl, comp.fps, r[0], r[1], segPaths[i], onFrame)));
+    await Promise.all(ranges.map((r, i) => renderSegment(browser, resolved, indexUrl, comp.fps, r[0], r[1], segPaths[i], onFrame, scaleFilter)));
   } finally { await browser.close(); }
 
   // concat the segments (stream copy — each starts on a keyframe, so it's seamless)
@@ -169,6 +185,11 @@ async function main() {
   finalArgs.push('-movflags', '+faststart', absOut);
   const fin = spawnSync('ffmpeg', finalArgs, { encoding: 'utf8' });
   if (fin.status !== 0) { console.error('finalize failed:', (fin.stderr || '').slice(-500)); process.exit(1); }
+
+  // INTEGRITY: verify the delivered file exists and is the full length before declaring success
+  // (point 5: never hand back a short/corrupt file).
+  const outDur = probeDur(absOut);
+  if (!existsSync(absOut) || outDur < totalDur - 0.5) { console.error(`✕ output incomplete: ${outDur.toFixed(2)}s of ${totalDur.toFixed(2)}s expected — not delivering a corrupt file`); process.exit(1); }
 
   for (const p of segPaths) rmSync(p, { force: true });
   if (videoFile !== segPaths[0]) rmSync(videoFile, { force: true });
