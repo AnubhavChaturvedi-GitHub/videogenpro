@@ -78,6 +78,11 @@ const MIME: Record<string, string> = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml',
   '.mp4': 'video/mp4', '.webm': 'video/webm', '.woff2': 'font/woff2', '.gif': 'image/gif', '.webp': 'image/webp',
+  // audio + extra video container types — without these the project's 19 audio tracks (and any
+  // .mov/.m4v clip) were served as application/octet-stream, which browsers refuse to decode in
+  // <audio>/<video> (no waveform, no playback).
+  '.mov': 'video/quicktime', '.m4v': 'video/mp4',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg',
 };
 
 const sse = new Set<ServerResponse>();
@@ -183,10 +188,10 @@ const server = createServer((req, res) => {
         out.push({ name: f, src, type: assetType(f) });
       }
     };
-    // AE model: the project's CO-LOCATED assets/ folder is the primary source (recurse into it).
+    // AE model: only the project's CO-LOCATED assets/ folder. (Previously also scanned the
+    // sibling ../assets/, which dragged unrelated media from a neighbouring project into the
+    // panel — e.g. a 73MB root render mounted as a <video> thumbnail. Scoped to this project.)
     scan(assetsDirFor(active), true);
-    // …plus the legacy sibling assets/ dir, so pre-existing media still appears in the panel.
-    scan(resolve(compDir, '..', 'assets'), true);
     return json(res, 200, out);
   }
 
@@ -343,7 +348,29 @@ const server = createServer((req, res) => {
   let file = path === '/' ? resolve(root, 'packages/editor/index.html') : resolve(root, '.' + normalize(path));
   if (!withinRoot(file)) { res.writeHead(403); return res.end('forbidden'); }
   if (!existsSync(file) || statSync(file).isDirectory()) { res.writeHead(404); return res.end('not found'); }
-  res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' });
+  const size = statSync(file).size;
+  const ctype = MIME[extname(file).toLowerCase()] ?? 'application/octet-stream';
+  const baseHead: Record<string, string | number> = { 'content-type': ctype, 'cache-control': 'no-cache', 'accept-ranges': 'bytes' };
+  // HEAD: headers only, never stream the body (the editor probes assets with HEAD; piping a
+  // 16MB clip in reply to every HEAD wasted bandwidth and could hang the request).
+  if (req.method === 'HEAD') { res.writeHead(200, { ...baseHead, 'content-length': size }); return res.end(); }
+  // Range support: <video>/<audio> seeking issues byte-range requests. Without 206 the browser
+  // refetches the whole multi-MB clip on every seek (or fails to seek). Serve the requested slice.
+  const range = req.headers.range;
+  const m = typeof range === 'string' ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null;
+  if (m && (m[1] !== '' || m[2] !== '')) {
+    // `bytes=-N` (suffix) → last N bytes; `bytes=S-` → S..end; `bytes=S-E` → S..E.
+    let start: number, end: number;
+    if (m[1] === '') { start = Math.max(0, size - Number(m[2])); end = size - 1; }
+    else { start = Number(m[1]); end = m[2] === '' ? size - 1 : Number(m[2]); }
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start < 0 || start >= size) {
+      res.writeHead(416, { 'content-range': `bytes */${size}` }); return res.end();
+    }
+    end = Math.min(end, size - 1);
+    res.writeHead(206, { ...baseHead, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1 });
+    return createReadStream(file, { start, end }).pipe(res);
+  }
+  res.writeHead(200, { ...baseHead, 'content-length': size });
   createReadStream(file).pipe(res);
  } catch (e: any) {
   // A synchronous throw in any handler (e.g. the active file was deleted/renamed out

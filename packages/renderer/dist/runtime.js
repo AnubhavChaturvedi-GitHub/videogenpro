@@ -26004,7 +26004,6 @@ void main() {
       v.addEventListener("loadeddata", finish, { once: true });
       v.addEventListener("error", finish, { once: true });
       setTimeout(finish, 8e3);
-      v.load();
     })));
   }
   function audioInfo() {

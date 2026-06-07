@@ -854,7 +854,9 @@ async function ready(): Promise<void> {
     v.addEventListener('loadeddata', finish, { once: true });
     v.addEventListener('error', finish, { once: true });
     setTimeout(finish, 8000);
-    v.load();
+    // do NOT call v.load() — the src is already set at mount so the element is ALREADY loading.
+    // Re-calling load() resets it and ABORTS the in-flight fetch (17× ERR_ABORTED + a full
+    // re-fetch/re-decode of every scene video on load). Just wait for loadeddata/timeout.
   })));
 }
 

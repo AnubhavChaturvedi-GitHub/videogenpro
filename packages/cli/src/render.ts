@@ -64,10 +64,20 @@ async function renderSegment(browser: Browser, resolved: any, indexUrl: string, 
   // -bf 0 (NO B-frames) → no frame reordering, so the copy-concat of independently-encoded
   // segments joins seamlessly with no timestamp glitch (the corruption risk). -g keyframes
   // each second. Optional scale runs here (in parallel, per segment) to the export resolution.
+  // `-c:v mjpeg` on the INPUT: the screenshots are MJPEG, but image2pipe's auto-probe can fail
+  // to identify the codec from small/low-detail frames (e.g. a near-black scene) within its probe
+  // window → "Could not find codec parameters … Video: none, none" → ffmpeg emits no stream and
+  // exits immediately. Once it dies, `stdin.write` returns false and the `drain` event never
+  // fires, so the writer below would HANG FOREVER (a full-render wedge, resolution-dependent and
+  // flaky). Naming the input codec makes detection deterministic, so this never happens.
   const vf = scaleFilter ? ['-vf', scaleFilter] : [];
-  const ff = spawn('ffmpeg', ['-y', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-', ...vf, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-crf', '18', '-bf', '0', '-g', String(Math.max(2, Math.round(fps))), '-profile:v', 'high', '-level', '4.2', segOut], { stdio: ['pipe', 'ignore', 'pipe'] });
+  const ff = spawn('ffmpeg', ['-y', '-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', String(fps), '-i', '-', ...vf, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-crf', '18', '-bf', '0', '-g', String(Math.max(2, Math.round(fps))), '-profile:v', 'high', '-level', '4.2', segOut], { stdio: ['pipe', 'ignore', 'pipe'] });
   ff.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4000); });
   ff.stdin.on('error', () => {});
+  // Defense-in-depth: if the encoder ever exits early (bad args, decode error, OOM-killed), record
+  // it so the frame loop can abort instead of blocking on a `drain` that will never arrive.
+  let ffExited: number | null = null;
+  ff.on('close', (c) => { ffExited = c ?? 0; });
 
   for (let f = startF; f < endF; f++) {
     const t = f / fps;
@@ -90,11 +100,14 @@ async function renderSegment(browser: Browser, resolved: any, indexUrl: string, 
       }));
     }
     const buf = await stage.screenshot({ type: 'jpeg', quality: 90 });
-    if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once('drain', r));
+    if (ffExited !== null) throw new Error(`ffmpeg segment exited early (${ffExited}): ${stderr.slice(-300)}`);
+    // Wait for backpressure to clear, but bail if the encoder dies meanwhile (otherwise `drain`
+    // never fires and the export hangs forever).
+    if (!ff.stdin.write(buf)) await new Promise<void>((r) => { const done = () => r(); ff.stdin.once('drain', done); ff.once('close', done); });
     onFrame(buf);
   }
   ff.stdin.end();
-  const code: number = await new Promise((res) => ff.on('close', (c) => res(c ?? 0)));
+  const code: number = ffExited ?? await new Promise<number>((res) => ff.on('close', (c) => res(c ?? 0)));
   await page.close();
   if (code !== 0) throw new Error(`ffmpeg segment exited ${code}: ${stderr.slice(-300)}`);
   // INTEGRITY: the segment MUST contain every frame of its range. If even one is missing we

@@ -22224,7 +22224,7 @@
   var MANIFEST = buildManifest();
   var MAN = new Map(MANIFEST.map((e) => [e.id, e]));
   var LABELW = 104;
-  var PX_MIN = 6;
+  var PX_MIN = 0.5;
   var PX_MAX = 800;
   var KF_EASINGS = ["linear", "easeIn", "easeOut", "easeInOut", "easeOutBack", "easeOutExpo", "easeOutCubic", "easeInOutCubic"];
   var I = {
@@ -22835,8 +22835,9 @@
       const u = assetUrl(a.src);
       if (a.type === "video") {
         const v = el("video");
-        v.src = u;
+        v.preload = "metadata";
         v.muted = true;
+        v.src = u;
         d.appendChild(v);
       } else if (a.type === "audio") {
         const ph = el("div");
@@ -24945,11 +24946,12 @@
     const vr = tl.getBoundingClientRect();
     setZoom(S.pxPerSec * f, vr.left + vr.width / 2);
   }
-  function seekTo(t) {
+  function seekTo(t, follow = true) {
     S.playhead = Math.max(0, Math.min(effectiveTotal(), t));
     liveSeek();
     positionPlayhead();
     updateTime();
+    if (follow) followPlayhead();
   }
   function setPlayIcon() {
     $("tpPlay").innerHTML = icon(S.playing ? "pause" : "play");
@@ -25360,7 +25362,11 @@
     $("rightBody").classList.remove("loading");
     $("tlScroll").classList.remove("loading");
     await loadAssets();
-    window.__vgpAudioReady = () => buildTimeline();
+    let audioReadyTimer;
+    window.__vgpAudioReady = () => {
+      clearTimeout(audioReadyTimer);
+      audioReadyTimer = setTimeout(() => buildTimeline(), 150);
+    };
     requestAnimationFrame((t) => {
       last = t;
       loop(t);
@@ -25378,7 +25384,7 @@
     const seekFromX = (clientX) => {
       const r = seekbar.getBoundingClientRect();
       const frac = clamp012((clientX - r.left) / Math.max(1, r.width));
-      seekTo(frac * effectiveTotal());
+      seekTo(frac * effectiveTotal(), false);
     };
     seekbar.addEventListener("mousedown", (e) => {
       if (e.button !== 0) return;
@@ -25558,7 +25564,7 @@
       const t = e.target;
       if (t.closest(".clip") || t.closest(".track-label") || t.closest(".scene-tag") || t.closest(".sh") || t.closest(".seam") || t.closest(".kf-marker")) return;
       e.preventDefault();
-      const seekFrom = (clientX) => seekTo(timeAtClientX(clientX));
+      const seekFrom = (clientX) => seekTo(timeAtClientX(clientX), false);
       let lastX = e.clientX;
       let autoT = null;
       const autoTick = () => {

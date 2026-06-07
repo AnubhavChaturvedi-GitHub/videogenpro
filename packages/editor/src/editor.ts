@@ -13,7 +13,11 @@ const LABELW = 104;
 // Single shared zoom range — every zoom mutator (Fit, +/- buttons, ctrl-wheel,
 // autoFit) clamps to [PX_MIN, PX_MAX] so the reachable zoom is identical and Fit
 // can never leave the timeline in a state the wheel cannot continue from.
-const PX_MIN = 6, PX_MAX = 800;
+// B-fit-longcomp: PX_MIN was 6 px/s, which is far too high for a long composition —
+// an 18-minute lesson needs ~1.2 px/s to fit the viewport, so Fit clamped to 6 and
+// left ~75% of the timeline scrolled off-screen (Fit didn't fit). Lower the floor so
+// Fit can actually show the whole comp (and the wheel can still reach that zoom).
+const PX_MIN = 0.5, PX_MAX = 800;
 const KF_EASINGS = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'easeOutBack', 'easeOutExpo', 'easeOutCubic', 'easeInOutCubic'];
 
 // ---------- icons (Lucide-style, inline SVG) ----------
@@ -533,7 +537,7 @@ function renderAssets() {
   }
   S.assets.forEach((a) => {
     const d = el('div', 'asset'); d.draggable = true; const u = assetUrl(a.src);
-    if (a.type === 'video') { const v = el('video') as HTMLVideoElement; v.src = u; v.muted = true; d.appendChild(v); }
+    if (a.type === 'video') { const v = el('video') as HTMLVideoElement; v.preload = 'metadata'; v.muted = true; v.src = u; d.appendChild(v); } // preload=metadata: don't fully decode every video thumbnail
     else if (a.type === 'audio') { const ph = el('div'); ph.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:var(--t-audio)'; ph.innerHTML = icon('audio'); d.appendChild(ph); }
     else { const im = el('img') as HTMLImageElement; im.src = u; d.appendChild(im); }
     const b = el('div', 'badge'); b.textContent = a.type; d.appendChild(b);
@@ -2017,7 +2021,14 @@ function fitTimeline() { const w = $('tlScroll').clientWidth || 900; setZoom((w 
 // viewport CENTER as the stable reference (clientX at the middle of the scroll
 // viewport), so content no longer jumps sideways under the cursor on each step.
 function zoomBy(f: number) { const tl = $('tlScroll'); const vr = tl.getBoundingClientRect(); setZoom(S.pxPerSec * f, vr.left + vr.width / 2); }
-function seekTo(t: number) { S.playhead = Math.max(0, Math.min(effectiveTotal(), t)); liveSeek(); positionPlayhead(); updateTime(); }
+// B-seek-follow: a DISCRETE seek (transport buttons, keyframe nav, the Scenes modal's
+// jump-to-scene) used to leave the playhead wherever it landed without scrolling the
+// timeline to it. On a long multi-scene comp the timeline is far wider than the
+// viewport, so jumping to a later scene parked the playhead off-screen with the view
+// still at 0. Bring it into view via followPlayhead(). `follow` defaults to true; the
+// continuous drag-scrubs (timeline background, clip-click, seek bar) pass follow=false
+// so seekTo never fights their own edge auto-scroll mid-drag.
+function seekTo(t: number, follow = true) { S.playhead = Math.max(0, Math.min(effectiveTotal(), t)); liveSeek(); positionPlayhead(); updateTime(); if (follow) followPlayhead(); }
 function setPlayIcon() { $('tpPlay').innerHTML = icon(S.playing ? 'pause' : 'play'); }
 function togglePlay() { S.playing = !S.playing; setPlayIcon(); last = performance.now(); VGP.seek(S.playhead, { playing: S.playing }); }
 let last = performance.now();
@@ -2270,7 +2281,10 @@ async function init() {
   buildTimeline(); renderRight(); updateTime();
   $('rightBody').classList.remove('loading'); $('tlScroll').classList.remove('loading'); // first build done — drop skeletons
   await loadAssets();
-  (window as any).__vgpAudioReady = () => buildTimeline(); // refresh audio-lane widths once durations load
+  // refresh audio-lane widths once durations load — DEBOUNCED so N tracks loading metadata
+  // don't each trigger a full buildTimeline() (19 rebuilds in a burst on a big project).
+  let audioReadyTimer: any;
+  (window as any).__vgpAudioReady = () => { clearTimeout(audioReadyTimer); audioReadyTimer = setTimeout(() => buildTimeline(), 150); };
   requestAnimationFrame((t) => { last = t; loop(t); });
 
   // transport
@@ -2280,7 +2294,7 @@ async function init() {
   // clip/trim handlers). fraction = clamp01((clientX - barLeft) / barWidth), seek to
   // fraction * effectiveTotal(). Live-updates while dragging; clears on mouseup.
   const seekbar = $('seekbar');
-  const seekFromX = (clientX: number) => { const r = seekbar.getBoundingClientRect(); const frac = clamp01((clientX - r.left) / Math.max(1, r.width)); seekTo(frac * effectiveTotal()); };
+  const seekFromX = (clientX: number) => { const r = seekbar.getBoundingClientRect(); const frac = clamp01((clientX - r.left) / Math.max(1, r.width)); seekTo(frac * effectiveTotal(), false); };
   seekbar.addEventListener('mousedown', (e: MouseEvent) => {
     if (e.button !== 0) return; e.preventDefault();
     const wasPlaying = S.playing; if (wasPlaying) togglePlay(); // pause while scrubbing so loop() can't fight the drag
@@ -2377,7 +2391,7 @@ async function init() {
     e.preventDefault(); // suppress text/range selection during a drag-scrub
     // recompute time LIVE (no cached rect) so the scrub stays correct while the
     // timeline auto-scrolls horizontally under the cursor.
-    const seekFrom = (clientX: number) => seekTo(timeAtClientX(clientX));
+    const seekFrom = (clientX: number) => seekTo(timeAtClientX(clientX), false); // scrub: don't auto-follow (autoTick owns edge scroll)
     let lastX = e.clientX; let autoT: any = null;
     // when the cursor nears the left/right edge of the timeline, auto-scroll so the
     // playhead can keep scrubbing past the visible edge (both directions).
