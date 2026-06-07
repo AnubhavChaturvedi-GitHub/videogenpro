@@ -1,6 +1,7 @@
 // VideoGenPro Studio — CapCut-style editor over the Scene IR.
 // IR is the single source of truth, shared with the agent via the dev server.
 import { buildManifest, getPreset, resolveParams, ease } from '../../core/src/index';
+import lottie from 'lottie-web';
 
 declare const VGP: any;
 const MANIFEST = buildManifest();
@@ -2067,7 +2068,20 @@ async function openProjects() {
 }
 
 // ---------- export with progress ----------
-function showRender(show: boolean) { $('renderBar').classList.toggle('show', show); }
+// the user's Lottie (packages/editor/Export.json) plays in the export overlay while
+// rendering, with the live percentage below it. Loaded lazily, looped while visible.
+let renderAnim: any = null;
+function ensureRenderLottie() {
+  if (renderAnim) return renderAnim;
+  const c = document.getElementById('renderLottie'); if (!c) return null;
+  try { renderAnim = lottie.loadAnimation({ container: c, renderer: 'svg', loop: true, autoplay: false, path: '/packages/editor/Export.json' }); } catch { renderAnim = null; }
+  return renderAnim;
+}
+function showRender(show: boolean) {
+  $('renderBar').classList.toggle('show', show);
+  const a = ensureRenderLottie();
+  if (a) { try { show ? a.goToAndPlay(0, true) : a.stop(); } catch {} }
+}
 async function runExport() {
   showRender(true); $('renderFill').style.width = '0%'; $('renderPct').textContent = '0%'; $('renderLabel').textContent = 'Starting render…';
   // B04: flush any pending debounced save so the render uses the latest edit,

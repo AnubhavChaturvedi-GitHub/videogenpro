@@ -24,6 +24,7 @@
     "typescript": "^5.7.0"
   },
   "dependencies": {
+    "lottie-web": "^5.13.0",
     "playwright": "^1.49.0",
     "three": "^0.171.0",
     "zod": "^3.24.0"

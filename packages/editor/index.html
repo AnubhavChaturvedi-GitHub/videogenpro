@@ -313,10 +313,12 @@
       opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; }
     #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
-    .render-bar { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); width:440px; background:rgba(18,18,18,.8); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:var(--r-lg); padding:16px 18px; box-shadow:0 24px 60px rgba(0,0,0,.6),var(--hi); z-index:100; opacity:0; pointer-events:none; transition:.25s; }
+    .render-bar { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); width:440px; display:flex; flex-direction:column; align-items:center; background:rgba(18,18,18,.8); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px; box-shadow:0 24px 60px rgba(0,0,0,.6),var(--hi); z-index:100; opacity:0; pointer-events:none; transition:.25s; }
     .render-bar.show { opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+    .render-lottie { width:100%; height:190px; margin-bottom:10px; pointer-events:none; }
+    .render-lottie svg { display:block; }
     .render-head { display:flex; align-items:center; gap:16px; }
-    .render-meta { flex:1; min-width:0; }
+    .render-meta { width:100%; min-width:0; }
     .render-bar .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:12.5px; font-weight:600; }
     .render-bar .pct { color:#ffffff; font-variant-numeric:tabular-nums; }
     .render-track { height:9px; background:rgba(0,0,0,.35); border-radius:var(--r-pill); overflow:hidden; border:1px solid var(--border); position:relative; }
@@ -744,32 +746,12 @@
   </div>
 
   <div class="render-bar" id="renderBar">
-    <div class="render-head">
-      <!-- looping animated render mark: rotating gradient ring + counter-rotating
-           film-strip core + pulsing centre dot. Pure CSS keyframes (no JS) so the
-           prefers-reduced-motion block below can freeze it. -->
-      <svg id="renderSpinner" class="render-spinner" viewBox="0 0 48 48" aria-hidden="true" width="44" height="44">
-        <defs>
-          <linearGradient id="rsGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#fff" stop-opacity="1"/>
-            <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
-        <!-- faint full track -->
-        <circle class="rs-track" cx="24" cy="24" r="19" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="3"/>
-        <!-- rotating gradient arc (CSS-animated so reduced-motion can stop it) -->
-        <circle class="rs-arc" cx="24" cy="24" r="19" fill="none" stroke="url(#rsGrad)" stroke-width="3"
-          stroke-linecap="round" stroke-dasharray="70 200"/>
-        <!-- counter-rotating inner film-strip ring of dashes -->
-        <circle class="rs-film" cx="24" cy="24" r="11" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="4"
-          stroke-dasharray="2 5"/>
-        <!-- pulsing core dot -->
-        <circle class="rs-core" cx="24" cy="24" r="3.2" fill="#fff"/>
-      </svg>
-      <div class="render-meta">
-        <div class="top"><span id="renderLabel">Rendering…</span><span class="pct" id="renderPct">0%</span></div>
-        <div class="render-track"><div class="render-fill" id="renderFill"></div></div>
-      </div>
+    <!-- the user's Lottie (packages/editor/Export.json) plays here during export; editor.ts
+         loads it via lottie-web and plays/stops it with the overlay. Percentage below. -->
+    <div id="renderLottie" class="render-lottie" aria-hidden="true"></div>
+    <div class="render-meta">
+      <div class="top"><span id="renderLabel">Rendering…</span><span class="pct" id="renderPct">0%</span></div>
+      <div class="render-track"><div class="render-fill" id="renderFill"></div></div>
     </div>
   </div>
 
