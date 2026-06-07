@@ -4,7 +4,7 @@
 //   • file edits (by the agent) -> SSE {t:'doc'} -> UI updates live
 //   • export    -> POST /api/render streams SSE {t:'render', pct} progress
 import { createServer, type ServerResponse } from 'node:http';
-import { readFileSync, writeFileSync, existsSync, watch, statSync, createReadStream, readdirSync, mkdirSync, type FSWatcher } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, watch, statSync, createReadStream, readdirSync, mkdirSync, copyFileSync, type FSWatcher } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, relative, extname, normalize, join, isAbsolute, sep } from 'node:path';
@@ -15,10 +15,37 @@ const root = resolve(__dirname, '../../..');
 
 const VIDEO_EXT = new Set(['.mp4', '.webm', '.mov', '.m4v']);
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg']);
-const assetType = (f: string) => (VIDEO_EXT.has(extname(f).toLowerCase()) ? 'video' : 'image');
+const AUDIO_EXT = new Set(['.mp3', '.wav', '.m4a', '.ogg']);
+const assetType = (f: string) => { const e = extname(f).toLowerCase(); return VIDEO_EXT.has(e) ? 'video' : AUDIO_EXT.has(e) ? 'audio' : 'image'; };
 // True only when `f` is `root` itself or strictly contained within it (separator boundary),
 // so a sibling dir sharing the prefix (e.g. `<root>-evil`) cannot bypass the guard.
 const withinRoot = (f: string) => { const r = relative(root, f); return r === '' || (!r.startsWith('..' + sep) && r !== '..' && !isAbsolute(r)); };
+
+// === After-Effects "one file, assets travel with it" model =================================
+// Assets live in an `assets/` folder CO-LOCATED with the active composition, so the IR is
+// self-contained: every media `src` is stored RELATIVE to the comp dir (e.g. `assets/foo.png`)
+// and therefore still resolves when the project is opened or moved.
+const assetsDirFor = (f: string) => join(dirname(f), 'assets');
+// Strip any directory parts and keep only a safe basename for a derived on-disk filename.
+const sanitizeAssetName = (n: string) => (n.split(/[\\/]/).pop() || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '') || 'file';
+// Always store paths with forward slashes so the IR is portable across platforms.
+const toPosix = (p: string) => p.split(/[\\/]/).join('/');
+// Copy `bytes` into the comp's assets/ dir under a de-duped name. If a file with the same name
+// already exists AND is byte-identical, reuse it; otherwise append -1/-2/... until unique.
+// Returns { name, rel } where rel is the comp-relative path to store in the IR (`assets/<name>`).
+function importBytes(compDir: string, rawName: string, bytes: Buffer): { name: string; rel: string } {
+  const destDir = join(compDir, 'assets'); mkdirSync(destDir, { recursive: true });
+  const safe = sanitizeAssetName(rawName);
+  const ext = extname(safe); const stem = ext ? safe.slice(0, -ext.length) : safe;
+  let name = safe; let n = 0;
+  while (existsSync(join(destDir, name))) {
+    try { if (Buffer.compare(readFileSync(join(destDir, name)), bytes) === 0) break; } catch {} // identical bytes → reuse
+    name = `${stem}-${++n}${ext}`;
+  }
+  const full = join(destDir, name);
+  if (!existsSync(full)) writeFileSync(full, bytes);
+  return { name, rel: 'assets/' + name };
+}
 
 let active = resolve(process.cwd(), process.argv[2] ?? 'examples/hello.json');
 if (!existsSync(active)) { console.error('composition not found:', active); process.exit(1); }
@@ -114,6 +141,7 @@ const server = createServer((req, res) => {
         else doc = { fps: 30, width: Number(width) || 1920, height: Number(height) || 1080, scenes: [{ id: 'scene-1', duration: 5, background: '#0a0a0a', layers: [] }] };
         if (!doc.name) doc.name = String(name || 'Untitled').trim() || 'Untitled';
         const out = JSON.stringify(doc, null, 2); knownBytes = out; writeFileSync(file, out);
+        mkdirSync(assetsDirFor(file), { recursive: true }); // AE model: a new project owns its own assets/ folder
         active = file; setWatch(active);
         json(res, 200, { ok: true, ir: doc, assetBase: assetBaseFor(active), file: relative(root, active) });
       } catch (e: any) { json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
@@ -122,33 +150,78 @@ const server = createServer((req, res) => {
   }
 
   if (path === '/api/assets' && req.method === 'GET') {
-    const assetsDir = resolve(dirname(active), '..', 'assets');
-    const out: any[] = [];
-    const scan = (dir: string) => {
-      if (!existsSync(dir)) return;
+    const compDir = dirname(active);
+    const out: any[] = []; const seen = new Set<string>();
+    const scan = (dir: string, recurse: boolean) => {
+      if (!existsSync(dir) || !withinRoot(dir)) return;
       for (const f of readdirSync(dir)) {
         const full = join(dir, f);
-        if (statSync(full).isDirectory()) { if (f === 'uploads') scan(full); continue; }
+        if (statSync(full).isDirectory()) { if (recurse) scan(full, true); continue; }
         const ext = extname(f).toLowerCase();
-        if (!VIDEO_EXT.has(ext) && !IMAGE_EXT.has(ext)) continue;
-        out.push({ name: f, src: relative(dirname(active), full).split(/[\\/]/).join('/'), type: assetType(f) });
+        if (!VIDEO_EXT.has(ext) && !IMAGE_EXT.has(ext) && !AUDIO_EXT.has(ext)) continue;
+        const src = toPosix(relative(compDir, full));
+        if (seen.has(src)) continue; seen.add(src);
+        out.push({ name: f, src, type: assetType(f) });
       }
     };
-    scan(assetsDir);
+    // AE model: the project's CO-LOCATED assets/ folder is the primary source (recurse into it).
+    scan(assetsDirFor(active), true);
+    // …plus the legacy sibling assets/ dir, so pre-existing media still appears in the panel.
+    scan(resolve(compDir, '..', 'assets'), true);
     return json(res, 200, out);
   }
 
+  // Import a media file INTO the project (AE-style): the bytes are copied to the comp's
+  // co-located assets/ folder and the returned `src` is RELATIVE to the comp dir
+  // (`assets/<name>`), so the IR stays self-contained and the path always resolves.
   if (path === '/api/upload' && req.method === 'POST') {
-    const name = (url.searchParams.get('name') ?? 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const name = sanitizeAssetName(url.searchParams.get('name') ?? 'file');
     // Trust the extension, not the client-provided MIME type: reject anything that
-    // isn't a known image/video extension, and derive the stored type from it.
+    // isn't a known image/video/audio extension, and derive the stored type from it.
     const ext = extname(name).toLowerCase();
-    if (!IMAGE_EXT.has(ext) && !VIDEO_EXT.has(ext)) return json(res, 400, { ok: false, error: 'unsupported file type' });
-    const dest = resolve(dirname(active), '..', 'assets', 'uploads'); mkdirSync(dest, { recursive: true });
-    const finalName = `${Date.now().toString(36)}-${name}`;
+    if (!IMAGE_EXT.has(ext) && !VIDEO_EXT.has(ext) && !AUDIO_EXT.has(ext)) return json(res, 400, { ok: false, error: 'unsupported file type' });
     const chunks: Buffer[] = []; req.on('data', (c) => chunks.push(c));
-    req.on('end', () => { writeFileSync(join(dest, finalName), Buffer.concat(chunks)); json(res, 200, { name: finalName, src: `../assets/uploads/${finalName}`, type: assetType(finalName) }); });
+    req.on('end', () => {
+      try {
+        const { name: finalName, rel } = importBytes(dirname(active), name, Buffer.concat(chunks));
+        json(res, 200, { ok: true, name: finalName, src: rel, type: assetType(finalName) });
+      } catch (e: any) { json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
+    });
     return;
+  }
+
+  // "Collect Files" / make self-contained: copy every external (or non-co-located) media
+  // asset referenced by the active comp into the project's assets/ dir, rewrite each path in
+  // the IR to the local `assets/<name>`, persist the updated IR, and report how many moved.
+  if (path === '/api/collect' && req.method === 'POST') {
+    try {
+      const txt = readFileSync(active, 'utf8'); knownBytes = txt;
+      const ir = JSON.parse(txt);
+      const compDir = dirname(active);
+      const assetsDir = join(compDir, 'assets'); // assets/ co-located with the comp
+      let copied = 0;
+      // Resolve a stored src to an absolute on-disk path. Already-local `assets/...` paths
+      // resolve under the project; legacy `../assets/...` resolve to the sibling dir; bare
+      // names resolve relative to the comp dir too. (We only collect things we can find.)
+      const collectSrc = (src: string): string => {
+        if (typeof src !== 'string' || !src) return src;
+        if (/^(https?:|data:)/i.test(src)) return src; // remote/data — can't copy from disk, leave as-is
+        const abs = isAbsolute(src) ? src : resolve(compDir, src);
+        // Skip ones already inside the project's assets/ dir.
+        const r = relative(assetsDir, abs);
+        if (r === '' || (!r.startsWith('..' + sep) && r !== '..' && !isAbsolute(r))) return src;
+        if (!existsSync(abs) || statSync(abs).isDirectory()) return src; // missing — leave reference untouched
+        const { rel } = importBytes(compDir, abs, readFileSync(abs));
+        copied++;
+        return rel;
+      };
+      for (const sc of ir.scenes ?? []) for (const l of sc.layers ?? []) {
+        if ((l.type === 'image' || l.type === 'video') && l.src) l.src = collectSrc(l.src);
+      }
+      for (const a of ir.audio ?? []) { if (a.src) a.src = collectSrc(a.src); }
+      const out = JSON.stringify(ir, null, 2); knownBytes = out; writeFileSync(active, out);
+      return json(res, 200, { ok: true, ir, copied });
+    } catch (e: any) { return json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
   }
 
   // export with streamed progress over SSE

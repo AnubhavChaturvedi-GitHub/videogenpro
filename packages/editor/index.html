@@ -84,14 +84,35 @@
     #selbox .sh[data-h=ne]{ right:-10px; top:-10px; cursor:nesw-resize; }
     #selbox .sh[data-h=sw]{ left:-10px; bottom:-10px; cursor:nesw-resize; }
     #selbox .sh[data-h=se]{ right:-10px; bottom:-10px; cursor:nwse-resize; }
-    /* center crop handle: a distinct round dot; centered via margins (not transform,
-       which updateSelBox() overwrites with the counter-scale). */
-    #selbox .sh-crop{ left:50%; top:50%; margin:-11px 0 0 -11px; width:20px; height:20px; border-radius:50%; background:rgba(0,0,0,.5); border:2px solid var(--accent); cursor:move; }
+    /* square corner SCALE handles get a hover glow. NB: do NOT transition `transform`
+       here — updateSelBox() writes a counter-scale transform every frame and a
+       transition would make it lag/jitter while resizing. */
+    #selbox .sh:not(.sh-crop){ transition:box-shadow .12s ease, background .12s; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+    #selbox .sh:not(.sh-crop):hover{ box-shadow:0 0 0 3px rgba(255,255,255,.35), 0 2px 8px rgba(0,0,0,.6); }
+    /* ── crop EDGE handles — four small ROUND dots at the side midpoints, visually
+       distinct from the square corner scale handles. Centered via margins (NOT
+       transform — updateSelBox() overwrites transform with the counter-scale). ── */
+    #selbox .sh-crop{ width:14px; height:14px; border-radius:50%; background:#000; border:2px solid var(--accent);
+      box-shadow:0 0 0 1px rgba(0,0,0,.55), 0 0 8px rgba(255,255,255,.35); pointer-events:auto;
+      transition:box-shadow .12s ease, background .12s; }   /* no transform transition — JS writes counter-scale each frame */
+    #selbox .sh-crop::after{ content:''; position:absolute; inset:3px; border-radius:50%; background:var(--accent); opacity:.0; transition:opacity .12s; }
+    #selbox .sh-crop:hover{ background:#111; box-shadow:0 0 0 1px rgba(0,0,0,.55), 0 0 12px rgba(255,255,255,.7); }
+    #selbox .sh-crop:hover::after{ opacity:1; }
+    #selbox .sh-crop[data-h=crop-t]{ left:50%; top:0;     margin:-7px 0 0 -7px; cursor:row-resize; }
+    #selbox .sh-crop[data-h=crop-b]{ left:50%; bottom:0;  margin:0 0 -7px -7px; cursor:row-resize; }
+    #selbox .sh-crop[data-h=crop-l]{ top:50%;  left:0;    margin:-7px 0 0 -7px; cursor:col-resize; }
+    #selbox .sh-crop[data-h=crop-r]{ top:50%;  right:0;   margin:-7px -7px 0 0; cursor:col-resize; }
 
     .topbar { display:flex; align-items:center; gap:13px; padding:0 18px; background:var(--glass); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border-bottom:1px solid var(--border); position:relative; z-index:50; box-shadow:var(--hi); }
     .brand { font-weight:800; letter-spacing:.3px; display:flex; align-items:center; gap:9px; font-size:16px; }
-    .brand .logo { width:30px; height:30px; display:flex; align-items:center; justify-content:center; }
+    .brand .logo { width:30px; height:30px; display:flex; align-items:center; justify-content:center; color:var(--text); }
     .brand .logo img { width:30px; height:30px; display:block; }
+    /* clean static monochrome brand mark (inline svg) — overrides the global 16px svg sizing */
+    .brand .logo svg { width:30px; height:30px; display:block; stroke:none; }
+    .brand .logo svg path { stroke-width:13; }
+    /* gentle hover lift only — no idle spin, keeps it a calm static mark */
+    .brand .logo { transition:transform .25s cubic-bezier(.34,1.56,.64,1); }
+    .brand:hover .logo { transform:scale(1.08) rotate(-4deg); }
     .brand b span, .brand .grad { background:var(--accent-grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
     .spacer { flex:1; }
     .menu-wrap { position:relative; }
@@ -294,10 +315,37 @@
 
     .render-bar { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); width:440px; background:rgba(18,18,18,.8); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:var(--r-lg); padding:16px 18px; box-shadow:0 24px 60px rgba(0,0,0,.6),var(--hi); z-index:100; opacity:0; pointer-events:none; transition:.25s; }
     .render-bar.show { opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+    .render-head { display:flex; align-items:center; gap:16px; }
+    .render-meta { flex:1; min-width:0; }
     .render-bar .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:12.5px; font-weight:600; }
     .render-bar .pct { color:#ffffff; font-variant-numeric:tabular-nums; }
-    .render-track { height:9px; background:rgba(0,0,0,.35); border-radius:var(--r-pill); overflow:hidden; border:1px solid var(--border); }
-    .render-fill { height:100%; width:0%; background:var(--accent-grad); transition:width .2s ease; }
+    .render-track { height:9px; background:rgba(0,0,0,.35); border-radius:var(--r-pill); overflow:hidden; border:1px solid var(--border); position:relative; }
+    .render-fill { height:100%; width:0%; background:var(--accent-grad); transition:width .2s ease; position:relative; }
+    /* animated sheen sweeping across the filled portion */
+    .render-fill::after { content:''; position:absolute; inset:0; border-radius:inherit;
+      background:linear-gradient(100deg, transparent 30%, rgba(0,0,0,.28) 50%, transparent 70%);
+      background-size:240% 100%; animation:renderSheen 1.4s linear infinite; }
+    @keyframes renderSheen { from { background-position:140% 0; } to { background-position:-140% 0; } }
+    /* the looping animated render spinner — pure CSS so reduced-motion can freeze it */
+    .render-spinner { flex:none; width:44px; height:44px; filter:drop-shadow(0 0 10px rgba(255,255,255,.25)); }
+    /* global `svg{stroke-width:2}` would override the SVG stroke-width attrs (CSS beats
+       presentation attrs) — restore the intended weights per ring here. */
+    .render-spinner circle { stroke-linecap:round; transform-box:view-box; transform-origin:24px 24px; }
+    .render-spinner .rs-track, .render-spinner .rs-arc { stroke-width:3; }
+    .render-spinner .rs-film { stroke-width:4; }
+    .render-spinner .rs-core { stroke-width:0; }
+    .render-spinner .rs-arc { animation:rsSpin 1.4s linear infinite, rsDash 1.8s ease-in-out infinite; }
+    .render-spinner .rs-film { animation:rsSpinRev 3.2s linear infinite; }
+    .render-spinner .rs-core { animation:rsPulse 1.4s ease-in-out infinite; transform-origin:24px 24px; }
+    @keyframes rsSpin { from { transform:rotate(-90deg); } to { transform:rotate(270deg); } }
+    @keyframes rsSpinRev { from { transform:rotate(360deg); } to { transform:rotate(0deg); } }
+    @keyframes rsDash { 0%,100% { stroke-dasharray:20 200; } 50% { stroke-dasharray:90 200; } }
+    @keyframes rsPulse { 0%,100% { transform:scale(.75); opacity:.55; } 50% { transform:scale(1.25); opacity:1; } }
+    @media (prefers-reduced-motion: reduce) {
+      .render-spinner .rs-arc, .render-spinner .rs-film, .render-spinner .rs-core { animation:none !important; }
+      .render-spinner .rs-arc { transform:rotate(-90deg); stroke-dasharray:70 200; }
+      .render-fill::after { animation:none; background:none; }
+    }
 
     .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(6px); z-index:200; display:none; align-items:center; justify-content:center; }
     .modal-bg.show { display:flex; }
@@ -357,13 +405,250 @@
     /* unified drop target — accent ring + faint tint + emphasised dot */
     .seam.droptgt { box-shadow:inset 0 0 0 2px var(--accent); background:rgba(255,255,255,.12); border-radius:var(--r-sm); }
     .seam.droptgt .dot { background:var(--accent); transform:rotate(45deg) scale(1.4); box-shadow:0 0 8px rgba(255,255,255,.6); opacity:1; }
+
+    /* ════════════════════════════════════════════════════════════════════
+       ANIMATED, UNIQUE ICONS — give the toolbar / transport / panel SVGs a
+       subtle life of their own. Idle micro-motion is whisper-quiet; the
+       satisfying part happens on hover / active. All inside prefers-reduced-
+       motion guards (the global block already kills durations, but we also
+       null the keyframes explicitly for safety).
+       ════════════════════════════════════════════════════════════════════ */
+    /* base: every icon-host span scales its svg crisply, GPU-friendly */
+    .btn svg, .tp-btn svg, .seg-btn svg, .tab svg, .menu-item svg, .icon-btn svg, .scene-act svg, .arrange svg {
+      transition:transform .2s cubic-bezier(.34,1.56,.64,1), opacity .2s, color .2s; will-change:transform;
+    }
+    /* generic press feedback for any glass button */
+    .btn:active { transform:translateY(0) scale(.97); }
+    .tp-btn:active { transform:scale(.92); }
+    .seg-btn:active, .tab:active, .cat:active, .anim-card:active, .menu-item:active, .icon-btn:active, .arrange button:active, .proj-tab:active { transform:scale(.96); }
+
+    /* ── transport: each control gets a distinct hover gesture ── */
+    #tpPlay:hover svg { transform:scale(1.12); }
+    #tpPlay:active svg { transform:scale(.9); }
+    #tpStart:hover svg { transform:translateX(-2px); }
+    #tpFwd:hover svg  { transform:translateX(2px); }
+    #tpBack:hover svg { transform:translateX(-2px); }
+    /* loop spins a quarter-turn into place; when active (on) it idles a slow rotation */
+    #tpLoop:hover svg { transform:rotate(45deg); }
+    #tpLoop.on svg { animation:loopSpin 6s linear infinite; }
+    @keyframes loopSpin { to { transform:rotate(360deg); } }
+    /* split blade nudges, duplicate fans, delete shakes */
+    #btnSplit:hover svg { transform:rotate(8deg) scale(1.08); }
+    #btnDup:hover svg { transform:translate(1.5px,-1.5px) scale(1.06); }
+    #btnDel:hover svg { transform:scale(1.1); animation:iconShake .4s ease; }
+    @keyframes iconShake { 0%,100% { transform:scale(1.1) rotate(0); } 25% { transform:scale(1.1) rotate(-7deg); } 75% { transform:scale(1.1) rotate(7deg); } }
+    /* zoom / fit small buttons */
+    #btnFit:hover svg { transform:scale(1.12) rotate(-90deg); }
+
+    /* ── topbar: undo/redo arc the right way, export icon lifts ── */
+    #undoBtn:hover svg { transform:rotate(-12deg) translateX(-1px); }
+    #redoBtn:hover svg { transform:rotate(12deg) translateX(1px); }
+    #fileBtn:hover svg { transform:translateY(1px); }
+    #export:hover svg { transform:translateY(-2px); animation:exportBob .9s ease-in-out infinite; }
+    @keyframes exportBob { 0%,100% { transform:translateY(-2px); } 50% { transform:translateY(-4px); } }
+
+    /* ── seg view switch + right-panel tabs ── */
+    .seg-btn:hover svg, .tab:hover svg { transform:scale(1.14); }
+    .tab.on svg { color:var(--text); }
+
+    /* ── add-layer grid: icons draw a tiny pop on hover, each slightly unique ── */
+    .add-grid .btn:hover svg { transform:scale(1.18); }
+    #addText:hover svg { transform:scale(1.18) rotate(-4deg); }
+    #addShape:hover svg { transform:scale(1.12) rotate(45deg); }
+    #addScene:hover svg, #dupScene:hover svg { transform:scale(1.14) translateY(-1px); }
+    /* upload arrow in the drop zone bobs while hovering */
+    .drop:hover #i-up svg { animation:upBob 1s ease-in-out infinite; }
+    @keyframes upBob { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-3px); } }
+
+    /* sync dot already pulses via class; add a soft idle breathe when saved */
+    .dot.saved { animation:dotBreathe 2.6s ease-in-out infinite; }
+    @keyframes dotBreathe { 0%,100% { box-shadow:0 0 10px rgba(255,255,255,.7); } 50% { box-shadow:0 0 4px rgba(255,255,255,.35); } }
+    .dot.saving { animation:dotSpin 1s linear infinite; }
+    @keyframes dotSpin { 0% { opacity:.4; } 50% { opacity:1; } 100% { opacity:.4; } }
+
+    /* menu items: icon slides in slightly as the row highlights */
+    .menu-item:hover svg { transform:translateX(2px) scale(1.08); }
+    .scene-act:hover svg { transform:scale(1.18); }
+    .arrange button:hover svg { transform:scale(1.16); }
+
+    @media (prefers-reduced-motion: reduce) {
+      #tpLoop.on svg, #export:hover svg, .drop:hover #i-up svg, .dot.saved, .dot.saving, #btnDel:hover svg { animation:none !important; }
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       MICRO-INTERACTIONS — panel/menu slide-in, selection pulse, card hovers
+       ════════════════════════════════════════════════════════════════════ */
+    /* selection pulse on the on-canvas box (one-shot when shown via .sel) */
+    #selbox { animation:selPulse .35s ease; }
+    @keyframes selPulse { 0% { box-shadow:0 0 0 1px rgba(0,0,0,.4), 0 0 0 6px rgba(255,255,255,.25); } 100% { box-shadow:0 0 0 1px rgba(0,0,0,.4), 0 0 0 0 rgba(255,255,255,0); } }
+    /* clip selection ring gets a quick pulse when it gains .sel */
+    .clip.sel { animation:clipSel .3s ease; }
+    @keyframes clipSel { 0% { box-shadow:0 0 0 2px var(--accent), 0 0 0 7px rgba(255,255,255,.3), 0 6px 18px rgba(0,0,0,.45); } 100% { box-shadow:0 0 0 2px var(--accent), 0 0 0 4px rgba(0,0,0,.55), 0 6px 18px rgba(0,0,0,.45); } }
+    /* right-panel & timeline content fade-slide in when re-rendered (JS replaces innerHTML) */
+    .right-body > *, .anim-card, .preset-card, .scene-item, .proj .nm-field { animation:fadeUp .22s ease both; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    /* asset thumbs settle in */
+    .asset { animation:fadeIn .25s ease both; }
+    @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+    /* segmented active marker + tab underline glide */
+    .seg-btn { transition:color .18s, background .18s, transform .12s; }
+    .tab { transition:color .18s, background .18s, box-shadow .18s; }
+    .tab.on { box-shadow:inset 0 -2px 0 var(--accent); }
+    /* toast gets a tiny scale-in flourish on top of the existing fade */
+    #toast.show { animation:toastIn .28s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes toastIn { from { transform:translateX(-50%) translateY(-14px) scale(.92); } to { transform:translateX(-50%) translateY(0) scale(1); } }
+    /* modal content rises in when its bg opens */
+    .modal-bg.show .modal { animation:modalIn .26s cubic-bezier(.22,1,.36,1) both; }
+    @keyframes modalIn { from { opacity:0; transform:translateY(14px) scale(.97); } to { opacity:1; transform:none; } }
+    /* render-bar already slides via .show; add a gentle entrance scale */
+    .render-bar.show { animation:renderIn .3s cubic-bezier(.22,1,.36,1); }
+    @keyframes renderIn { from { transform:translateX(-50%) translateY(20px) scale(.96); } to { transform:translateX(-50%) translateY(0) scale(1); } }
+    /* playhead knob gets a faint glow heartbeat */
+    .playhead::before { animation:phPulse 2.4s ease-in-out infinite; }
+    @keyframes phPulse { 0%,100% { box-shadow:0 1px 4px rgba(0,0,0,.5); } 50% { box-shadow:0 1px 4px rgba(0,0,0,.5), 0 0 8px rgba(255,255,255,.6); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      #selbox, .clip.sel, .right-body > *, .anim-card, .preset-card, .scene-item,
+      .asset, #toast.show, .modal-bg.show .modal, .render-bar.show, .playhead::before { animation:none !important; }
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       RESPONSIVE — phone / tablet / touch. Dark glass aesthetic preserved.
+       Strategy: at tablet width the 3-column .mid keeps shrinking; at phone
+       width #app stacks into scrollable rows, panels become horizontal
+       drawers, and touch targets grow.
+       ════════════════════════════════════════════════════════════════════ */
+    /* hover gestures are pointer-only — don't trap touch users in :hover state */
+    @media (hover:none) {
+      .btn, .tp-btn, .asset, .anim-card, .seg-btn, .tab, .clip { transition-duration:.08s; }
+      /* fatten the primary touch targets */
+      .tp-btn { width:42px; height:42px; }
+      .tp-play { width:50px; height:50px; }
+      .tp-btn.sm { width:36px; height:36px; }
+      .btn { padding:10px 15px; }
+      /* keep per-track toggles visible (no hover to reveal them) */
+      .track-label .tl-toggle { width:auto; padding:2px; opacity:1; }
+      .scene-tag .scene-acts { display:flex; }
+      /* bigger on-canvas handles for fingers (keep crop dots centered: margin = -half) */
+      #selbox .sh:not(.sh-crop) { width:22px; height:22px; }
+      #selbox .sh-crop { width:18px; height:18px; }
+      #selbox .sh-crop[data-h=crop-t]{ margin:-9px 0 0 -9px; }
+      #selbox .sh-crop[data-h=crop-b]{ margin:0 0 -9px -9px; }
+      #selbox .sh-crop[data-h=crop-l]{ margin:-9px 0 0 -9px; }
+      #selbox .sh-crop[data-h=crop-r]{ margin:-9px -9px 0 0; }
+    }
+
+    /* ── tablet ── tighten the rails, let the stage breathe ── */
+    @media (max-width:1024px) {
+      #app { --side-w:160px; --right-w:248px; --tl-h:280px; }
+      .topbar { gap:9px; padding:0 12px; }
+      .brand b { font-size:14px; }
+      .seg-btn span, .tab span { display:inline-flex; }   /* keep icons */
+      .transport { gap:9px; padding:8px 12px; }
+      .tp-time { min-width:104px; font-size:13px; }
+      .transport .hint { display:none; }
+    }
+
+    /* ── narrow tablet / large phone landscape ── collapse seg labels ── */
+    @media (max-width:820px) {
+      #app { --side-w:140px; --right-w:0px; --tl-h:240px; }
+      /* hide the right properties rail by default; it returns when stacked below */
+      .mid { grid-template-columns:minmax(132px,var(--side-w,140px)) minmax(0,1fr); }
+      .right { display:none; }
+      .seg-btn { padding:6px 9px; }
+      .clip-tools { margin-left:6px; }
+    }
+
+    /* ── phone ── stack everything into a single scroll column ── */
+    @media (max-width:680px) {
+      html, body { overflow:auto; }
+      #app { display:flex; flex-direction:column; height:auto; min-height:100vh; }
+      .topbar { position:sticky; top:0; flex-wrap:wrap; height:auto; padding:10px 12px; gap:8px; row-gap:8px; }
+      .topbar .spacer { display:none; }
+      .topbar .brand { width:100%; }
+      .seg { order:5; }
+      /* mid becomes a stack: assets rail, then stage, then properties */
+      .mid { display:flex; flex-direction:column; overflow:visible; }
+      .side, .right { width:100%; border:0; border-bottom:1px solid var(--border); max-height:none; }
+      .side { padding:12px; }
+      .right { display:flex; max-height:420px; }
+      .center-col { min-height:56vh; }
+      .stagewrap { min-height:46vh; }
+      /* splitters are pointless when stacked */
+      .splitter { display:none; }
+      .timeline { min-height:300px; }
+      .tl-scroll { -webkit-overflow-scrolling:touch; }
+      .add-grid { grid-template-columns:1fr 1fr; }
+      /* modals go near-fullwidth */
+      .modal, .proj-modal { width:94vw; max-width:94vw; padding:18px; }
+      .render-bar { width:calc(100vw - 28px); left:14px; right:14px; transform:translateY(20px); }
+      .render-bar.show { transform:translateY(0); }
+      @keyframes renderIn { from { transform:translateY(20px) scale(.96); } to { transform:translateY(0) scale(1); } }
+      #toast { left:14px; right:14px; transform:translateY(-14px); max-width:none; text-align:center; }
+      #toast.show { transform:translateY(0); }
+      @keyframes toastIn { from { transform:translateY(-14px) scale(.95); } to { transform:translateY(0) scale(1); } }
+    }
+
+    /* very small phones — drop the add-grid to a single column */
+    @media (max-width:380px) {
+      .add-grid { grid-template-columns:1fr; }
+      .add-grid .btn { flex-direction:row; }
+      .tp-time { min-width:88px; }
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       LIGHT THEME — opt-in via OS setting. Dark remains the default. Mirrors
+       the monochrome glass language with an airy paper palette.
+       ════════════════════════════════════════════════════════════════════ */
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg:#eceef1;
+        --text:#0c0d0f; --dim:rgba(12,13,15,.6); --dim2:rgba(12,13,15,.4);
+        --glass:rgba(255,255,255,.62); --glass-2:rgba(255,255,255,.78); --glass-3:rgba(255,255,255,.95);
+        --border:rgba(12,13,15,.14); --border-2:rgba(12,13,15,.3);
+        --accent:#0c0d0f; --accent-2:#0c0d0f; --accent-grad:#0c0d0f;
+        --ok:#0c0d0f; --warn:rgba(12,13,15,.5); --bad:#0c0d0f;
+        --hi:inset 0 1px 0 rgba(255,255,255,.9); --glow:0 8px 32px rgba(20,24,33,.16);
+        --blur:saturate(120%) blur(20px);
+      }
+      html, body {
+        background:
+          radial-gradient(1100px 700px at 50% -12%, rgba(20,24,33,.06), transparent 60%),
+          var(--bg);
+      }
+      /* white-on-black primary buttons flip to black-on-white text */
+      .btn.primary { color:#fff; box-shadow:0 6px 20px rgba(12,13,15,.28),var(--hi); }
+      .btn.primary:hover { box-shadow:0 9px 28px rgba(12,13,15,.4),var(--hi); }
+      .tp-play { color:#fff; box-shadow:0 6px 20px rgba(12,13,15,.3),var(--hi); }
+      .cat.on, .proj-tab.on, .scene-item .num, .pa .badge { color:#fff; }
+      /* surfaces that were hard-coded dark → light glass */
+      .menu { background:rgba(255,255,255,.92); }
+      .modal, .modal .nm-field input, .modal .nm-field select { background:rgba(255,255,255,.92); }
+      #toast, .render-bar, .ruler, .track-label, .scene-tag .scene-acts { background:rgba(255,255,255,.9); }
+      .modal-bg { background:rgba(20,24,33,.32); }
+      /* dark preview canvas stays near-black for accurate WYSIWYG, but soften the void */
+      .stagewrap { background:radial-gradient(700px 500px at 50% 40%, rgba(20,24,33,.06), transparent 70%), #15171c; }
+      /* inputs / readouts that used rgba(0,0,0,.25) backgrounds */
+      .field input[type=text], .field textarea, .field select, .row .val, .color-row .color-swatch,
+      #projBody pre, .render-track { background:rgba(20,24,33,.05); }
+      .seekbar::before { background:rgba(12,13,15,.12); }
+      .seekbar .seek-knob { border-color:#fff; }
+      /* playhead reads as ink, not white, on the light timeline */
+      .playhead { background:#0c0d0f; box-shadow:0 0 10px rgba(12,13,15,.45); }
+      .playhead::before { background:#0c0d0f; }
+      /* focus ring + glows tuned to ink */
+      .field input:focus, .field textarea:focus, .field select:focus { box-shadow:0 0 0 3px rgba(12,13,15,.14); }
+      .dot.saved { box-shadow:0 0 8px rgba(12,13,15,.4); }
+      .clip { color:#0c0d0f; }
+      .clip.audio-clip { color:#063b29; }
+    }
   </style>
 </head>
 <body>
   <div id="toast"></div>
   <div id="app">
     <div class="topbar">
-      <div class="brand"><span class="logo" id="logoIcon"><img src="/packages/editor/logo.svg" width="30" height="30" alt="logo"/></span><b>VIDEO<span>GEN</span>PRO</b></div>
+      <div class="brand"><span class="logo" id="logoIcon" aria-hidden="true"><svg viewBox="0 0 200 200" width="30" height="30" fill="none"><path d="M50 100 C50 60 90 60 100 100 C110 140 150 140 150 100 C150 60 110 60 100 100 C90 140 50 140 50 100Z" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>VIDEO<span>GEN</span>PRO</b></div>
       <div class="menu-wrap">
         <button class="btn" id="fileBtn" aria-haspopup="menu"><span id="fileIcon" aria-hidden="true"></span>File</button>
         <div class="menu" id="fileMenu" role="menu"></div>
@@ -387,8 +672,8 @@
         <div class="add-grid">
           <button class="btn" id="addText" aria-label="Add text layer"><span id="i-text" aria-hidden="true"></span>Text</button>
           <button class="btn" id="addShape" aria-label="Add shape layer"><span id="i-shape" aria-hidden="true"></span>Shape</button>
-          <button class="btn" id="addLine" aria-label="Add line layer"><span id="i-line" aria-hidden="true"></span>Line</button>
-          <button class="btn" id="add3D" aria-label="Add 3D layer"><span id="i-3d" aria-hidden="true"></span>3D</button>
+          <button class="btn wide" id="addLine" aria-label="Add line layer"><span id="i-line" aria-hidden="true"></span>Line</button>
+          <button class="btn" id="add3D" aria-label="Add 3D layer" style="display:none"><span id="i-3d" aria-hidden="true"></span>3D</button>
         </div>
         <div class="sec-title">Scenes</div>
         <div class="add-grid">
@@ -407,7 +692,10 @@
           <div id="selbox">
             <div class="sh" data-h="nw"></div><div class="sh" data-h="ne"></div>
             <div class="sh" data-h="sw"></div><div class="sh" data-h="se"></div>
-            <div class="sh sh-crop" data-h="crop" title="Drag to crop (image / video)"></div>
+            <div class="sh sh-crop" data-h="crop-t" title="Drag to crop top edge"></div>
+            <div class="sh sh-crop" data-h="crop-r" title="Drag to crop right edge"></div>
+            <div class="sh sh-crop" data-h="crop-b" title="Drag to crop bottom edge"></div>
+            <div class="sh sh-crop" data-h="crop-l" title="Drag to crop left edge"></div>
           </div>
         </div></div>
         <div class="seekbar" id="seekbar" title="Drag to scrub">
@@ -445,7 +733,7 @@
           <button class="tp-btn on" id="tpLoop" title="Loop" aria-label="Toggle loop" aria-pressed="true"></button>
         </div>
         <div class="spacer"></div>
-        <button class="tp-btn sm" id="btnFull" title="Fullscreen preview" aria-label="Fullscreen preview"><span id="i-full" aria-hidden="true"></span></button>
+        <button class="tp-btn sm" id="btnFull" title="Fullscreen preview" aria-label="Fullscreen preview" style="display:none"><span id="i-full" aria-hidden="true"></span></button>
         <button class="tp-btn sm" id="btnZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
         <button class="tp-btn sm" id="btnFit" title="Fit timeline to window" aria-label="Fit timeline to window"><span id="i-fit" aria-hidden="true"></span></button>
         <button class="tp-btn sm" id="btnZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
@@ -456,8 +744,33 @@
   </div>
 
   <div class="render-bar" id="renderBar">
-    <div class="top"><span id="renderLabel">Rendering…</span><span class="pct" id="renderPct">0%</span></div>
-    <div class="render-track"><div class="render-fill" id="renderFill"></div></div>
+    <div class="render-head">
+      <!-- looping animated render mark: rotating gradient ring + counter-rotating
+           film-strip core + pulsing centre dot. Pure CSS keyframes (no JS) so the
+           prefers-reduced-motion block below can freeze it. -->
+      <svg id="renderSpinner" class="render-spinner" viewBox="0 0 48 48" aria-hidden="true" width="44" height="44">
+        <defs>
+          <linearGradient id="rsGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#fff" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <!-- faint full track -->
+        <circle class="rs-track" cx="24" cy="24" r="19" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="3"/>
+        <!-- rotating gradient arc (CSS-animated so reduced-motion can stop it) -->
+        <circle class="rs-arc" cx="24" cy="24" r="19" fill="none" stroke="url(#rsGrad)" stroke-width="3"
+          stroke-linecap="round" stroke-dasharray="70 200"/>
+        <!-- counter-rotating inner film-strip ring of dashes -->
+        <circle class="rs-film" cx="24" cy="24" r="11" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="4"
+          stroke-dasharray="2 5"/>
+        <!-- pulsing core dot -->
+        <circle class="rs-core" cx="24" cy="24" r="3.2" fill="#fff"/>
+      </svg>
+      <div class="render-meta">
+        <div class="top"><span id="renderLabel">Rendering…</span><span class="pct" id="renderPct">0%</span></div>
+        <div class="render-track"><div class="render-fill" id="renderFill"></div></div>
+      </div>
+    </div>
   </div>
 
   <div class="modal-bg" id="openModal" role="dialog" aria-modal="true" aria-labelledby="openModalTitle">
@@ -494,9 +807,7 @@
   <div class="modal-bg" id="projModal" role="dialog" aria-modal="true" aria-label="Project">
     <div class="modal proj-modal">
       <div class="proj-tabs">
-        <button class="proj-tab" data-v="comp">Compositions</button>
-        <button class="proj-tab" data-v="assets">Assets</button>
-        <button class="proj-tab" data-v="code">Code</button>
+        <button class="proj-tab on" data-v="comp">Compositions</button>
         <div class="spacer"></div>
         <button class="btn" id="projClose" aria-label="Close">✕</button>
       </div>

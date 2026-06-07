@@ -1085,16 +1085,22 @@ function initSelHandles() {
       // CROP handle (the center dot): drag to crop an image/video via clip-path insets.
       // Horizontal drag crops left+right, vertical drag crops top+bottom (each side % of
       // the rect, clamped). Live + deterministic (runtime applies layer.crop at seek).
-      if (h.getAttribute('data-h') === 'crop') {
+      // CROP — standard EDGE handles (crop-t/r/b/l): drag a side inward to crop that side.
+      const cropEdge = h.getAttribute('data-h') || '';
+      if (cropEdge.startsWith('crop-')) {
         if (layer.type !== 'image' && layer.type !== 'video') { showToast('Crop applies to images & videos.'); return; }
         if (!layer.rect) layer.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
-        const r = layer.rect; const sc = S.scale || 1; const sx = e.clientX, sy = e.clientY;
-        const st = { t: layer.crop?.t ?? 0, rr: layer.crop?.r ?? 0, b: layer.crop?.b ?? 0, l: layer.crop?.l ?? 0 };
+        const r = layer.rect; const sc = S.scale || 1; const sx = e.clientX, sy = e.clientY; const side = cropEdge.slice(5);
+        const st = { t: layer.crop?.t ?? 0, r: layer.crop?.r ?? 0, b: layer.crop?.b ?? 0, l: layer.crop?.l ?? 0 };
         const cl = (v: number) => Math.max(0, Math.min(95, +v.toFixed(2)));
         const mv = (ev: MouseEvent) => {
           const dxPct = ((ev.clientX - sx) / sc) / r.w * 100, dyPct = ((ev.clientY - sy) / sc) / r.h * 100;
-          layer.crop = { l: cl(st.l + dxPct), r: cl(st.rr + dxPct), t: cl(st.t + dyPct), b: cl(st.b + dyPct) };
-          liveSeek(); updateSelBox();
+          const c = { t: st.t, r: st.r, b: st.b, l: st.l };
+          if (side === 't') c.t = cl(st.t + dyPct);        // drag the top edge DOWN → crop more off the top
+          else if (side === 'b') c.b = cl(st.b - dyPct);   // drag the bottom edge UP → crop more off the bottom
+          else if (side === 'l') c.l = cl(st.l + dxPct);   // drag the left edge RIGHT → crop more off the left
+          else if (side === 'r') c.r = cl(st.r - dxPct);   // drag the right edge LEFT → crop more off the right
+          layer.crop = c; liveSeek(); updateSelBox();
         };
         const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); scheduleSave(); buildProps(); };
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);

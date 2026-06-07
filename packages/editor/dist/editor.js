@@ -7220,7 +7220,8 @@
         e.stopPropagation();
         const layer2 = S.ir.scenes[S.selected.s].layers[S.selected.l];
         const sceneIdx = S.selected.s;
-        if (h.getAttribute("data-h") === "crop") {
+        const cropEdge = h.getAttribute("data-h") || "";
+        if (cropEdge.startsWith("crop-")) {
           if (layer2.type !== "image" && layer2.type !== "video") {
             showToast("Crop applies to images & videos.");
             return;
@@ -7229,11 +7230,17 @@
           const r2 = layer2.rect;
           const sc2 = S.scale || 1;
           const sx = e.clientX, sy = e.clientY;
-          const st = { t: layer2.crop?.t ?? 0, rr: layer2.crop?.r ?? 0, b: layer2.crop?.b ?? 0, l: layer2.crop?.l ?? 0 };
+          const side = cropEdge.slice(5);
+          const st = { t: layer2.crop?.t ?? 0, r: layer2.crop?.r ?? 0, b: layer2.crop?.b ?? 0, l: layer2.crop?.l ?? 0 };
           const cl = (v) => Math.max(0, Math.min(95, +v.toFixed(2)));
           const mv2 = (ev) => {
             const dxPct = (ev.clientX - sx) / sc2 / r2.w * 100, dyPct = (ev.clientY - sy) / sc2 / r2.h * 100;
-            layer2.crop = { l: cl(st.l + dxPct), r: cl(st.rr + dxPct), t: cl(st.t + dyPct), b: cl(st.b + dyPct) };
+            const c = { t: st.t, r: st.r, b: st.b, l: st.l };
+            if (side === "t") c.t = cl(st.t + dyPct);
+            else if (side === "b") c.b = cl(st.b - dyPct);
+            else if (side === "l") c.l = cl(st.l + dxPct);
+            else if (side === "r") c.r = cl(st.r - dxPct);
+            layer2.crop = c;
             liveSeek();
             updateSelBox();
           };
