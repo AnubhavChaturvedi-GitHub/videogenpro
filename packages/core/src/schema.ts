@@ -60,6 +60,8 @@ const baseLayer = {
   groupId: z.string().optional(),
   // crop (image/video): inset % from each side -> clip-path on the media element.
   crop: z.object({ t: z.number(), r: z.number(), b: z.number(), l: z.number() }).optional(),
+  // Match & Move pairing key (optional; runtime auto-pairs by src/text when unset).
+  matchId: z.string().optional(),
 };
 
 const layer = z.discriminatedUnion('type', [

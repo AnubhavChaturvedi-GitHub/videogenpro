@@ -60,12 +60,19 @@ export type Preset = {
   // For text presets: split the element and animate each piece with stagger.
   split?: 'word' | 'char';
 
+  // Match & Move: a "smart" scene transition that MORPHS matching elements (same
+  // matchId / src / text) from their position+size+rotation in the outgoing scene to
+  // the incoming one, while non-matched elements cross-fade. The runtime special-cases
+  // this per-layer (a normal whole-scene transition() can't move individual elements).
+  matchMove?: boolean;
+
   // Enter/emphasis/exit & image presets implement apply().
   apply?: (p: number, params: Record<string, number>, ctx: ApplyCtx) => StyleDelta;
 
   // Transitions implement transition(): how the outgoing (from) and incoming (to)
-  // scene/layer are styled across the crossover.
-  transition?: (p: number, params: Record<string, number>) => { from: StyleDelta; to: StyleDelta };
+  // scene/layer are styled across the crossover. Optional `over` styles a full-frame
+  // overlay element above both scenes (e.g. a colour panel sweeping across — Colour Wipe).
+  transition?: (p: number, params: Record<string, number>) => { from: StyleDelta; to: StyleDelta; over?: StyleDelta };
 };
 
 // Resolve an instance's params against the preset's defaults.

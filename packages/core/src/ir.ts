@@ -47,6 +47,9 @@ export interface BaseLayer {
   groupId?: string;
   // crop (image/video): inset % from each side, applied as a clip-path on the media.
   crop?: { t: number; r: number; b: number; l: number };
+  // Match & Move: an explicit pairing key so the SAME logical element across two scenes
+  // morphs during a match-move transition. If unset, the runtime auto-pairs by src/text.
+  matchId?: string;
 }
 
 export interface TextLayer extends BaseLayer {

@@ -4334,7 +4334,9 @@
     // POST /api/composition validation instead of being stripped/rejected.
     groupId: external_exports.string().optional(),
     // crop (image/video): inset % from each side -> clip-path on the media element.
-    crop: external_exports.object({ t: external_exports.number(), r: external_exports.number(), b: external_exports.number(), l: external_exports.number() }).optional()
+    crop: external_exports.object({ t: external_exports.number(), r: external_exports.number(), b: external_exports.number(), l: external_exports.number() }).optional(),
+    // Match & Move pairing key (optional; runtime auto-pairs by src/text when unset).
+    matchId: external_exports.string().optional()
   };
   var layer = external_exports.discriminatedUnion("type", [
     external_exports.object({ ...baseLayer, type: external_exports.literal("text"), text: external_exports.string(), style: external_exports.record(external_exports.string()).optional() }),
@@ -5274,6 +5276,89 @@
           to: { rotate: -(1 - e) * deg, scale: 0.4 + 0.6 * e, opacity: e, blur: (1 - e) * 8 }
         };
       }
+    },
+    // ── Canva-parity additions ───────────────────────────────────────────────
+    {
+      id: "transition.color-wipe",
+      category: "transition",
+      description: "A solid colour panel sweeps across, covering the old scene then revealing the new one \u2014 Canva-style colour wipe.",
+      tags: ["wipe", "directional", "colour", "canva"],
+      params: { hue: { default: 320, min: 0, max: 360, desc: "panel colour (hue)" }, dir: { default: 0, min: 0, max: 1, desc: "0=left\u2192right 1=right\u2192left" } },
+      defaultDuration: 0.8,
+      transition: (p, prm) => {
+        const e = ease("easeInOutCubic", p);
+        const sign = prm.dir >= 0.5 ? -1 : 1;
+        const x = sign * (e < 0.5 ? e * 2 - 1 : (e - 0.5) * 2) * 100;
+        const col = `hsl(${Math.round(prm.hue)}, 85%, 58%)`;
+        return {
+          from: { opacity: e < 0.5 ? 1 : 0 },
+          // swap the scene behind the panel at the cover point
+          to: { opacity: e < 0.5 ? 0 : 1 },
+          over: { opacity: 1, css: { background: col, transform: `translateX(${x}%)` } }
+        };
+      }
+    },
+    {
+      id: "transition.stack",
+      category: "transition",
+      description: "The new scene slides in and stacks on top of the old one, which recedes slightly \u2014 Canva-style stack.",
+      tags: ["directional", "layered", "canva"],
+      params: { dir: { default: 0, min: 0, max: 3, desc: "0=up 1=down 2=left 3=right" } },
+      defaultDuration: 0.7,
+      transition: (p, prm) => {
+        const e = ease("easeOutCubic", p);
+        const d = Math.round(prm.dir);
+        const off = (1 - e) * 100;
+        const tf = d === 0 ? `translateY(${off}%)` : d === 1 ? `translateY(${-off}%)` : d === 2 ? `translateX(${off}%)` : `translateX(${-off}%)`;
+        return {
+          from: { scale: 1 - 0.05 * e, brightness: 1 - 0.22 * e, opacity: 1 },
+          to: { opacity: 1, css: { transform: tf, boxShadow: "0 0 60px rgba(0,0,0,.5)" } }
+        };
+      }
+    },
+    {
+      id: "transition.chop",
+      category: "transition",
+      description: "The new scene opens smoothly from the centre line outward \u2014 a quick but eased reveal (Canva-style chop).",
+      tags: ["reveal", "quick", "smooth", "canva"],
+      params: { axis: { default: 0, min: 0, max: 1, desc: "0=horizontal split 1=vertical split" } },
+      defaultDuration: 0.55,
+      transition: (p, prm) => {
+        const e = ease("easeInOutCubic", p);
+        const inset = (1 - e) * 50;
+        const clip = prm.axis >= 0.5 ? [0, inset, 0, inset] : [inset, 0, inset, 0];
+        return { from: { opacity: 1 - e * 0.4 }, to: { opacity: 1, clipInset: clip } };
+      }
+    },
+    {
+      id: "transition.flow",
+      category: "transition",
+      description: "A subtle directional glide \u2014 both scenes drift gently while cross-fading, for a soft premium feel \u2014 Canva-style flow.",
+      tags: ["soft", "directional", "subtle", "canva"],
+      params: { dir: { default: 0, min: 0, max: 3, desc: "0=left 1=right 2=up 3=down" } },
+      defaultDuration: 0.8,
+      transition: (p, prm) => {
+        const e = ease("easeInOut", p);
+        const d = Math.round(prm.dir);
+        const amt = 9;
+        const tx = (frac) => d <= 1 ? `translateX(${(d === 1 ? 1 : -1) * frac}%)` : `translateY(${(d === 3 ? 1 : -1) * frac}%)`;
+        return {
+          from: { opacity: 1 - e, css: { transform: tx(-e * amt) } },
+          to: { opacity: e, css: { transform: tx((1 - e) * amt) } }
+        };
+      }
+    },
+    {
+      id: "transition.match-move",
+      category: "transition",
+      matchMove: true,
+      description: `Match & Move \u2014 elements that appear in BOTH scenes (same matchId, image src, or text) glide and scale from their old position to the new one while everything else cross-fades. Canva's signature "magic" morph.`,
+      tags: ["morph", "smart", "magic", "canva", "match", "move"],
+      params: {},
+      defaultDuration: 0.9,
+      // Identity placeholder — the runtime special-cases match-move per-layer (a whole-scene
+      // transition() cannot move individual elements); this just makes preset.transition truthy.
+      transition: () => ({ from: { opacity: 1 }, to: { opacity: 1 } })
     }
   ];
 
@@ -6974,7 +7059,7 @@
           const sc2 = S.scale || 1;
           const sx = e.clientX, sy = e.clientY;
           const st = { t: layer2.crop?.t ?? 0, rr: layer2.crop?.r ?? 0, b: layer2.crop?.b ?? 0, l: layer2.crop?.l ?? 0 };
-          const cl = (v) => Math.max(0, Math.min(45, +v.toFixed(2)));
+          const cl = (v) => Math.max(0, Math.min(95, +v.toFixed(2)));
           const mv2 = (ev) => {
             const dxPct = (ev.clientX - sx) / sc2 / r2.w * 100, dyPct = (ev.clientY - sy) / sc2 / r2.h * 100;
             layer2.crop = { l: cl(st.l + dxPct), r: cl(st.rr + dxPct), t: cl(st.t + dyPct), b: cl(st.b + dyPct) };
@@ -8007,10 +8092,10 @@
         layer2.crop[k] = v;
         liveEdit();
       };
-      add(numField("top", layer2.crop?.t ?? 0, 0, 45, 1, (v) => setCrop("t", v)));
-      add(numField("right", layer2.crop?.r ?? 0, 0, 45, 1, (v) => setCrop("r", v)));
-      add(numField("bottom", layer2.crop?.b ?? 0, 0, 45, 1, (v) => setCrop("b", v)));
-      add(numField("left", layer2.crop?.l ?? 0, 0, 45, 1, (v) => setCrop("l", v)));
+      add(numField("top", layer2.crop?.t ?? 0, 0, 95, 1, (v) => setCrop("t", v)));
+      add(numField("right", layer2.crop?.r ?? 0, 0, 95, 1, (v) => setCrop("r", v)));
+      add(numField("bottom", layer2.crop?.b ?? 0, 0, 95, 1, (v) => setCrop("b", v)));
+      add(numField("left", layer2.crop?.l ?? 0, 0, 95, 1, (v) => setCrop("l", v)));
     }
     if (layer2.type === "shape") {
       h("shape");

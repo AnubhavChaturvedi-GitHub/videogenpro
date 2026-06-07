@@ -1004,7 +1004,7 @@ function initSelHandles() {
         if (!layer.rect) layer.rect = { x: Math.round(S.ir.width * 0.06), y: Math.round(S.ir.height * 0.06), w: Math.round(S.ir.width * 0.88), h: Math.round(S.ir.height * 0.88) };
         const r = layer.rect; const sc = S.scale || 1; const sx = e.clientX, sy = e.clientY;
         const st = { t: layer.crop?.t ?? 0, rr: layer.crop?.r ?? 0, b: layer.crop?.b ?? 0, l: layer.crop?.l ?? 0 };
-        const cl = (v: number) => Math.max(0, Math.min(45, +v.toFixed(2)));
+        const cl = (v: number) => Math.max(0, Math.min(95, +v.toFixed(2)));
         const mv = (ev: MouseEvent) => {
           const dxPct = ((ev.clientX - sx) / sc) / r.w * 100, dyPct = ((ev.clientY - sy) / sc) / r.h * 100;
           layer.crop = { l: cl(st.l + dxPct), r: cl(st.rr + dxPct), t: cl(st.t + dyPct), b: cl(st.b + dyPct) };
@@ -1692,10 +1692,10 @@ function buildProps() {
     // the center selbox dot to crop on the preview, or fine-tune per side here.
     h('crop (%)');
     const setCrop = (k: 't' | 'r' | 'b' | 'l', v: number) => { layer.crop = layer.crop || { t: 0, r: 0, b: 0, l: 0 }; (layer.crop as any)[k] = v; liveEdit(); };
-    add(numField('top', layer.crop?.t ?? 0, 0, 45, 1, (v) => setCrop('t', v)));
-    add(numField('right', layer.crop?.r ?? 0, 0, 45, 1, (v) => setCrop('r', v)));
-    add(numField('bottom', layer.crop?.b ?? 0, 0, 45, 1, (v) => setCrop('b', v)));
-    add(numField('left', layer.crop?.l ?? 0, 0, 45, 1, (v) => setCrop('l', v)));
+    add(numField('top', layer.crop?.t ?? 0, 0, 95, 1, (v) => setCrop('t', v)));
+    add(numField('right', layer.crop?.r ?? 0, 0, 95, 1, (v) => setCrop('r', v)));
+    add(numField('bottom', layer.crop?.b ?? 0, 0, 95, 1, (v) => setCrop('b', v)));
+    add(numField('left', layer.crop?.l ?? 0, 0, 95, 1, (v) => setCrop('l', v)));
   }
   if (layer.type === 'shape') { h('shape'); add(colorField('fill color', layer.fill || '#ffffff', (v) => { layer.fill = v; structuralEdit(); })); }
   if (layer.type === 'overlay') {

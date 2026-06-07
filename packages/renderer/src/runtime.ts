@@ -24,6 +24,7 @@ type ThreeHandle = { render: (t: number, props: Record<string, number>) => void;
 
 let comp: Composition;
 let sceneNodes: SceneNode[] = [];
+let transOverEl: HTMLDivElement | null = null; // full-frame transition overlay (colour wipe)
 let stage: HTMLDivElement;
 let assetBase: string | undefined;
 let audioEls: { el: HTMLAudioElement; track: any }[] = [];
@@ -264,6 +265,52 @@ function applySceneDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
   clearStaleCss(el, applied, new Set(['transform', 'clipPath', 'filter', 'opacity', 'transformOrigin']));
 }
 
+// ── Match & Move + transition-overlay helpers ──────────────────────────────
+type Box = { cx: number; cy: number; w: number; h: number; rot: number };
+// authored "home" box (rect + transform) in comp px — the morph endpoints.
+function homeBox(layer: any): Box {
+  const r = layer.rect ?? { x: 0, y: 0, w: comp.width, h: comp.height };
+  const tf = layer.transform ?? {}; const s = tf.scale ?? 1;
+  return { cx: r.x + r.w / 2 + (tf.x ?? 0), cy: r.y + r.h / 2 + (tf.y ?? 0), w: r.w * s, h: r.h * s, rot: tf.rotate ?? 0 };
+}
+const lerpN = (a: number, b: number, e: number) => a + (b - a) * e;
+const lerpBox = (a: Box, b: Box, e: number): Box => ({ cx: lerpN(a.cx, b.cx, e), cy: lerpN(a.cy, b.cy, e), w: lerpN(a.w, b.w, e), h: lerpN(a.h, b.h, e), rot: lerpN(a.rot, b.rot, e) });
+// pairing key: explicit matchId wins, else same media src / text / shape.
+function matchKey(layer: any): string | null {
+  if (layer.matchId) return 'id:' + layer.matchId;
+  if (layer.type === 'image' || layer.type === 'video') return 'src:' + layer.src;
+  if (layer.type === 'text') return 'text:' + String(layer.text ?? '').trim();
+  if (layer.type === 'shape') return 'shape:' + layer.shape + ':' + (layer.fill ?? '');
+  return null;
+}
+// pair outgoing(prev) <-> incoming(cur) layers by key (first-come, one-to-one).
+function matchPairs(prev: SceneNode, cur: SceneNode): { a: LayerNode; b: LayerNode }[] {
+  const pairs: { a: LayerNode; b: LayerNode }[] = []; const used = new Set<LayerNode>();
+  for (const b of cur.layers) {
+    const k = matchKey(b.layer); if (!k) continue;
+    const a = prev.layers.find((p) => !used.has(p) && matchKey(p.layer) === k);
+    if (a) { used.add(a); pairs.push({ a, b }); }
+  }
+  return pairs;
+}
+// place a layer element at an arbitrary comp-space box (overrides its own transform).
+function applyMorph(ln: LayerNode, t: Box, opacity: number) {
+  const layer = ln.layer; const r = layer.rect ?? { x: 0, y: 0, w: comp.width, h: comp.height };
+  const baseCx = r.x + r.w / 2, baseCy = r.y + r.h / 2; // == the element's left/top anchor
+  const S = r.w ? t.w / r.w : 1;
+  ln.el.style.display = (layer.type === 'text') ? 'flex' : 'block';
+  ln.el.style.transformOrigin = 'center center';
+  ln.el.style.transform = `translate(-50%, -50%) translate(${px(t.cx - baseCx)}, ${px(t.cy - baseCy)}) scale(${S}) rotate(${t.rot}deg)`;
+  ln.el.style.opacity = String(clamp01(opacity));
+  ln.el.style.filter = ''; ln.el.style.clipPath = '';
+}
+// full-frame transition overlay (e.g. colour wipe). Call with no arg to clear it.
+function applyOver(over?: StyleDelta) {
+  if (!transOverEl) return;
+  if (!over) { transOverEl.style.display = 'none'; transOverEl.style.opacity = '0'; return; }
+  const d = emptyDelta(); combine(d, over); transOverEl.style.display = 'block'; applySceneDelta(transOverEl, d);
+}
+
 function applyDelta(el: HTMLElement, d: ReturnType<typeof emptyDelta>) {
   const t = `translate(-50%, -50%) translate(${px(d.x)}, ${px(d.y)}) scale(${d.scale}) rotate(${d.rotate}deg)`;
   el.style.transform = d.css.transform ? `${t} ${d.css.transform}` : t;
@@ -458,6 +505,11 @@ function mount(c: Composition, opts?: { assetBase?: string }) {
     for (const ln of layers) sEl.appendChild(ln.el);
     sceneNodes.push({ el: sEl, scene, layers, offset: offs[i] });
   });
+  // full-frame overlay above every scene, for transitions that paint over both scenes
+  // (colour wipe). Hidden by default; driven by applyOver() during a transition.
+  transOverEl = document.createElement('div');
+  transOverEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;display:none;z-index:9999;will-change:transform,opacity';
+  stage.appendChild(transOverEl);
 }
 
 // Reconcile audio tracks across re-mounts so editing/clicking never restarts narration.
@@ -686,10 +738,12 @@ async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
     n.el.style.display = 'none'; n.el.style.transform = ''; n.el.style.opacity = '1'; n.el.style.clipPath = ''; n.el.style.filter = '';
     clearStaleCss(n.el, new Set<string>(), new Set(['transform', 'clipPath', 'filter', 'opacity', 'transformOrigin']));
   });
+  applyOver(); // hide the transition overlay unless this frame's transition paints it
 
   // transition handling (from previous scene into current)
   const transInst: PresetInstance | undefined = cur.scene.transitionIn ?? (i > 0 ? comp.defaultTransition : undefined);
   let inTransition = false;
+  let mm: { e: number; items: { a: LayerNode; b: LayerNode; A: Box; B: Box }[]; matched: Set<LayerNode> } | null = null;
   if (i > 0 && transInst) {
     const preset = getPreset(transInst.id);
     const prev = sceneNodes[i - 1];
@@ -701,14 +755,29 @@ async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
     if (preset?.transition && sceneLocalT < tdur) {
       inTransition = true;
       const p = clamp01(sceneLocalT / tdur);
-      const { from, to } = preset.transition(p, resolveParams(preset, transInst.params));
-      // render prev frozen at its end (guard against a zero/short scene -> no negative time)
-      prev.el.style.display = 'block';
-      const prevD = emptyDelta(); combine(prevD, from); applySceneDelta(prev.el, prevD);
-      prev.layers.forEach((ln) => renderLayer(ln, Math.max(0, prev.scene.duration - 0.0001), prev.scene.duration));
-      // current with `to`
-      cur.el.style.display = 'block';
-      const curD = emptyDelta(); combine(curD, to); applySceneDelta(cur.el, curD);
+      const prevEnd = Math.max(0, prev.scene.duration - 0.0001);
+      if (preset.matchMove) {
+        // ── Match & Move: morph matched elements, cross-fade everything else ──
+        const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; // easeInOutCubic
+        const pairs = matchPairs(prev, cur);
+        const matched = new Set<LayerNode>(); pairs.forEach((x) => { matched.add(x.a); matched.add(x.b); });
+        prev.el.style.display = 'block'; prev.el.style.transform = ''; prev.el.style.opacity = '1'; prev.el.style.clipPath = ''; prev.el.style.filter = '';
+        prev.layers.forEach((ln) => renderLayer(ln, prevEnd, prev.scene.duration));
+        const items = pairs.map(({ a, b }) => ({ a, b, A: homeBox(a.layer), B: homeBox(b.layer) }));
+        for (const it of items) applyMorph(it.a, lerpBox(it.A, it.B, e), 1 - e);       // outgoing copy fades out
+        for (const ln of prev.layers) if (!matched.has(ln) && ln.el.style.display !== 'none') ln.el.style.opacity = String(1 - e);
+        cur.el.style.display = 'block'; cur.el.style.transform = ''; cur.el.style.opacity = '1'; cur.el.style.clipPath = ''; cur.el.style.filter = '';
+        applyOver();
+        mm = { e, items, matched };
+      } else {
+        const { from, to, over } = preset.transition(p, resolveParams(preset, transInst.params));
+        prev.el.style.display = 'block';
+        const prevD = emptyDelta(); combine(prevD, from); applySceneDelta(prev.el, prevD);
+        prev.layers.forEach((ln) => renderLayer(ln, prevEnd, prev.scene.duration));
+        cur.el.style.display = 'block';
+        const curD = emptyDelta(); combine(curD, to); applySceneDelta(cur.el, curD);
+        applyOver(over);
+      }
     }
   }
   if (!inTransition) {
@@ -718,6 +787,13 @@ async function seek(time: number, opts?: { playing?: boolean }): Promise<void> {
 
   // render current scene layers
   cur.layers.forEach((ln) => renderLayer(ln, sceneLocalT, cur.scene.duration));
+  // Match & Move: override the incoming matched elements to the morph box and fade the
+  // rest in (deterministic — pure function of the eased progress). Done after the normal
+  // render so it wins over each layer's own entrance preset.
+  if (mm) {
+    for (const ln of cur.layers) { if (!mm.matched.has(ln) && ln.el.style.display !== 'none') ln.el.style.opacity = String(mm.e); }
+    for (const it of mm.items) applyMorph(it.b, lerpBox(it.A, it.B, mm.e), mm.e); // incoming copy fades in
+  }
 
   // pause videos belonging to other (hidden) scenes
   sceneNodes.forEach((n, k) => { if (k !== i) n.layers.forEach((l) => { if (l.video && !l.video.paused) l.video.pause(); }); });
