@@ -298,6 +298,19 @@ const server = createServer((req, res) => {
     return json(res, 200, locs);
   }
 
+  // native folder picker so the user can save ANYWHERE, not just the presets ("Browse…").
+  // Uses async spawn (never spawnSync) so the dialog blocking on the user doesn't freeze the server.
+  if (path === '/api/pick-folder' && req.method === 'GET') {
+    if (process.platform !== 'darwin') return json(res, 200, { ok: false, error: 'native folder picker is macOS-only' });
+    const child = spawn('osascript', ['-e', 'POSIX path of (choose folder with prompt "Choose a folder to save the export")']);
+    let out = '', done = false;
+    const finish = (obj: any) => { if (done) return; done = true; json(res, 200, obj); };
+    child.stdout.on('data', (d) => (out += d));
+    child.on('error', () => finish({ ok: false, error: 'could not open the folder picker' }));
+    child.on('close', (code) => { const p = out.trim(); finish(code === 0 && p ? { ok: true, path: p } : { ok: false, cancelled: true }); });
+    return;
+  }
+
   // cancel an in-flight export — kill the whole render process group (tsx + chromium + ffmpeg)
   if (path === '/api/render/cancel' && req.method === 'POST') {
     if (renderChild?.pid) { renderCancelled = true; try { process.kill(-renderChild.pid, 'SIGKILL'); } catch { try { renderChild.kill('SIGKILL'); } catch {} } return json(res, 200, { ok: true }); }

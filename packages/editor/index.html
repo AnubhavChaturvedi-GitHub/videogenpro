@@ -835,7 +835,12 @@
         </div>
       </label>
       <label class="nm-field">File name<input id="exportName" type="text" placeholder="render" autocomplete="off" /></label>
-      <label class="nm-field">Save to<select id="exportDir"></select></label>
+      <label class="nm-field">Save to
+        <div style="display:flex; gap:6px; align-items:stretch;">
+          <select id="exportDir" style="flex:1; min-width:0;"></select>
+          <button class="btn" id="exportBrowse" type="button" style="white-space:nowrap;">Browse…</button>
+        </div>
+      </label>
       <p style="font-size:11px;color:var(--dim);margin:4px 0 0">High-quality MP4 (H.264). Rendered in parallel for speed.</p>
       <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end;">
         <button class="btn" id="exportCancel">Cancel</button>

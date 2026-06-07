@@ -25465,6 +25465,23 @@
     $("exportModal").addEventListener("mousedown", (e) => {
       if (e.target === $("exportModal")) closeModalById("exportModal");
     });
+    $("exportBrowse").onclick = async () => {
+      try {
+        const r = await (await fetch("/api/pick-folder")).json();
+        if (r.ok && r.path) {
+          const sel = $("exportDir");
+          let o = [...sel.options].find((x) => x.value === r.path);
+          if (!o) {
+            o = document.createElement("option");
+            o.value = r.path;
+            o.textContent = "Chosen  \xB7  " + r.path;
+            sel.insertBefore(o, sel.firstChild);
+          }
+          sel.value = r.path;
+        } else if (r.error) showToast(r.error);
+      } catch {
+      }
+    };
     $("exportRes").querySelectorAll(".res-opt").forEach((b) => b.onclick = () => {
       $("exportRes").querySelectorAll(".res-opt").forEach((x) => x.classList.remove("on"));
       b.classList.add("on");
