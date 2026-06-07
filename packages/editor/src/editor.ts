@@ -1062,12 +1062,18 @@ function updateSelBox() {
   const cx = r.x + r.w / 2 + d.x;
   const cy = r.y + r.h / 2 + d.y;
   const w = r.w * sc, h = r.h * sc;
+  // CROP-aware selection: inset the box by the layer's crop so it wraps the VISIBLE (cropped)
+  // image — not the full rect — and shrinks/grows live as the edge crop handles are dragged.
+  const cp = (layer as any).crop || {};
+  const cl = (cp.l || 0) / 100 * w, cr = (cp.r || 0) / 100 * w, ct = (cp.t || 0) / 100 * h, cb = (cp.b || 0) / 100 * h;
+  const boxW = Math.max(2, w - cl - cr), boxH = Math.max(2, h - ct - cb);
   box.style.display = 'block';
-  box.style.left = (cx - w / 2) + 'px'; box.style.top = (cy - h / 2) + 'px';
-  box.style.width = w + 'px'; box.style.height = h + 'px';
+  box.style.left = (cx - w / 2 + cl) + 'px'; box.style.top = (cy - h / 2 + ct) + 'px';
+  box.style.width = boxW + 'px'; box.style.height = boxH + 'px';
   const rot = d.rotate;
   box.style.transform = rot ? `rotate(${rot}deg)` : '';
-  box.style.transformOrigin = 'center center';
+  // rotate about the LAYER centre (where the runtime rotates), expressed relative to the inset box
+  box.style.transformOrigin = `${w / 2 - cl}px ${h / 2 - ct}px`;
   const inv = Math.min(2.4, 1 / (S.scale || 1));
   // FEATURE 2: corner handles now drive a uniform scale that COMPOSES with any active
   // preset (scale multiplies), so they're always live — no more grey/not-allowed
