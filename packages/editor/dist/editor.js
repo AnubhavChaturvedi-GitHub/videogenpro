@@ -8576,12 +8576,25 @@
     item("download", "Export as MP4", "", runExport);
   }
   function newComposition() {
-    const name = prompt("Start a NEW empty composition?\nThis replaces what is on screen \u2014 type a name, or press Cancel to keep your current work:", S.ir?.name || "Untitled");
-    if (name === null) return;
-    const nm = name.trim() || "Untitled";
-    setDoc({ fps: 30, width: 1920, height: 1080, name: nm, scenes: [{ id: "scene-1", duration: 5, background: "#0a0a0a", layers: [] }] });
-    scheduleSave();
-    showToast(`New composition \u201C${nm}\u201D`);
+    const inp = $("newName");
+    if (inp) inp.value = "";
+    openModalById("newModal");
+    setTimeout(() => inp?.focus(), 30);
+  }
+  async function createNewFile() {
+    const nm = ($("newName")?.value || "").trim() || "Untitled";
+    const [w, h] = ($("newSize")?.value || "1920x1080").split("x").map(Number);
+    closeModalById("newModal");
+    try {
+      const r = await (await fetch("/api/new", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: nm, width: w, height: h }) })).json();
+      if (r.ok) {
+        S.assetBase = r.assetBase;
+        setDoc(r.ir);
+        showToast(`Created \u201C${nm}\u201D \u2192 ${r.file}`);
+      } else showToast("Could not create file: " + (r.error || "error"));
+    } catch (e) {
+      showToast("Create failed: " + e.message);
+    }
   }
   var menuOpen = false;
   function closeMenu() {
@@ -8938,17 +8951,29 @@
         const f = inp.files?.[0];
         if (!f) return;
         const rd = new FileReader();
-        rd.onload = () => {
+        rd.onload = async () => {
           try {
-            setDoc(JSON.parse(String(rd.result)));
-            scheduleSave();
-            closeModalById("openModal");
-          } catch {
+            const parsed = JSON.parse(String(rd.result));
+            const nm = (f.name || "imported").replace(/\.json$/i, "");
+            const r = await (await fetch("/api/new", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: nm, ir: parsed }) })).json();
+            if (r.ok) {
+              S.assetBase = r.assetBase;
+              setDoc(r.ir);
+              closeModalById("openModal");
+              showToast(`Imported as ${r.file}`);
+            } else showToast("Import failed: " + (r.error || "invalid JSON"));
+          } catch (e) {
+            showToast("Import failed: " + e.message);
           }
         };
         rd.readAsText(f);
       };
       inp.click();
+    };
+    $("newCreate").onclick = createNewFile;
+    $("newCancel").onclick = () => closeModalById("newModal");
+    $("newName").onkeydown = (e) => {
+      if (e.key === "Enter") createNewFile();
     };
     $("addText").onclick = () => addLayerAtPlayhead(newText());
     $("addShape").onclick = () => addLayerAtPlayhead(newShape());

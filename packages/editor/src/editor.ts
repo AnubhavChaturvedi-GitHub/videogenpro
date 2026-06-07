@@ -1986,14 +1986,22 @@ function buildFileMenu() {
   item('save', 'Export as JSON', '⌘S', saveJson);
   item('download', 'Export as MP4', '', runExport);
 }
-// New asks for a NAME — and the prompt doubles as a guard against an accidental wipe
-// (a silent New is exactly what lost the user's work). Cancel keeps the current comp.
+// New opens a dialog and creates a SEPARATE file (After-Effects style): the current
+// composition is preserved under its own name — New never overwrites what you had open.
 function newComposition() {
-  const name = prompt('Start a NEW empty composition?\nThis replaces what is on screen — type a name, or press Cancel to keep your current work:', S.ir?.name || 'Untitled');
-  if (name === null) return; // cancelled → no wipe
-  const nm = name.trim() || 'Untitled';
-  setDoc({ fps: 30, width: 1920, height: 1080, name: nm, scenes: [{ id: 'scene-1', duration: 5, background: '#0a0a0a', layers: [] }] });
-  scheduleSave(); showToast(`New composition “${nm}”`);
+  const inp = $('newName') as HTMLInputElement; if (inp) inp.value = '';
+  openModalById('newModal');
+  setTimeout(() => inp?.focus(), 30);
+}
+async function createNewFile() {
+  const nm = (($('newName') as HTMLInputElement)?.value || '').trim() || 'Untitled';
+  const [w, h] = (($('newSize') as HTMLSelectElement)?.value || '1920x1080').split('x').map(Number);
+  closeModalById('newModal');
+  try {
+    const r = await (await fetch('/api/new', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: nm, width: w, height: h }) })).json();
+    if (r.ok) { S.assetBase = r.assetBase; setDoc(r.ir); showToast(`Created “${nm}” → ${r.file}`); }
+    else showToast('Could not create file: ' + (r.error || 'error'));
+  } catch (e: any) { showToast('Create failed: ' + e.message); }
 }
 let menuOpen = false;
 function closeMenu() { menuOpen = false; $('fileMenu').classList.remove('open'); }
@@ -2210,7 +2218,8 @@ async function init() {
   $('openClose').onclick = () => closeModalById('openModal');
   // close the Open modal on backdrop click too (parity with the project modal).
   $('openModal').addEventListener('mousedown', (e) => { if (e.target === $('openModal')) closeModalById('openModal'); });
-  $('importBtn').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json'; inp.onchange = () => { const f = inp.files?.[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { try { setDoc(JSON.parse(String(rd.result))); scheduleSave(); closeModalById('openModal'); } catch {} }; rd.readAsText(f); }; inp.click(); };
+  $('importBtn').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json'; inp.onchange = () => { const f = inp.files?.[0]; if (!f) return; const rd = new FileReader(); rd.onload = async () => { try { const parsed = JSON.parse(String(rd.result)); const nm = (f.name || 'imported').replace(/\.json$/i, ''); const r = await (await fetch('/api/new', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: nm, ir: parsed }) })).json(); if (r.ok) { S.assetBase = r.assetBase; setDoc(r.ir); closeModalById('openModal'); showToast(`Imported as ${r.file}`); } else showToast('Import failed: ' + (r.error || 'invalid JSON')); } catch (e: any) { showToast('Import failed: ' + e.message); } }; rd.readAsText(f); }; inp.click(); };
+  $('newCreate').onclick = createNewFile; $('newCancel').onclick = () => closeModalById('newModal'); $('newName').onkeydown = (e: KeyboardEvent) => { if (e.key === 'Enter') createNewFile(); };
 
   // add-layer
   $('addText').onclick = () => addLayerAtPlayhead(newText()); $('addShape').onclick = () => addLayerAtPlayhead(newShape()); $('addLine').onclick = () => addLayerAtPlayhead(newLine()); $('add3D').onclick = () => addLayerAtPlayhead(new3D());

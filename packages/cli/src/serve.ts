@@ -85,6 +85,29 @@ const server = createServer((req, res) => {
     return;
   }
 
+  // create a NEW composition file and switch to it — the CURRENT file is left untouched
+  // (After-Effects style: New makes a separate file, never overwrites what you had open).
+  if (path === '/api/new' && req.method === 'POST') {
+    let body = ''; req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      try {
+        const { name, width, height, ir } = JSON.parse(body || '{}');
+        const dir = dirname(active);
+        const base = String(name || 'untitled').trim().replace(/[^\w-]+/g, '-').replace(/(^-+|-+$)/g, '').toLowerCase() || 'untitled';
+        let file = join(dir, base + '.json'); let n = 1;
+        while (existsSync(file)) file = join(dir, `${base}-${n++}.json`); // never clobber an existing file
+        let doc: any;
+        if (ir) { doc = JSON.parse(JSON.stringify(ir)); validateComposition(doc); }      // imported content (validated)
+        else doc = { fps: 30, width: Number(width) || 1920, height: Number(height) || 1080, scenes: [{ id: 'scene-1', duration: 5, background: '#0a0a0a', layers: [] }] };
+        if (!doc.name) doc.name = String(name || 'Untitled').trim() || 'Untitled';
+        writeFileSync(file, JSON.stringify(doc, null, 2));
+        active = file; setWatch(active);
+        json(res, 200, { ok: true, ir: doc, assetBase: assetBaseFor(active), file: relative(root, active) });
+      } catch (e: any) { json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
+    });
+    return;
+  }
+
   if (path === '/api/assets' && req.method === 'GET') {
     const assetsDir = resolve(dirname(active), '..', 'assets');
     const out: any[] = [];
