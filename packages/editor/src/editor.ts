@@ -564,37 +564,34 @@ function buildTimeline() {
   // (offset from the top), dimmer/thinner border, no label — visually subordinate
   // to the labeled major ticks (B-ruler-minor).
   const minorStep = tickStep / 5;
-  for (let t = minorStep; t < eff; t += minorStep) { if (Math.abs((t / tickStep) - Math.round(t / tickStep)) < 1e-6) continue; const mk = el('div', 'tick minor'); mk.style.cssText = `left:${LABELW + t * S.pxPerSec}px;top:14px;height:12px;border-left:1px solid var(--border);opacity:.4;padding:0`; ruler.appendChild(mk); }
-  // B-ruler-tail-tint: when audio extends past the last scene, tint the audio-tail
-  // region of the ruler so the mm:ss labels there aren't misread as scene time. A
-  // subtle band from S.total..eff visually demarcates the scene-backed range.
+  const eps = minorStep * 1e-3;
+  // audio-tail tint (when audio runs past the last scene) — drawn behind the ticks so the
+  // mm:ss labels in that region aren't misread as scene time; a dashed line marks the scene end.
   if (eff > S.total + 1e-6) {
     const tailBand = el('div');
-    tailBand.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:${(eff - S.total) * S.pxPerSec}px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.04) 0 6px,transparent 6px 12px);pointer-events:none`;
+    tailBand.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:${(eff - S.total) * S.pxPerSec}px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.045) 0 6px,transparent 6px 12px);pointer-events:none`;
     ruler.appendChild(tailBand);
-    // a marker line at S.total so the scene-content end is unambiguous
     const mark = el('div');
     mark.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:0;border-left:1px dashed var(--t-audio);opacity:.6;pointer-events:none`;
     mark.title = `scenes end at ${fmtTick(S.total)} — audio tail beyond this point`;
     ruler.appendChild(mark);
   }
-  // span the full effective length (scenes + audio tail) so the audio-tail region
-  // shows labels/subdivisions like the rest of the ruler (B-ruler-tail).
-  // remember the last regular major's time so the forced end tick can suppress its
-  // label when it would visually collide with it (B-ruler-endcollide).
-  let lastMajorT = 0;
-  for (let t = 0; t <= eff + 0.001; t += tickStep) { const tk = el('div', 'tick'); tk.style.left = (LABELW + t * S.pxPerSec) + 'px'; tk.textContent = fmtTick(t); ruler.appendChild(tk); lastMajorT = t; }
-  // always surface the composition end time so the right edge is readable at any
-  // zoom. B-ruler-endcollide: if the forced end tick falls within ~64px of the last
-  // regular major, suppress its LABEL (keep only the line) so the two mm:ss labels
-  // never overlap at high zoom (tickStep=0.5 → adjacent majors a few px apart).
-  if (eff - Math.floor(eff / tickStep) * tickStep > 0.01) {
-    const endk = el('div', 'tick'); endk.style.left = (LABELW + eff * S.pxPerSec) + 'px';
-    const collides = (eff - lastMajorT) * S.pxPerSec < 64;
-    if (collides) { endk.textContent = ''; endk.style.borderColor = 'var(--border)'; }
-    else endk.textContent = fmtTick(eff);
-    ruler.appendChild(endk);
+  // major (labelled) + minor (unlabelled) ticks in one pass, the full length of the timeline.
+  let lastMajorEl: any = null, lastMajorPx = -1e9;
+  for (let t = 0; t < eff - eps; t += minorStep) {
+    const isMajor = Math.abs(t / tickStep - Math.round(t / tickStep)) < 1e-6;
+    const px = LABELW + t * S.pxPerSec;
+    const tk = el('div', isMajor ? 'tick' : 'tick minor');
+    tk.style.left = px + 'px';
+    if (isMajor) { tk.textContent = fmtTick(t); lastMajorEl = tk; lastMajorPx = px; }
+    ruler.appendChild(tk);
   }
+  // the very end: total duration, right-anchored so the scale reads correctly to the last frame
+  // without the label clipping past the edge. Drop the last regular label if it would collide.
+  const endPx = LABELW + eff * S.pxPerSec;
+  if (lastMajorEl && endPx - lastMajorPx < 56) lastMajorEl.textContent = '';
+  const endk = el('div', 'tick end'); endk.style.left = endPx + 'px'; endk.textContent = fmtTick(eff);
+  ruler.appendChild(endk);
   inner.appendChild(ruler); // seeking handled by the unified timeline handler in init()
 
   S.ir.scenes.forEach((scene: any, si: number) => {

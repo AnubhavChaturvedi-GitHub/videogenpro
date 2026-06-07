@@ -22871,39 +22871,35 @@
     const tickStep = STEPS.find((s) => s * S.pxPerSec >= 64) ?? 600;
     const fmtTick = (t) => tickStep < 1 ? `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}` : fmtClock(t);
     const minorStep = tickStep / 5;
-    for (let t = minorStep; t < eff; t += minorStep) {
-      if (Math.abs(t / tickStep - Math.round(t / tickStep)) < 1e-6) continue;
-      const mk = el("div", "tick minor");
-      mk.style.cssText = `left:${LABELW + t * S.pxPerSec}px;top:14px;height:12px;border-left:1px solid var(--border);opacity:.4;padding:0`;
-      ruler.appendChild(mk);
-    }
+    const eps = minorStep * 1e-3;
     if (eff > S.total + 1e-6) {
       const tailBand = el("div");
-      tailBand.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:${(eff - S.total) * S.pxPerSec}px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.04) 0 6px,transparent 6px 12px);pointer-events:none`;
+      tailBand.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:${(eff - S.total) * S.pxPerSec}px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.045) 0 6px,transparent 6px 12px);pointer-events:none`;
       ruler.appendChild(tailBand);
       const mark = el("div");
       mark.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:0;border-left:1px dashed var(--t-audio);opacity:.6;pointer-events:none`;
       mark.title = `scenes end at ${fmtTick(S.total)} \u2014 audio tail beyond this point`;
       ruler.appendChild(mark);
     }
-    let lastMajorT = 0;
-    for (let t = 0; t <= eff + 1e-3; t += tickStep) {
-      const tk = el("div", "tick");
-      tk.style.left = LABELW + t * S.pxPerSec + "px";
-      tk.textContent = fmtTick(t);
+    let lastMajorEl = null, lastMajorPx = -1e9;
+    for (let t = 0; t < eff - eps; t += minorStep) {
+      const isMajor = Math.abs(t / tickStep - Math.round(t / tickStep)) < 1e-6;
+      const px = LABELW + t * S.pxPerSec;
+      const tk = el("div", isMajor ? "tick" : "tick minor");
+      tk.style.left = px + "px";
+      if (isMajor) {
+        tk.textContent = fmtTick(t);
+        lastMajorEl = tk;
+        lastMajorPx = px;
+      }
       ruler.appendChild(tk);
-      lastMajorT = t;
     }
-    if (eff - Math.floor(eff / tickStep) * tickStep > 0.01) {
-      const endk = el("div", "tick");
-      endk.style.left = LABELW + eff * S.pxPerSec + "px";
-      const collides = (eff - lastMajorT) * S.pxPerSec < 64;
-      if (collides) {
-        endk.textContent = "";
-        endk.style.borderColor = "var(--border)";
-      } else endk.textContent = fmtTick(eff);
-      ruler.appendChild(endk);
-    }
+    const endPx = LABELW + eff * S.pxPerSec;
+    if (lastMajorEl && endPx - lastMajorPx < 56) lastMajorEl.textContent = "";
+    const endk = el("div", "tick end");
+    endk.style.left = endPx + "px";
+    endk.textContent = fmtTick(eff);
+    ruler.appendChild(endk);
     inner.appendChild(ruler);
     S.ir.scenes.forEach((scene2, si) => {
       const sr = el("div", "scene-row");

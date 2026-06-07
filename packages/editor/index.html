@@ -261,8 +261,14 @@
     .hint { color:var(--dim); font-size:11px; }
     .tl-scroll { flex:1; overflow:auto; position:relative; }
     #tlInner { position:relative; min-width:100%; }
-    .ruler { position:sticky; top:0; height:26px; background:rgba(12,12,12,.5); backdrop-filter:blur(8px); border-bottom:1px solid var(--border); z-index:5; cursor:pointer; }
-    .tick { position:absolute; top:0; height:26px; border-left:1px solid var(--border); font-size:10px; color:var(--dim); padding-left:4px; padding-top:3px; }
+    .ruler { position:sticky; top:0; height:30px; background:rgba(12,12,12,.55); backdrop-filter:blur(8px); border-bottom:1px solid var(--border); z-index:5; cursor:pointer; user-select:none; }
+    /* clean editor ruler: time label at the top, a short tick mark at the baseline */
+    .tick { position:absolute; top:0; height:30px; font-size:10px; color:var(--dim); padding-left:5px; padding-top:4px; font-variant-numeric:tabular-nums; letter-spacing:.3px; white-space:nowrap; pointer-events:none; }
+    .tick::after { content:''; position:absolute; left:0; bottom:0; width:1px; height:8px; background:var(--border); }
+    .tick.minor { color:transparent; }
+    .tick.minor::after { height:4px; opacity:.5; }
+    .tick.end { color:var(--text); font-weight:600; transform:translateX(-100%); padding-left:0; padding-right:6px; } /* total duration, right-anchored so it never clips at the edge */
+    .tick.end::after { left:auto; right:0; height:8px; background:var(--dim); }
     .scene-row { display:flex; align-items:center; height:23px; background:rgba(255,255,255,.08); border-bottom:1px solid var(--border); position:relative; }
     .scene-tag { position:sticky; left:0; z-index:4; padding:0 10px; height:23px; display:flex; align-items:center; gap:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:#ffffff; }
     .scene-tag svg { width:11px; height:11px; }
