@@ -555,7 +555,7 @@ function reconcileAudio(c: Composition) {
   audioEls = tracks.map((track) => {
     const el = document.createElement('audio');
     el.preload = 'auto';
-    el.volume = track.volume ?? 1;
+    el.volume = track.volume ?? 1; el.muted = !!track.muted;
     el.addEventListener('loadedmetadata', () => { try { (window as any).__vgpAudioReady?.(); } catch {} });
     document.body.appendChild(el); // appended exactly once (these are brand-new elements)
     const url = resolveSrc(track.src);
@@ -571,6 +571,7 @@ function reconcileAudio(c: Composition) {
 function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
   const layer = ln.layer;
   if (layer.type === 'fx') { ln.el.style.display = 'none'; return; } // control-only layer
+  if ((layer as any).hidden) { ln.el.style.display = 'none'; return; } // visibility toggle (honored in render too -> render == preview)
   const start = layer.start ?? 0;
   const dur = layer.duration ?? sceneDur;
   const active = sceneLocalT >= start && sceneLocalT < start + dur + 0.0001;
@@ -703,7 +704,7 @@ function syncAudio(t: number, playing: boolean) {
     const active = local >= -0.03 && local < dur;
     const target = (track.trimStart ?? 0) + Math.max(0, local);
     if (!active) { if (!el.paused) el.pause(); continue; }
-    el.volume = track.volume ?? 1;
+    el.volume = track.volume ?? 1; el.muted = !!track.muted;
     const e = el as any;
     if (playing) {
       // start once at the right offset, then let it play freely (its own clock stays

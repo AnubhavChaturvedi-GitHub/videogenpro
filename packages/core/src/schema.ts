@@ -62,6 +62,8 @@ const baseLayer = {
   crop: z.object({ t: z.number(), r: z.number(), b: z.number(), l: z.number() }).optional(),
   // Match & Move pairing key (optional; runtime auto-pairs by src/text when unset).
   matchId: z.string().optional(),
+  // visibility toggle — runtime skips the layer when true (preview + render).
+  hidden: z.boolean().optional(),
 };
 
 const layer = z.discriminatedUnion('type', [
@@ -87,6 +89,7 @@ export const compositionSchema = z.object({
   fps: z.number().positive(),
   width: z.number().positive(),
   height: z.number().positive(),
+  name: z.string().optional(),
   scenes: z.array(scene).min(1),
   audio: z.array(z.object({
     src: z.string(),
@@ -94,6 +97,7 @@ export const compositionSchema = z.object({
     trimStart: z.number().optional(),
     duration: z.number().optional(), // clip length (seconds) — lets audio-clip trimming persist
     volume: z.number().optional(),
+    muted: z.boolean().optional(),   // track on/off toggle (preview + export)
   })).optional(),
   defaultTransition: presetInstance.optional(),
 });

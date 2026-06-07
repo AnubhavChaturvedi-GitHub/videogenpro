@@ -18,6 +18,8 @@ const KF_EASINGS = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'easeOutBack', '
 // ---------- icons (Lucide-style, inline SVG) ----------
 const I: Record<string, string> = {
   play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  eye: '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>',
+  'eye-off': '<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94"/><line x1="1" y1="1" x2="23" y2="23"/>',
   pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
   start: '<polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>',
   back: '<polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/>',
@@ -588,7 +590,11 @@ function buildTimeline() {
       .forEach(({ layer, li }: any) => {
       const track = el('div', 'track');
       const fullLabel = layerLabel(layer);
-      const label = el('div', 'track-label'); label.title = fullLabel; label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${fullLabel}</span>`; track.appendChild(label);
+      const label = el('div', 'track-label'); label.title = fullLabel; label.innerHTML = tintIcon(typeIco[layer.type] ?? 'shape', layer.type) + `<span>${fullLabel}</span>`;
+      // visibility toggle — hides/shows the layer in the preview (and the render).
+      const eye = el('button', 'tl-toggle' + (layer.hidden ? ' off' : '')); eye.innerHTML = icon(layer.hidden ? 'eye-off' : 'eye'); eye.title = layer.hidden ? 'Show layer' : 'Hide layer'; eye.setAttribute('aria-label', eye.title); eye.onmousedown = (ev) => ev.stopPropagation(); eye.onclick = (ev) => { ev.stopPropagation(); layer.hidden = !layer.hidden; structuralEdit(); };
+      label.appendChild(eye); if (layer.hidden) track.style.opacity = '.5';
+      track.appendChild(label);
       const offset = S.offsets[si] + (layer.start ?? 0); const dur = layer.duration ?? scene.duration;
       const clip = el('div', 'clip');
       clip.style.left = (LABELW + offset * S.pxPerSec) + 'px'; clip.style.width = Math.max(24, dur * S.pxPerSec) + 'px'; clip.style.background = clipColor[layer.type] ?? '#555';
@@ -842,7 +848,11 @@ function buildTimeline() {
     audio.forEach((a: any, ai: number) => {
       const track = el('div', 'track');
       const name = String(a.src).split('/').pop() || 'audio';
-      const label = el('div', 'track-label'); label.title = name; label.innerHTML = tintIcon('audio', 'audio') + `<span>${name}</span>`; track.appendChild(label);
+      const label = el('div', 'track-label'); label.title = name; label.innerHTML = tintIcon('audio', 'audio') + `<span>${name}</span>`;
+      // mute toggle — turns this audio track off/on (preview + export) without losing its volume.
+      const mb = el('button', 'tl-toggle' + (a.muted ? ' off' : '')); mb.innerHTML = icon(a.muted ? 'mute' : 'speaker'); mb.title = a.muted ? 'Unmute audio' : 'Mute audio'; mb.setAttribute('aria-label', mb.title); mb.onmousedown = (ev) => ev.stopPropagation(); mb.onclick = (ev) => { ev.stopPropagation(); a.muted = !a.muted; structuralEdit(); };
+      label.appendChild(mb); if (a.muted) track.style.opacity = '.55';
+      track.appendChild(label);
       const start = a.start ?? 0;
       const fileDur: number | null = info[ai]?.duration ?? null;          // null until metadata loads
       const metaReady = fileDur != null;
@@ -1970,15 +1980,37 @@ function buildFileMenu() {
   const m = $('fileMenu'); m.innerHTML = '';
   const item = (ic: string, label: string, key: string, fn: () => void) => { const b = el('button', 'menu-item'); b.innerHTML = icon(ic) + `<span>${label}</span>` + (key ? `<span class="k">${key}</span>` : ''); b.onclick = () => { closeMenu(); fn(); }; m.appendChild(b); };
   // B20: explicit statements instead of the fragile `setDoc() || scheduleSave()`.
-  item('file', 'New', '', () => { setDoc({ fps: 30, width: 1920, height: 1080, scenes: [{ id: 'scene-1', duration: 5, background: '#0a0a0a', layers: [] }] }); scheduleSave(); });
+  item('file', 'New…', '', newComposition);
   item('folder', 'Open…', '', openProjects);
   m.appendChild(el('div', 'menu-sep'));
-  item('save', 'Save project (.json)', '⌘S', saveJson);
-  item('download', 'Export MP4', '', runExport);
+  item('save', 'Export as JSON', '⌘S', saveJson);
+  item('download', 'Export as MP4', '', runExport);
+}
+// New asks for a NAME — and the prompt doubles as a guard against an accidental wipe
+// (a silent New is exactly what lost the user's work). Cancel keeps the current comp.
+function newComposition() {
+  const name = prompt('Start a NEW empty composition?\nThis replaces what is on screen — type a name, or press Cancel to keep your current work:', S.ir?.name || 'Untitled');
+  if (name === null) return; // cancelled → no wipe
+  const nm = name.trim() || 'Untitled';
+  setDoc({ fps: 30, width: 1920, height: 1080, name: nm, scenes: [{ id: 'scene-1', duration: 5, background: '#0a0a0a', layers: [] }] });
+  scheduleSave(); showToast(`New composition “${nm}”`);
 }
 let menuOpen = false;
 function closeMenu() { menuOpen = false; $('fileMenu').classList.remove('open'); }
-function saveJson() { const blob = new Blob([JSON.stringify(S.ir, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'composition.json'; a.click(); }
+function saveJson() { const nm = (S.ir?.name || 'composition').replace(/[^\w.-]+/g, '_') || 'composition'; const blob = new Blob([JSON.stringify(S.ir, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nm + '.json'; a.click(); showToast('Exported ' + nm + '.json'); }
+// the topbar Export button: a small popup offering JSON or MP4 (click again / outside to close).
+function openExportMenu() {
+  const existing = document.getElementById('exportMenu'); if (existing) { existing.remove(); return; }
+  const btn = $('export'); const r = btn.getBoundingClientRect();
+  const m = el('div', 'menu'); m.id = 'exportMenu';
+  m.style.cssText = `position:fixed; top:${Math.round(r.bottom + 6)}px; right:${Math.round(Math.max(8, window.innerWidth - r.right))}px; left:auto; display:block; z-index:200; min-width:210px;`;
+  const mi = (ic: string, label: string, fn: () => void) => { const b = el('button', 'menu-item'); b.innerHTML = icon(ic) + `<span>${label}</span>`; b.onclick = () => { m.remove(); document.removeEventListener('mousedown', close); fn(); }; m.appendChild(b); };
+  mi('save', 'Export as JSON', saveJson);
+  mi('download', 'Export as MP4', runExport);
+  document.body.appendChild(m);
+  const close = (ev: MouseEvent) => { if (!m.contains(ev.target as Node) && ev.target !== btn) { m.remove(); document.removeEventListener('mousedown', close); } };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
 async function openProjects() {
   const list = await (await fetch('/api/projects')).json();
   const pl = $('projList'); pl.innerHTML = '';
@@ -2174,7 +2206,7 @@ async function init() {
   // file menu toggle + outside click
   $('fileBtn').onclick = (e) => { e.stopPropagation(); menuOpen = !menuOpen; $('fileMenu').classList.toggle('open', menuOpen); };
   document.addEventListener('click', closeMenu);
-  $('export').onclick = runExport;
+  $('export').onclick = () => openExportMenu();
   $('openClose').onclick = () => closeModalById('openModal');
   // close the Open modal on backdrop click too (parity with the project modal).
   $('openModal').addEventListener('mousedown', (e) => { if (e.target === $('openModal')) closeModalById('openModal'); });

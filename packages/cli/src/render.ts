@@ -56,10 +56,11 @@ async function main() {
 
   // ffmpeg reads raw PNGs from stdin -> mp4
   // audio tracks (voiceover, music) — mixed in with per-track delay + volume
-  const rawTracks = (comp.audio ?? []) as Array<{ src: string; start?: number; volume?: number; trimStart?: number; duration?: number }>;
+  const rawTracks = (comp.audio ?? []) as Array<{ src: string; start?: number; volume?: number; trimStart?: number; duration?: number; muted?: boolean }>;
   // B06: skip tracks whose source file is missing instead of letting ffmpeg abort
   // the whole export. Resolve relative paths against the composition dir.
   const tracks = rawTracks.filter((a) => {
+    if (a.muted) return false; // muted tracks are excluded from the export
     if (/^https?:|^file:/.test(a.src)) return true;
     const ap = resolve(dirname(absComp), a.src);
     if (existsSync(ap)) return true;

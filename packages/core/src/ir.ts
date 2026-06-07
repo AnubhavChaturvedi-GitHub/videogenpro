@@ -50,6 +50,9 @@ export interface BaseLayer {
   // Match & Move: an explicit pairing key so the SAME logical element across two scenes
   // morphs during a match-move transition. If unset, the runtime auto-pairs by src/text.
   matchId?: string;
+  // visibility toggle: when true the runtime skips this layer entirely (display:none).
+  // Honored in BOTH preview and render, so render == preview holds.
+  hidden?: boolean;
 }
 
 export interface TextLayer extends BaseLayer {
@@ -120,12 +123,14 @@ export interface AudioTrack {
   trimStart?: number;
   duration?: number;  // clip length (seconds) — persists audio-clip trimming
   volume?: number;    // 0..1
+  muted?: boolean;    // toggle a track off without losing its volume (preview + export)
 }
 
 export interface Composition {
   fps: number;
   width: number;
   height: number;
+  name?: string;          // composition title (set on File → New; used as the export filename)
   scenes: Scene[];
   audio?: AudioTrack[];
   // optional default transition applied between every scene

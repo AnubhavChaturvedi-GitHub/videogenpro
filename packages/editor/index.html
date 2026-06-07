@@ -257,6 +257,11 @@
     .track-label svg { width:13px; height:13px; flex-shrink:0; }
     /* width-aware truncation — the label span shrinks and ellipsises inside the flex row */
     .track-label span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* per-track visibility / mute toggle on the (frozen, sticky) label */
+    .track-label .tl-toggle { margin-left:auto; flex-shrink:0; padding:2px; display:flex; align-items:center; color:var(--dim); background:transparent; border-radius:var(--r-sm); }
+    .track-label .tl-toggle:hover { color:#fff; background:var(--glass-2); }
+    .track-label .tl-toggle.off { color:var(--dim2); }
+    .track-label .tl-toggle svg { width:13px; height:13px; }
     .clip { position:absolute; top:6px; height:30px; border-radius:var(--r-sm); display:flex; align-items:center; gap:6px; padding:0 9px; font-size:11px; color:#fff; cursor:grab; overflow:hidden; white-space:nowrap; border:1px solid var(--border-2); box-shadow:var(--hi),0 2px 8px rgba(0,0,0,.3); user-select:none; backdrop-filter:blur(6px); font-weight:600; }
     .clip svg { width:12px; height:12px; opacity:.92; flex-shrink:0; }
     /* width-aware truncation — label span shrinks/ellipsises inside the clip flex row */
