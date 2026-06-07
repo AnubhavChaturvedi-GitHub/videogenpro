@@ -565,15 +565,15 @@ function buildTimeline() {
   // to the labeled major ticks (B-ruler-minor).
   const minorStep = tickStep / 5;
   const eps = minorStep * 1e-3;
-  // audio-tail tint (when audio runs past the last scene) — drawn behind the ticks so the
-  // mm:ss labels in that region aren't misread as scene time; a dashed line marks the scene end.
+  // audio-tail region (when audio runs past the last scene): a faint FLAT tint + a thin neutral
+  // hairline at the scene end — subtle, not a loud diagonal hatch, so the ruler stays clean.
   if (eff > S.total + 1e-6) {
     const tailBand = el('div');
-    tailBand.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:${(eff - S.total) * S.pxPerSec}px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.045) 0 6px,transparent 6px 12px);pointer-events:none`;
+    tailBand.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:${(eff - S.total) * S.pxPerSec}px;background:rgba(128,128,128,.06);pointer-events:none`;
     ruler.appendChild(tailBand);
     const mark = el('div');
-    mark.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:0;border-left:1px dashed var(--t-audio);opacity:.6;pointer-events:none`;
-    mark.title = `scenes end at ${fmtTick(S.total)} — audio tail beyond this point`;
+    mark.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:0;border-left:1px solid var(--border);pointer-events:none`;
+    mark.title = `scenes end at ${fmtTick(S.total)} — audio continues beyond`;
     ruler.appendChild(mark);
   }
   // major (labelled) + minor (unlabelled) ticks in one pass, the full length of the timeline.
@@ -589,7 +589,7 @@ function buildTimeline() {
   // the very end: total duration, right-anchored so the scale reads correctly to the last frame
   // without the label clipping past the edge. Drop the last regular label if it would collide.
   const endPx = LABELW + eff * S.pxPerSec;
-  if (lastMajorEl && endPx - lastMajorPx < 56) lastMajorEl.textContent = '';
+  if (lastMajorEl && endPx - lastMajorPx < 82) lastMajorEl.textContent = ''; // drop the adjacent grid label so the end time isn't crammed against it
   const endk = el('div', 'tick end'); endk.style.left = endPx + 'px'; endk.textContent = fmtTick(eff);
   ruler.appendChild(endk);
   inner.appendChild(ruler); // seeking handled by the unified timeline handler in init()

@@ -22874,11 +22874,11 @@
     const eps = minorStep * 1e-3;
     if (eff > S.total + 1e-6) {
       const tailBand = el("div");
-      tailBand.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:${(eff - S.total) * S.pxPerSec}px;background:repeating-linear-gradient(45deg,rgba(255,255,255,.045) 0 6px,transparent 6px 12px);pointer-events:none`;
+      tailBand.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:${(eff - S.total) * S.pxPerSec}px;background:rgba(128,128,128,.06);pointer-events:none`;
       ruler.appendChild(tailBand);
       const mark = el("div");
-      mark.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:0;border-left:1px dashed var(--t-audio);opacity:.6;pointer-events:none`;
-      mark.title = `scenes end at ${fmtTick(S.total)} \u2014 audio tail beyond this point`;
+      mark.style.cssText = `position:absolute;top:0;bottom:0;left:${LABELW + S.total * S.pxPerSec}px;width:0;border-left:1px solid var(--border);pointer-events:none`;
+      mark.title = `scenes end at ${fmtTick(S.total)} \u2014 audio continues beyond`;
       ruler.appendChild(mark);
     }
     let lastMajorEl = null, lastMajorPx = -1e9;
@@ -22895,7 +22895,7 @@
       ruler.appendChild(tk);
     }
     const endPx = LABELW + eff * S.pxPerSec;
-    if (lastMajorEl && endPx - lastMajorPx < 56) lastMajorEl.textContent = "";
+    if (lastMajorEl && endPx - lastMajorPx < 82) lastMajorEl.textContent = "";
     const endk = el("div", "tick end");
     endk.style.left = endPx + "px";
     endk.textContent = fmtTick(eff);

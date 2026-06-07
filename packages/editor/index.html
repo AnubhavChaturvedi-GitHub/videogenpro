@@ -272,7 +272,7 @@
     .tick::after { content:''; position:absolute; left:0; bottom:0; width:1px; height:8px; background:var(--border); }
     .tick.minor { color:transparent; }
     .tick.minor::after { height:4px; opacity:.5; }
-    .tick.end { color:var(--text); font-weight:600; transform:translateX(-100%); padding-left:0; padding-right:6px; } /* total duration, right-anchored so it never clips at the edge */
+    .tick.end { color:var(--text); transform:translateX(-100%); padding-left:0; padding-right:6px; } /* total duration, right-anchored so it never clips at the edge */
     .tick.end::after { left:auto; right:0; height:8px; background:var(--dim); }
     .scene-row { display:flex; align-items:center; height:23px; background:rgba(255,255,255,.08); border-bottom:1px solid var(--border); position:relative; }
     .scene-tag { position:sticky; left:0; z-index:4; padding:0 10px; height:23px; display:flex; align-items:center; gap:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:#ffffff; }
