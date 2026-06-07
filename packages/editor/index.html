@@ -245,6 +245,13 @@
     .scene-row { display:flex; align-items:center; height:23px; background:rgba(255,255,255,.08); border-bottom:1px solid var(--border); position:relative; }
     .scene-tag { position:sticky; left:0; z-index:4; padding:0 10px; height:23px; display:flex; align-items:center; gap:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:#ffffff; }
     .scene-tag svg { width:11px; height:11px; }
+    .scene-lbl { display:flex; align-items:center; gap:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* per-scene hover actions (duplicate / add-after / delete), overlaid at the tag's right edge */
+    .scene-tag .scene-acts { position:absolute; right:1px; top:0; height:100%; display:none; align-items:center; gap:1px; padding-left:12px; background:linear-gradient(90deg, transparent, rgba(16,16,16,.92) 35%); }
+    .scene-row:hover .scene-acts { display:flex; }
+    .scene-act { padding:3px; display:flex; align-items:center; color:var(--dim); background:transparent; border-radius:var(--r-sm); }
+    .scene-act:hover { color:#fff; background:var(--glass-2); }
+    .scene-act svg { width:12px; height:12px; }
     .track { position:relative; height:42px; border-bottom:1px solid rgba(255,255,255,.05); }
     .track-label { position:absolute; left:0; top:0; z-index:4; width:104px; height:42px; display:flex; align-items:center; gap:7px; padding:0 10px; background:rgba(12,12,12,.45); backdrop-filter:blur(8px); border-right:1px solid var(--border); font-size:11px; color:var(--dim); overflow:hidden; white-space:nowrap; }
     .track-label svg { width:13px; height:13px; flex-shrink:0; }
@@ -372,6 +379,11 @@
           <button class="btn" id="addShape" aria-label="Add shape layer"><span id="i-shape" aria-hidden="true"></span>Shape</button>
           <button class="btn" id="addLine" aria-label="Add line layer"><span id="i-line" aria-hidden="true"></span>Line</button>
           <button class="btn" id="add3D" aria-label="Add 3D layer"><span id="i-3d" aria-hidden="true"></span>3D</button>
+        </div>
+        <div class="sec-title">Scenes</div>
+        <div class="add-grid">
+          <button class="btn wide" id="addScene" aria-label="Add a new scene"><span id="i-addscene" aria-hidden="true"></span>Add scene</button>
+          <button class="btn wide" id="dupScene" aria-label="Duplicate the current scene (for Match &amp; Move)"><span id="i-dupscene" aria-hidden="true"></span>Duplicate scene</button>
         </div>
         <div class="sec-title">Assets</div>
         <div class="drop" id="drop"><span id="i-up" aria-hidden="true"></span>Drop / click to upload</div>

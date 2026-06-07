@@ -419,6 +419,49 @@ const newAssetLayer = (a: any) => ({ type: a.type, src: a.src, fit: 'cover', dur
 function addLayerAtPlayhead(layer: any) { const si = sceneAt(S.playhead); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(S.playhead - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); normalizeZ(si); S.multi = []; S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
 function dropLayerAt(clientX: number, layer: any) { const t = Math.max(0, Math.min(S.total, timeAtClientX(clientX))); const si = sceneAt(t); const maxStart = Math.max(0, S.ir.scenes[si].duration - 0.2); layer.start = Math.max(0, Math.min(maxStart, +(t - S.offsets[si]).toFixed(2))); S.ir.scenes[si].layers.push(layer); normalizeZ(si); S.multi = []; S.selected = { s: si, l: S.ir.scenes[si].layers.length - 1 }; setTab('props'); structuralEdit(); }
 
+// ── scene management (add / duplicate / delete) ─────────────────────────────
+// Audio uses composition-global starts, so inserting/removing a scene must shift
+// every audio track beginning at/after the change point to keep narration in sync.
+function shiftAudioFrom(threshold: number, delta: number) {
+  if (!S.ir.audio) return;
+  for (const a of S.ir.audio) { const s = a.start ?? 0; if (s >= threshold - 1e-6) a.start = +Math.max(0, s + delta).toFixed(3); }
+}
+function jumpToScene(i: number) { S.playhead = +Math.min(Math.max(0, S.total - 0.01), (S.offsets[i] ?? 0) + 0.02).toFixed(3); positionPlayhead(); liveSeek(); updateTime(); }
+// insert a blank scene at `at` (default: append). Shifts later audio so it stays in sync.
+function addScene(at: number = S.ir.scenes.length) {
+  at = Math.max(0, Math.min(S.ir.scenes.length, at));
+  const sc: any = { duration: 4, background: S.ir.scenes[0]?.background ?? '#000000', layers: [] };
+  shiftAudioFrom(S.offsets[at] ?? S.total, sc.duration);
+  S.ir.scenes.splice(at, 0, sc); S.sceneBase.splice(at, 0, sc.duration);
+  S.selected = null; S.multi = []; S.selAudio = null;
+  derive(); jumpToScene(at); structuralEdit();
+  showToast(`Scene ${at + 1} added`);
+}
+// duplicate scene `i` right after it (keeps src/text so its elements AUTO-MATCH for
+// Match & Move). Shifts later audio by the clone's duration.
+function duplicateScene(i: number) {
+  if (i < 0 || i >= S.ir.scenes.length) return;
+  const clone = JSON.parse(JSON.stringify(S.ir.scenes[i])); delete clone.id;
+  const dur = S.ir.scenes[i].duration ?? clone.duration ?? 4;
+  shiftAudioFrom((S.offsets[i] ?? 0) + dur, dur);
+  S.ir.scenes.splice(i + 1, 0, clone); S.sceneBase.splice(i + 1, 0, S.sceneBase[i] ?? dur);
+  S.selected = null; S.multi = []; S.selAudio = null;
+  derive(); jumpToScene(i + 1); structuralEdit();
+  showToast('Scene duplicated — move an element, then drop “match move” on the seam');
+}
+// delete scene `i` (min one scene). Drops audio inside the removed span, shifts later earlier.
+function deleteScene(i: number) {
+  if (S.ir.scenes.length <= 1) { showToast('Can’t delete the only scene'); return; }
+  if (i < 0 || i >= S.ir.scenes.length) return;
+  const off = S.offsets[i] ?? 0, dur = S.ir.scenes[i].duration ?? 0;
+  if (S.ir.audio) S.ir.audio = S.ir.audio.filter((a: any) => { const s = a.start ?? 0; return !(s >= off - 1e-6 && s < off + dur - 1e-6); });
+  shiftAudioFrom(off + dur, -dur);
+  S.ir.scenes.splice(i, 1); S.sceneBase.splice(i, 1);
+  S.selected = null; S.multi = []; S.selAudio = null;
+  derive(); jumpToScene(Math.max(0, i - 1)); structuralEdit();
+  showToast('Scene deleted');
+}
+
 // ---------- assets ----------
 async function loadAssets() {
   // SKELETON: show the loading state on the asset grid while the (async) asset list is
@@ -527,7 +570,13 @@ function buildTimeline() {
 
   S.ir.scenes.forEach((scene: any, si: number) => {
     const sr = el('div', 'scene-row');
-    const tag = el('div', 'scene-tag'); tag.innerHTML = icon('film' in I ? 'film' : 'video') + `Scene ${si + 1} · ${fmtClock(scene.duration)}`; sr.appendChild(tag);
+    const tag = el('div', 'scene-tag');
+    const lbl = el('span', 'scene-lbl'); lbl.innerHTML = icon('film' in I ? 'film' : 'video') + `Scene ${si + 1} · ${fmtClock(scene.duration)}`; tag.appendChild(lbl);
+    // per-scene actions (hover): duplicate (the Match & Move workflow) + delete
+    const acts = el('span', 'scene-acts');
+    const sAct = (ic: string, title: string, fn: () => void) => { const bb = el('button', 'scene-act'); bb.innerHTML = icon(ic); bb.title = title; bb.setAttribute('aria-label', title); bb.onmousedown = (ev) => ev.stopPropagation(); bb.onclick = (ev) => { ev.stopPropagation(); fn(); }; return bb; };
+    acts.append(sAct('copy', 'Duplicate scene (for Match & Move)', () => duplicateScene(si)), sAct('plus', 'Add scene after', () => addScene(si + 1)), sAct('trash', 'Delete scene', () => deleteScene(si)));
+    tag.appendChild(acts); sr.appendChild(tag);
     inner.appendChild(sr);
     // display front-most layer on top: order rows by paint z (descending), which now
     // equals array index for EVERY layer (overlays included — no 9000+ band). li stays
@@ -2058,6 +2107,7 @@ async function init() {
   $('fileIcon').innerHTML = icon('file'); $('expIcon').innerHTML = icon('download'); // logo is the inline animated SVG
   $('i-text').innerHTML = icon('text'); $('i-shape').innerHTML = icon('shape'); $('i-3d').innerHTML = icon('cube'); $('i-up').innerHTML = icon('upload');
   $('i-props').innerHTML = icon('sliders'); $('i-anim').innerHTML = icon('spark'); $('i-line').innerHTML = icon('line');
+  $('i-addscene').innerHTML = icon('plus'); $('i-dupscene').innerHTML = icon('copy');
   $('i-undo').innerHTML = icon('undo'); $('i-redo').innerHTML = icon('redo'); $('i-split').innerHTML = icon('split'); $('i-dup').innerHTML = icon('copy'); $('i-del').innerHTML = icon('trash'); $('i-fit').innerHTML = icon('fit');
   $('tpStart').innerHTML = icon('start'); $('tpBack').innerHTML = icon('back'); $('tpFwd').innerHTML = icon('fwd'); $('tpLoop').innerHTML = icon('loop'); setPlayIcon();
   buildFileMenu();
@@ -2132,6 +2182,7 @@ async function init() {
 
   // add-layer
   $('addText').onclick = () => addLayerAtPlayhead(newText()); $('addShape').onclick = () => addLayerAtPlayhead(newShape()); $('addLine').onclick = () => addLayerAtPlayhead(newLine()); $('add3D').onclick = () => addLayerAtPlayhead(new3D());
+  $('addScene').onclick = () => addScene(); $('dupScene').onclick = () => duplicateScene(sceneAt(S.playhead));
 
   // upload
   const fi = $('fileInput') as HTMLInputElement; $('drop').onclick = () => fi.click(); fi.onchange = () => fi.files && uploadFiles(fi.files);

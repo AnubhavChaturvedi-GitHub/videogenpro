@@ -6336,6 +6336,71 @@
     setTab("props");
     structuralEdit();
   }
+  function shiftAudioFrom(threshold, delta) {
+    if (!S.ir.audio) return;
+    for (const a of S.ir.audio) {
+      const s = a.start ?? 0;
+      if (s >= threshold - 1e-6) a.start = +Math.max(0, s + delta).toFixed(3);
+    }
+  }
+  function jumpToScene(i) {
+    S.playhead = +Math.min(Math.max(0, S.total - 0.01), (S.offsets[i] ?? 0) + 0.02).toFixed(3);
+    positionPlayhead();
+    liveSeek();
+    updateTime();
+  }
+  function addScene(at = S.ir.scenes.length) {
+    at = Math.max(0, Math.min(S.ir.scenes.length, at));
+    const sc = { duration: 4, background: S.ir.scenes[0]?.background ?? "#000000", layers: [] };
+    shiftAudioFrom(S.offsets[at] ?? S.total, sc.duration);
+    S.ir.scenes.splice(at, 0, sc);
+    S.sceneBase.splice(at, 0, sc.duration);
+    S.selected = null;
+    S.multi = [];
+    S.selAudio = null;
+    derive();
+    jumpToScene(at);
+    structuralEdit();
+    showToast(`Scene ${at + 1} added`);
+  }
+  function duplicateScene(i) {
+    if (i < 0 || i >= S.ir.scenes.length) return;
+    const clone = JSON.parse(JSON.stringify(S.ir.scenes[i]));
+    delete clone.id;
+    const dur = S.ir.scenes[i].duration ?? clone.duration ?? 4;
+    shiftAudioFrom((S.offsets[i] ?? 0) + dur, dur);
+    S.ir.scenes.splice(i + 1, 0, clone);
+    S.sceneBase.splice(i + 1, 0, S.sceneBase[i] ?? dur);
+    S.selected = null;
+    S.multi = [];
+    S.selAudio = null;
+    derive();
+    jumpToScene(i + 1);
+    structuralEdit();
+    showToast("Scene duplicated \u2014 move an element, then drop \u201Cmatch move\u201D on the seam");
+  }
+  function deleteScene(i) {
+    if (S.ir.scenes.length <= 1) {
+      showToast("Can\u2019t delete the only scene");
+      return;
+    }
+    if (i < 0 || i >= S.ir.scenes.length) return;
+    const off = S.offsets[i] ?? 0, dur = S.ir.scenes[i].duration ?? 0;
+    if (S.ir.audio) S.ir.audio = S.ir.audio.filter((a) => {
+      const s = a.start ?? 0;
+      return !(s >= off - 1e-6 && s < off + dur - 1e-6);
+    });
+    shiftAudioFrom(off + dur, -dur);
+    S.ir.scenes.splice(i, 1);
+    S.sceneBase.splice(i, 1);
+    S.selected = null;
+    S.multi = [];
+    S.selAudio = null;
+    derive();
+    jumpToScene(Math.max(0, i - 1));
+    structuralEdit();
+    showToast("Scene deleted");
+  }
   async function loadAssets() {
     $("assetGrid").classList.add("loading");
     try {
@@ -6464,7 +6529,24 @@
     S.ir.scenes.forEach((scene2, si) => {
       const sr = el("div", "scene-row");
       const tag = el("div", "scene-tag");
-      tag.innerHTML = icon("film" in I ? "film" : "video") + `Scene ${si + 1} \xB7 ${fmtClock(scene2.duration)}`;
+      const lbl = el("span", "scene-lbl");
+      lbl.innerHTML = icon("film" in I ? "film" : "video") + `Scene ${si + 1} \xB7 ${fmtClock(scene2.duration)}`;
+      tag.appendChild(lbl);
+      const acts = el("span", "scene-acts");
+      const sAct = (ic, title, fn) => {
+        const bb = el("button", "scene-act");
+        bb.innerHTML = icon(ic);
+        bb.title = title;
+        bb.setAttribute("aria-label", title);
+        bb.onmousedown = (ev) => ev.stopPropagation();
+        bb.onclick = (ev) => {
+          ev.stopPropagation();
+          fn();
+        };
+        return bb;
+      };
+      acts.append(sAct("copy", "Duplicate scene (for Match & Move)", () => duplicateScene(si)), sAct("plus", "Add scene after", () => addScene(si + 1)), sAct("trash", "Delete scene", () => deleteScene(si)));
+      tag.appendChild(acts);
       sr.appendChild(tag);
       inner.appendChild(sr);
       const effZ = (layer2, i) => layer2.zIndex ?? i;
@@ -8651,6 +8733,8 @@
     $("i-props").innerHTML = icon("sliders");
     $("i-anim").innerHTML = icon("spark");
     $("i-line").innerHTML = icon("line");
+    $("i-addscene").innerHTML = icon("plus");
+    $("i-dupscene").innerHTML = icon("copy");
     $("i-undo").innerHTML = icon("undo");
     $("i-redo").innerHTML = icon("redo");
     $("i-split").innerHTML = icon("split");
@@ -8800,6 +8884,8 @@
     $("addShape").onclick = () => addLayerAtPlayhead(newShape());
     $("addLine").onclick = () => addLayerAtPlayhead(newLine());
     $("add3D").onclick = () => addLayerAtPlayhead(new3D());
+    $("addScene").onclick = () => addScene();
+    $("dupScene").onclick = () => duplicateScene(sceneAt(S.playhead));
     const fi = $("fileInput");
     $("drop").onclick = () => fi.click();
     fi.onchange = () => fi.files && uploadFiles(fi.files);
