@@ -15,7 +15,10 @@ export const imagePresets: Preset[] = [
     },
     defaultDuration: 5,
     apply: (p, prm) => {
-      const e = ease('easeInOut', p);
+      // C2-smooth symmetric curve: gentle ease at both layer boundaries so the
+      // documentary push/pan never jerks at start or end. Same 0->1 range, so
+      // the param-driven zoom/pan amplitude is unchanged.
+      const e = ease('easeInOutCubic', p);
       return {
         scale: 1 + prm.zoom * e,
         x: prm.panX * 200 * e,
@@ -108,14 +111,18 @@ export const imagePresets: Preset[] = [
     defaultDuration: 1.2,
     apply: (p, prm) => {
       const e = ease('easeOutCubic', p);
-      return { css: { transform: `perspective(1200px) rotateY(${(1 - e) * prm.angle}deg)` }, opacity: ease('easeOut', p) };
+      // Match the fade to the transform's cubic settle so the tilt and fade-in
+      // arrive together smoothly. apply(1): rotateY 0deg, opacity 1 (identity).
+      return { css: { transform: `perspective(1200px) rotateY(${(1 - e) * prm.angle}deg)` }, opacity: ease('easeOutCubic', p) };
     },
   },
   {
     id: 'image.zoom-out', category: 'image', description: 'Slow continuous zoom OUT — starts close, pulls back.',
     tags: ['ambient', 'cinematic'], continuous: true,
     params: { from: { default: 1.3, min: 1, max: 2, desc: 'start scale' } },
-    defaultDuration: 5, apply: (p, prm) => ({ scale: prm.from - (prm.from - 1) * ease('easeInOut', p) }),
+    // C2-smooth symmetric curve eases the pull-back at both layer boundaries
+    // (no boundary jerk); same from->1 range, so the zoom amplitude is unchanged.
+    defaultDuration: 5, apply: (p, prm) => ({ scale: prm.from - (prm.from - 1) * ease('easeInOutCubic', p) }),
   },
   {
     id: 'image.breathe', category: 'image', description: 'Gentle continuous scale pulse, like a slow breath.',
@@ -140,7 +147,10 @@ export const imagePresets: Preset[] = [
   {
     id: 'image.swing', category: 'image', description: 'Image swings in on a slight tilt and settles upright.',
     tags: ['enter', 'playful'], params: { angle: { default: 8, min: 0, max: 30, unit: 'deg' } },
-    defaultDuration: 0.7, apply: (p, prm) => { const e = ease('easeOutBack', p); return { rotate: -(1 - e) * prm.angle, scale: 0.85 + 0.15 * e, opacity: ease('easeOut', p) }; },
+    // Keep the playful easeOutBack overshoot for the swing; just silken the
+    // fade-in to a cubic so it doesn't snap to full opacity before the settle.
+    // apply(1): rotate 0, scale 1, opacity 1 (identity).
+    defaultDuration: 0.7, apply: (p, prm) => { const e = ease('easeOutBack', p); return { rotate: -(1 - e) * prm.angle, scale: 0.85 + 0.15 * e, opacity: ease('easeOutCubic', p) }; },
   },
   {
     id: 'image.duotone', category: 'image', description: 'Stylized duotone color grade applied to the image.',
@@ -157,7 +167,10 @@ export const imagePresets: Preset[] = [
       zoom: { default: 0.12, min: 0, max: 0.6, desc: 'extra scale held to hide edges' },
     },
     defaultDuration: 6, apply: (p, prm) => {
-      const e = ease('easeInOut', p);
+      // C2-smooth symmetric curve so the parallax slide accelerates/decelerates
+      // gently at the layer boundaries. Range preserved: e still spans 0->1, so
+      // x sweeps shift*200*(-0.5 .. +0.5) exactly as before.
+      const e = ease('easeInOutCubic', p);
       return { scale: 1 + prm.zoom, x: prm.shift * 200 * (e - 0.5) };
     },
   },
@@ -246,7 +259,10 @@ export const imagePresets: Preset[] = [
       panY: { default: 0.05, min: -0.5, max: 0.5, desc: 'vertical drift (fraction)' },
     },
     defaultDuration: 6, apply: (p, prm) => {
-      const e = ease('easeInOut', p);
+      // Was a "linear push-in"; smoothed to a C2 symmetric curve so the slow
+      // move eases in/out at the layer boundaries instead of starting and
+      // stopping abruptly. Same from..from+zoom and pan range (e spans 0->1).
+      const e = ease('easeInOutCubic', p);
       return { scale: prm.from + prm.zoom * e, x: prm.panX * 200 * e, y: prm.panY * 200 * e };
     },
   },

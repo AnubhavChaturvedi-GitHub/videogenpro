@@ -51,7 +51,9 @@ export const textPresets: Preset[] = [
     defaultDuration: 1.2,
     apply: (p, prm, ctx) => {
       const pe = staggered(p, ctx, prm.stagger);
-      return { opacity: pe > 0 ? 1 : 0 };
+      // Soft per-char fade instead of a hard on/off flip — keeps the typing
+      // cadence but removes the choppy snap as each glyph appears.
+      return { opacity: ease('easeOutCubic', pe) };
     },
   },
   {
@@ -60,10 +62,10 @@ export const textPresets: Preset[] = [
     description: 'Text pops in from small with a springy overshoot.',
     tags: ['enter', 'bouncy', 'emphasis'],
     params: { from: { default: 0.6, min: 0, max: 1, desc: 'starting scale' } },
-    defaultDuration: 0.5,
+    defaultDuration: 0.55,
     apply: (p, prm) => {
       const e = ease('easeOutBack', p);
-      return { scale: prm.from + (1 - prm.from) * e, opacity: ease('easeOut', p) };
+      return { scale: prm.from + (1 - prm.from) * e, opacity: ease('easeOutCubic', p) };
     },
   },
   {
@@ -74,19 +76,21 @@ export const textPresets: Preset[] = [
     params: { blur: { default: 16, min: 0, max: 60, unit: 'px' } },
     defaultDuration: 0.7,
     apply: (p, prm) => {
-      const e = ease('easeOutCubic', p);
+      // easeOutExpo pulls the blur out fast then settles gently into focus —
+      // reads more cinematic than a constant-curve cubic for a focus-pull.
+      const e = ease('easeOutExpo', p);
       return { blur: (1 - e) * prm.blur, opacity: e };
     },
   },
   {
     id: 'text.drop', category: 'text', description: 'Text drops in from above and settles with a soft bounce.',
     tags: ['enter', 'vertical', 'bouncy'], params: { distance: { default: 80, min: 0, max: 400, unit: 'px' } },
-    defaultDuration: 0.6, apply: (p, prm) => { const e = ease('easeOutBack', p); return { y: -(1 - e) * prm.distance, opacity: ease('easeOut', p) }; },
+    defaultDuration: 0.6, apply: (p, prm) => { const e = ease('easeOutBack', p); return { y: -(1 - e) * prm.distance, opacity: ease('easeOutCubic', p) }; },
   },
   {
     id: 'text.slam', category: 'text', description: 'Headline slams in from oversized with an impact blur — high energy.',
     tags: ['enter', 'impact', 'bold'], params: { from: { default: 1.8, min: 1, max: 4, desc: 'start scale' } },
-    defaultDuration: 0.5, apply: (p, prm) => { const e = ease('easeOutCubic', p); return { scale: prm.from - (prm.from - 1) * e, opacity: ease('easeOut', p), blur: (1 - e) * 12 }; },
+    defaultDuration: 0.55, apply: (p, prm) => { const e = ease('easeOutExpo', p); return { scale: prm.from - (prm.from - 1) * e, opacity: ease('easeOutCubic', p), blur: (1 - e) * 12 }; },
   },
   {
     id: 'text.expand', category: 'text',
@@ -104,8 +108,8 @@ export const textPresets: Preset[] = [
     id: 'text.glitch', category: 'text', description: 'Digital glitch with RGB split that snaps into clean text.',
     tags: ['enter', 'glitch', 'tech'], params: { amount: { default: 6, min: 0, max: 24, unit: 'px' } },
     defaultDuration: 0.6, apply: (p, prm, ctx) => {
-      const e = ease('easeOutCubic', p); const j = (1 - e) * prm.amount;
-      return { x: Math.sin(ctx.time * 60) * j, opacity: ease('easeOut', p), css: { textShadow: `${j}px 0 #ff00d4, ${-j}px 0 #00e5ff` } };
+      const e = ease('easeOutExpo', p); const j = (1 - e) * prm.amount;
+      return { x: Math.sin(ctx.time * 60) * j, opacity: ease('easeOutCubic', p), css: { textShadow: `${j}px 0 #ff00d4, ${-j}px 0 #00e5ff` } };
     },
   },
   {
@@ -149,7 +153,10 @@ export const textPresets: Preset[] = [
     defaultDuration: 1.4, apply: (p, prm) => {
       // Sweep a light band across the text via a moving gradient clipped to glyphs.
       // pos runs from before the left edge (-width) to past the right edge.
-      const pos = -prm.width + p * (100 + prm.width * 2);
+      // Ease the sweep so the glint accelerates in and decelerates out (glides
+      // rather than moving at a flat, mechanical constant velocity).
+      const sp = ease('easeInOutCubic', p);
+      const pos = -prm.width + sp * (100 + prm.width * 2);
       const a = pos - prm.width, b = pos, c = pos + prm.width;
       return { css: {
         backgroundImage: `linear-gradient(110deg, currentColor ${a}%, #ffffff ${b}%, currentColor ${c}%)`,
@@ -167,13 +174,14 @@ export const textPresets: Preset[] = [
     },
     defaultDuration: 1.6, apply: (p, prm, ctx) => {
       const pe = staggered(p, ctx, prm.stagger);
-      const visible = pe > 0;
       // The "active" char is the first one partway through revealing; show a caret on it.
       const onCaret = pe > 0 && pe < 1;
       const blinkOn = prm.blink <= 0 ? 1 : (Math.floor(ctx.time * prm.blink * 2) % 2 === 0 ? 1 : 0);
       // Always emit borderRight (transparent when off) so no stale style is left behind.
       const caret = onCaret && blinkOn ? '0.12em solid currentColor' : '0.12em solid transparent';
-      return { opacity: visible ? 1 : 0, css: { borderRight: caret } };
+      // Soft per-char fade rather than a binary flip — smoother typing with the
+      // caret still riding the actively-revealing glyph.
+      return { opacity: ease('easeOutCubic', pe), css: { borderRight: caret } };
     },
   },
   {
@@ -187,7 +195,7 @@ export const textPresets: Preset[] = [
     defaultDuration: 1.4, apply: (p, prm, ctx) => {
       const pe = staggered(p, ctx, prm.stagger);
       const e = ease('easeOutBack', pe);
-      return { y: -(1 - e) * prm.distance, scale: 0.7 + 0.3 * ease('easeOutBack', pe), opacity: ease('easeOut', pe) };
+      return { y: -(1 - e) * prm.distance, scale: 0.7 + 0.3 * ease('easeOutBack', pe), opacity: ease('easeOutCubic', pe) };
     },
   },
   {
@@ -206,7 +214,7 @@ export const textPresets: Preset[] = [
       const rx = ((seed - Math.floor(seed)) * 2 - 1);
       const ry = ((Math.sin(ctx.index * 78.233 + 1.7) * 1271.137) % 1) * 2 - 1;
       const k = 1 - e;
-      return { x: rx * prm.amount * k, y: ry * prm.amount * k, rotate: rx * 35 * k, opacity: ease('easeOut', pe) };
+      return { x: rx * prm.amount * k, y: ry * prm.amount * k, rotate: rx * 35 * k, opacity: ease('easeOutCubic', pe) };
     },
   },
   {
@@ -248,7 +256,7 @@ export const textPresets: Preset[] = [
       const pe = staggered(p, ctx, prm.stagger);
       // Single crest: up then settle, using a half-sine envelope on top of the rise.
       const crest = Math.sin(ease('easeInOutCubic', pe) * Math.PI) * (1 - pe);
-      return { y: -crest * prm.amplitude, opacity: ease('easeOut', pe) };
+      return { y: -crest * prm.amplitude, opacity: ease('easeOutCubic', pe) };
     },
   },
   {

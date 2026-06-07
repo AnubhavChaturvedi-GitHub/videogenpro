@@ -4419,7 +4419,7 @@
       defaultDuration: 1.2,
       apply: (p, prm, ctx) => {
         const pe = staggered(p, ctx, prm.stagger);
-        return { opacity: pe > 0 ? 1 : 0 };
+        return { opacity: ease("easeOutCubic", pe) };
       }
     },
     {
@@ -4428,10 +4428,10 @@
       description: "Text pops in from small with a springy overshoot.",
       tags: ["enter", "bouncy", "emphasis"],
       params: { from: { default: 0.6, min: 0, max: 1, desc: "starting scale" } },
-      defaultDuration: 0.5,
+      defaultDuration: 0.55,
       apply: (p, prm) => {
         const e = ease("easeOutBack", p);
-        return { scale: prm.from + (1 - prm.from) * e, opacity: ease("easeOut", p) };
+        return { scale: prm.from + (1 - prm.from) * e, opacity: ease("easeOutCubic", p) };
       }
     },
     {
@@ -4442,7 +4442,7 @@
       params: { blur: { default: 16, min: 0, max: 60, unit: "px" } },
       defaultDuration: 0.7,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
+        const e = ease("easeOutExpo", p);
         return { blur: (1 - e) * prm.blur, opacity: e };
       }
     },
@@ -4455,7 +4455,7 @@
       defaultDuration: 0.6,
       apply: (p, prm) => {
         const e = ease("easeOutBack", p);
-        return { y: -(1 - e) * prm.distance, opacity: ease("easeOut", p) };
+        return { y: -(1 - e) * prm.distance, opacity: ease("easeOutCubic", p) };
       }
     },
     {
@@ -4464,10 +4464,10 @@
       description: "Headline slams in from oversized with an impact blur \u2014 high energy.",
       tags: ["enter", "impact", "bold"],
       params: { from: { default: 1.8, min: 1, max: 4, desc: "start scale" } },
-      defaultDuration: 0.5,
+      defaultDuration: 0.55,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
-        return { scale: prm.from - (prm.from - 1) * e, opacity: ease("easeOut", p), blur: (1 - e) * 12 };
+        const e = ease("easeOutExpo", p);
+        return { scale: prm.from - (prm.from - 1) * e, opacity: ease("easeOutCubic", p), blur: (1 - e) * 12 };
       }
     },
     {
@@ -4491,9 +4491,9 @@
       params: { amount: { default: 6, min: 0, max: 24, unit: "px" } },
       defaultDuration: 0.6,
       apply: (p, prm, ctx) => {
-        const e = ease("easeOutCubic", p);
+        const e = ease("easeOutExpo", p);
         const j = (1 - e) * prm.amount;
-        return { x: Math.sin(ctx.time * 60) * j, opacity: ease("easeOut", p), css: { textShadow: `${j}px 0 #ff00d4, ${-j}px 0 #00e5ff` } };
+        return { x: Math.sin(ctx.time * 60) * j, opacity: ease("easeOutCubic", p), css: { textShadow: `${j}px 0 #ff00d4, ${-j}px 0 #00e5ff` } };
       }
     },
     {
@@ -4557,7 +4557,8 @@
       params: { width: { default: 22, min: 5, max: 60, unit: "%", desc: "width of the moving highlight band" } },
       defaultDuration: 1.4,
       apply: (p, prm) => {
-        const pos = -prm.width + p * (100 + prm.width * 2);
+        const sp = ease("easeInOutCubic", p);
+        const pos = -prm.width + sp * (100 + prm.width * 2);
         const a = pos - prm.width, b = pos, c = pos + prm.width;
         return { css: {
           backgroundImage: `linear-gradient(110deg, currentColor ${a}%, #ffffff ${b}%, currentColor ${c}%)`,
@@ -4580,11 +4581,10 @@
       defaultDuration: 1.6,
       apply: (p, prm, ctx) => {
         const pe = staggered(p, ctx, prm.stagger);
-        const visible = pe > 0;
         const onCaret = pe > 0 && pe < 1;
         const blinkOn = prm.blink <= 0 ? 1 : Math.floor(ctx.time * prm.blink * 2) % 2 === 0 ? 1 : 0;
         const caret = onCaret && blinkOn ? "0.12em solid currentColor" : "0.12em solid transparent";
-        return { opacity: visible ? 1 : 0, css: { borderRight: caret } };
+        return { opacity: ease("easeOutCubic", pe), css: { borderRight: caret } };
       }
     },
     {
@@ -4601,7 +4601,7 @@
       apply: (p, prm, ctx) => {
         const pe = staggered(p, ctx, prm.stagger);
         const e = ease("easeOutBack", pe);
-        return { y: -(1 - e) * prm.distance, scale: 0.7 + 0.3 * ease("easeOutBack", pe), opacity: ease("easeOut", pe) };
+        return { y: -(1 - e) * prm.distance, scale: 0.7 + 0.3 * ease("easeOutBack", pe), opacity: ease("easeOutCubic", pe) };
       }
     },
     {
@@ -4622,7 +4622,7 @@
         const rx = (seed - Math.floor(seed)) * 2 - 1;
         const ry = Math.sin(ctx.index * 78.233 + 1.7) * 1271.137 % 1 * 2 - 1;
         const k = 1 - e;
-        return { x: rx * prm.amount * k, y: ry * prm.amount * k, rotate: rx * 35 * k, opacity: ease("easeOut", pe) };
+        return { x: rx * prm.amount * k, y: ry * prm.amount * k, rotate: rx * 35 * k, opacity: ease("easeOutCubic", pe) };
       }
     },
     {
@@ -4670,7 +4670,7 @@
       apply: (p, prm, ctx) => {
         const pe = staggered(p, ctx, prm.stagger);
         const crest = Math.sin(ease("easeInOutCubic", pe) * Math.PI) * (1 - pe);
-        return { y: -crest * prm.amplitude, opacity: ease("easeOut", pe) };
+        return { y: -crest * prm.amplitude, opacity: ease("easeOutCubic", pe) };
       }
     },
     {
@@ -4708,7 +4708,7 @@
       },
       defaultDuration: 5,
       apply: (p, prm) => {
-        const e = ease("easeInOut", p);
+        const e = ease("easeInOutCubic", p);
         return {
           scale: 1 + prm.zoom * e,
           x: prm.panX * 200 * e,
@@ -4791,7 +4791,7 @@
       defaultDuration: 1.2,
       apply: (p, prm) => {
         const e = ease("easeOutCubic", p);
-        return { css: { transform: `perspective(1200px) rotateY(${(1 - e) * prm.angle}deg)` }, opacity: ease("easeOut", p) };
+        return { css: { transform: `perspective(1200px) rotateY(${(1 - e) * prm.angle}deg)` }, opacity: ease("easeOutCubic", p) };
       }
     },
     {
@@ -4801,8 +4801,10 @@
       tags: ["ambient", "cinematic"],
       continuous: true,
       params: { from: { default: 1.3, min: 1, max: 2, desc: "start scale" } },
+      // C2-smooth symmetric curve eases the pull-back at both layer boundaries
+      // (no boundary jerk); same from->1 range, so the zoom amplitude is unchanged.
       defaultDuration: 5,
-      apply: (p, prm) => ({ scale: prm.from - (prm.from - 1) * ease("easeInOut", p) })
+      apply: (p, prm) => ({ scale: prm.from - (prm.from - 1) * ease("easeInOutCubic", p) })
     },
     {
       id: "image.breathe",
@@ -4845,10 +4847,13 @@
       description: "Image swings in on a slight tilt and settles upright.",
       tags: ["enter", "playful"],
       params: { angle: { default: 8, min: 0, max: 30, unit: "deg" } },
+      // Keep the playful easeOutBack overshoot for the swing; just silken the
+      // fade-in to a cubic so it doesn't snap to full opacity before the settle.
+      // apply(1): rotate 0, scale 1, opacity 1 (identity).
       defaultDuration: 0.7,
       apply: (p, prm) => {
         const e = ease("easeOutBack", p);
-        return { rotate: -(1 - e) * prm.angle, scale: 0.85 + 0.15 * e, opacity: ease("easeOut", p) };
+        return { rotate: -(1 - e) * prm.angle, scale: 0.85 + 0.15 * e, opacity: ease("easeOutCubic", p) };
       }
     },
     {
@@ -4873,7 +4878,7 @@
       },
       defaultDuration: 6,
       apply: (p, prm) => {
-        const e = ease("easeInOut", p);
+        const e = ease("easeInOutCubic", p);
         return { scale: 1 + prm.zoom, x: prm.shift * 200 * (e - 0.5) };
       }
     },
@@ -4980,7 +4985,7 @@
       },
       defaultDuration: 6,
       apply: (p, prm) => {
-        const e = ease("easeInOut", p);
+        const e = ease("easeInOutCubic", p);
         return { scale: prm.from + prm.zoom * e, x: prm.panX * 200 * e, y: prm.panY * 200 * e };
       }
     },
@@ -5371,7 +5376,7 @@
       tags: ["enter", "subtle"],
       params: {},
       defaultDuration: 0.6,
-      apply: (p) => ({ opacity: ease("easeOutCubic", p) })
+      apply: (p) => ({ opacity: ease("easeOutQuint", p) })
     },
     {
       id: "in.slide-left",
@@ -5381,7 +5386,7 @@
       params: { distance: { default: 120, min: 0, max: 800, unit: "px" } },
       defaultDuration: 0.6,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
+        const e = ease("easeOutQuint", p);
         return { x: -(1 - e) * prm.distance, opacity: e };
       }
     },
@@ -5393,7 +5398,7 @@
       params: { distance: { default: 120, min: 0, max: 800, unit: "px" } },
       defaultDuration: 0.6,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
+        const e = ease("easeOutQuint", p);
         return { x: (1 - e) * prm.distance, opacity: e };
       }
     },
@@ -5405,7 +5410,7 @@
       params: { distance: { default: 80, min: 0, max: 600, unit: "px" } },
       defaultDuration: 0.6,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
+        const e = ease("easeOutQuint", p);
         return { y: (1 - e) * prm.distance, opacity: e };
       }
     },
@@ -5417,8 +5422,8 @@
       params: { from: { default: 0.7, min: 0, max: 1, desc: "start scale" } },
       defaultDuration: 0.6,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
-        return { scale: prm.from + (1 - prm.from) * e, opacity: e };
+        const e = ease("easeOutBack", p);
+        return { scale: prm.from + (1 - prm.from) * e, opacity: ease("easeOutQuint", p) };
       }
     },
     {
@@ -5427,10 +5432,10 @@
       description: "Spins and scales into place.",
       tags: ["enter", "playful"],
       params: { turns: { default: 0.5, min: 0, max: 3, desc: "rotations" } },
-      defaultDuration: 0.7,
+      defaultDuration: 0.75,
       apply: (p, prm) => {
-        const e = ease("easeOutBack", p);
-        return { rotate: (1 - e) * prm.turns * 360, scale: 0.4 + 0.6 * e, opacity: ease("easeOut", p) };
+        const e = ease("easeOutExpo", p);
+        return { rotate: (1 - e) * prm.turns * 360, scale: 0.4 + 0.6 * ease("easeOutBack", p), opacity: ease("easeOutCubic", p) };
       }
     },
     {
@@ -5441,8 +5446,8 @@
       params: { blur: { default: 18, min: 0, max: 60, unit: "px" } },
       defaultDuration: 0.6,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
-        return { blur: (1 - e) * prm.blur, opacity: e };
+        const e = ease("easeOutExpo", p);
+        return { blur: (1 - e) * prm.blur, opacity: ease("easeOutQuint", p) };
       }
     },
     {
@@ -5451,10 +5456,10 @@
       description: "Zooms in from larger than life and settles to size.",
       tags: ["enter", "punchy"],
       params: { from: { default: 1.4, min: 1, max: 3, desc: "start scale" } },
-      defaultDuration: 0.6,
+      defaultDuration: 0.65,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
-        return { scale: prm.from - (prm.from - 1) * e, opacity: ease("easeOut", p) };
+        const e = ease("easeOutQuint", p);
+        return { scale: prm.from - (prm.from - 1) * e, opacity: ease("easeOutQuint", p) };
       }
     },
     {
@@ -5463,10 +5468,10 @@
       description: "Drops in from above with a soft bounce.",
       tags: ["enter", "vertical", "bouncy"],
       params: { distance: { default: 120, min: 0, max: 600, unit: "px" } },
-      defaultDuration: 0.6,
+      defaultDuration: 0.65,
       apply: (p, prm) => {
         const e = ease("easeOutBack", p);
-        return { y: -(1 - e) * prm.distance, opacity: ease("easeOut", p) };
+        return { y: -(1 - e) * prm.distance, opacity: ease("easeOutCubic", p) };
       }
     },
     {
@@ -5477,8 +5482,8 @@
       params: {},
       defaultDuration: 0.6,
       apply: (p) => {
-        const e = ease("easeOutCubic", p);
-        return { opacity: ease("easeOut", p), css: { transform: `perspective(1000px) rotateX(${(1 - e) * 90}deg)` } };
+        const e = ease("easeOutExpo", p);
+        return { opacity: ease("easeOutCubic", p), css: { transform: `perspective(1000px) rotateX(${(1 - e) * 90}deg)` } };
       }
     },
     {
@@ -5489,8 +5494,8 @@
       params: {},
       defaultDuration: 0.6,
       apply: (p) => {
-        const e = ease("easeOutCubic", p);
-        return { opacity: ease("easeOut", p), css: { transform: `perspective(1000px) rotateY(${(1 - e) * 90}deg)` } };
+        const e = ease("easeOutExpo", p);
+        return { opacity: ease("easeOutCubic", p), css: { transform: `perspective(1000px) rotateY(${(1 - e) * 90}deg)` } };
       }
     },
     {
@@ -5499,10 +5504,10 @@
       description: "Slides in with a dynamic skew that straightens out.",
       tags: ["enter", "energetic"],
       params: { skew: { default: 20, min: 0, max: 60, unit: "deg" }, distance: { default: 80, min: 0, max: 400, unit: "px" } },
-      defaultDuration: 0.55,
+      defaultDuration: 0.6,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
-        return { x: (1 - e) * prm.distance, opacity: ease("easeOut", p), css: { transform: `skewX(${(1 - e) * -prm.skew}deg)` } };
+        const e = ease("easeOutQuint", p);
+        return { x: (1 - e) * prm.distance, opacity: ease("easeOutCubic", p), css: { transform: `skewX(${(1 - e) * -prm.skew}deg)` } };
       }
     },
     {
@@ -5513,7 +5518,7 @@
       params: { distance: { default: 80, min: 0, max: 600, unit: "px" } },
       defaultDuration: 0.6,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
+        const e = ease("easeOutQuint", p);
         return { y: -(1 - e) * prm.distance, opacity: e };
       }
     },
@@ -5525,7 +5530,7 @@
       params: { distance: { default: 40, min: 0, max: 300, unit: "px" } },
       defaultDuration: 0.6,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
+        const e = ease("easeOutQuint", p);
         return { y: -(1 - e) * prm.distance, opacity: e };
       }
     },
@@ -5538,7 +5543,7 @@
       defaultDuration: 0.8,
       apply: (p, prm) => {
         const e = ease("easeOutBack", p);
-        return { y: -(1 - e) * prm.distance, scale: 0.9 + 0.1 * ease("easeOutBack", p), opacity: ease("easeOut", p) };
+        return { y: -(1 - e) * prm.distance, scale: 0.9 + 0.1 * ease("easeOutBack", p), opacity: ease("easeOutCubic", p) };
       }
     },
     {
@@ -5549,8 +5554,8 @@
       params: { angle: { default: 90, min: 0, max: 90, unit: "deg", desc: "start fold angle" } },
       defaultDuration: 0.7,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
-        return { opacity: ease("easeOut", p), css: { transform: `perspective(1200px) rotateX(${-(1 - e) * prm.angle}deg)`, transformOrigin: "top center" } };
+        const e = ease("easeOutExpo", p);
+        return { opacity: ease("easeOutCubic", p), css: { transform: `perspective(1200px) rotateX(${-(1 - e) * prm.angle}deg)`, transformOrigin: "top center" } };
       }
     },
     {
@@ -5559,10 +5564,10 @@
       description: "Rushes in from oversized with heavy motion blur that snaps into focus \u2014 high-impact arrival.",
       tags: ["enter", "punchy", "impact", "blur"],
       params: { from: { default: 1.6, min: 1, max: 3, desc: "start scale" }, blur: { default: 20, min: 0, max: 60, unit: "px" } },
-      defaultDuration: 0.55,
+      defaultDuration: 0.6,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
-        return { scale: prm.from - (prm.from - 1) * e, blur: (1 - e) * prm.blur, opacity: ease("easeOut", p) };
+        const e = ease("easeOutExpo", p);
+        return { scale: prm.from - (prm.from - 1) * e, blur: (1 - e) * prm.blur, opacity: ease("easeOutCubic", p) };
       }
     },
     {
@@ -5573,8 +5578,8 @@
       params: { distance: { default: 70, min: 0, max: 400, unit: "px" }, angle: { default: 8, min: 0, max: 30, unit: "deg" } },
       defaultDuration: 0.7,
       apply: (p, prm) => {
-        const e = ease("easeOutCubic", p);
-        return { y: (1 - e) * prm.distance, rotate: (1 - e) * prm.angle, opacity: e };
+        const e = ease("easeOutQuint", p);
+        return { y: (1 - e) * prm.distance, rotate: (1 - e) * prm.angle, opacity: ease("easeOutQuint", p) };
       }
     }
   ];
@@ -5589,7 +5594,7 @@
       params: {},
       defaultDuration: 0.6,
       fromEnd: true,
-      apply: (p) => ({ opacity: 1 - ease("easeIn", p) })
+      apply: (p) => ({ opacity: 1 - ease("easeInOutCubic", p) })
     },
     {
       id: "out.slide-right",
@@ -5600,7 +5605,7 @@
       defaultDuration: 0.6,
       fromEnd: true,
       apply: (p, prm) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInCubic", p);
         return { x: e * prm.distance, opacity: 1 - e };
       }
     },
@@ -5613,7 +5618,7 @@
       defaultDuration: 0.6,
       fromEnd: true,
       apply: (p, prm) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInCubic", p);
         return { y: e * prm.distance, opacity: 1 - e };
       }
     },
@@ -5626,7 +5631,7 @@
       defaultDuration: 0.6,
       fromEnd: true,
       apply: (p, prm) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInCubic", p);
         return { scale: 1 - (1 - prm.to) * e, opacity: 1 - e };
       }
     },
@@ -5639,7 +5644,7 @@
       defaultDuration: 0.6,
       fromEnd: true,
       apply: (p, prm) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInOutCubic", p);
         return { blur: e * prm.blur, opacity: 1 - e };
       }
     },
@@ -5652,7 +5657,7 @@
       defaultDuration: 0.5,
       fromEnd: true,
       apply: (p, prm) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInExpo", p);
         return { scale: 1 + (prm.to - 1) * e, opacity: 1 - e };
       }
     },
@@ -5665,7 +5670,7 @@
       defaultDuration: 0.6,
       fromEnd: true,
       apply: (p, prm) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInCubic", p);
         return { x: -e * prm.distance, opacity: 1 - e };
       }
     },
@@ -5678,7 +5683,7 @@
       defaultDuration: 0.6,
       fromEnd: true,
       apply: (p, prm) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInCubic", p);
         return { y: -e * prm.distance, opacity: 1 - e };
       }
     },
@@ -5691,7 +5696,7 @@
       defaultDuration: 0.6,
       fromEnd: true,
       apply: (p, prm) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInOutQuint", p);
         return { rotate: e * prm.turns * 360, scale: 1 - 0.6 * e, opacity: 1 - e };
       }
     },
@@ -5701,10 +5706,10 @@
       description: "Quick scale-up flicker then vanishes.",
       tags: ["exit", "snappy"],
       params: {},
-      defaultDuration: 0.4,
+      defaultDuration: 0.55,
       fromEnd: true,
       apply: (p) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInCubic", p);
         return { scale: 1 + 0.25 * Math.sin(e * Math.PI), opacity: 1 - e };
       }
     },
@@ -5730,7 +5735,7 @@
       defaultDuration: 0.5,
       fromEnd: true,
       apply: (p, prm, ctx) => {
-        const e = ease("easeIn", p);
+        const e = ease("easeInCubic", p);
         const j = Math.sin(ctx.time * 70) * prm.amount * e;
         return { x: j, opacity: 1 - e, css: { filter: "url(#vgp-rgb-split)" } };
       }
@@ -5758,7 +5763,7 @@
       fromEnd: true,
       apply: (p, prm) => {
         const e = ease("easeInCubic", p);
-        return { y: e * prm.distance, rotate: e * prm.angle, opacity: 1 - ease("easeIn", p) };
+        return { y: e * prm.distance, rotate: e * prm.angle, opacity: 1 - ease("easeInCubic", p) };
       }
     }
   ];
