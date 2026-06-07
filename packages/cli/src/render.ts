@@ -22,7 +22,18 @@ async function main() {
 
   const raw = JSON.parse(readFileSync(absComp, 'utf8'));
   const comp = validateComposition(raw);
-  const totalDur = compositionDuration(comp);
+  // #6: the export must run as long as the PREVIEW — include audio tails that extend past
+  // the last scene (compositionDuration only sums scene durations). Probe files lacking an
+  // explicit duration so render == preview for narration that overruns the visuals.
+  const probeDur = (f: string) => { try { const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f], { encoding: 'utf8' }); const d = parseFloat((r.stdout || '').trim()); return Number.isFinite(d) ? d : 0; } catch { return 0; } };
+  let audioEnd = 0;
+  for (const a of ((comp.audio ?? []) as any[])) {
+    if (a.muted) continue;
+    const file = (/^https?:|^file:/.test(a.src) ? a.src : resolve(dirname(absComp), a.src)).replace(/^file:\/\//, '');
+    const len = a.duration ?? (probeDur(file) - (a.trimStart ?? 0));
+    audioEnd = Math.max(audioEnd, (a.start ?? 0) + (Number.isFinite(len) && len > 0 ? len : 0));
+  }
+  const totalDur = Math.max(compositionDuration(comp), audioEnd);
   // B19: exactly round(totalDur*fps) frames, each at t = f/fps so the loop maps
   // cleanly onto [0, totalDur) — never requests t >= duration (which clamps oddly).
   const totalFrames = Math.max(1, Math.round(totalDur * comp.fps));
@@ -64,7 +75,7 @@ async function main() {
   for (const a of ((comp.audio ?? []) as any[])) { if (a.muted) continue; srcs.push({ src: a.src, start: a.start ?? 0, volume: a.volume ?? 1, trimStart: a.trimStart ?? 0, duration: a.duration, isVideo: false }); }
   { let off = 0; for (const s of comp.scenes) { for (const l of (s.layers as any[])) { if (l.type === 'video' && l.muted === false && l.src) srcs.push({ src: l.src, start: off + (l.start ?? 0), volume: l.volume ?? 1, trimStart: l.trimStart ?? 0, duration: l.duration ?? s.duration, isVideo: true }); } off += s.duration; } }
   const resolveSrc = (src: string) => (/^https?:|^file:/.test(src) ? src : resolve(dirname(absComp), src));
-  const hasAudioStream = (file: string): boolean => { try { const r = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', file], { encoding: 'utf8' }); return r.status === 0 && /\d/.test(r.stdout || ''); } catch { return true; } };
+  const hasAudioStream = (file: string): boolean => { try { const r = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', file], { encoding: 'utf8' }); if (r.error || r.status === null) return true; /* #21: ffprobe missing → assume audio present, don't silently drop real audio */ return r.status === 0 && /\d/.test(r.stdout || ''); } catch { return true; } };
   // B06: skip missing files; also skip a video whose file has NO audio stream (ffmpeg
   // would abort on a missing [a] pad). Resolve relative paths against the composition dir.
   const tracks = srcs.filter((a) => {
