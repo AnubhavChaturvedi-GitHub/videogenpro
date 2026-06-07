@@ -571,20 +571,38 @@ function buildTimeline() {
         const additive = e.shiftKey || e.metaKey || e.ctrlKey;
         const rectLeft = $('tlInner').getBoundingClientRect().left; // cache before any rebuild (B-clip-click)
         const tl = $('tlScroll');
-        const sx = e.clientX, sy = e.clientY, os = layer.start ?? 0, scrollStart = tl.scrollTop;
-        let cand = os; let dyFinal = 0; let lastY = sy; let autoT: any = null;
+        const sx = e.clientX, sy = e.clientY, os = layer.start ?? 0, scrollStart = tl.scrollTop, scrollStartX = tl.scrollLeft;
+        let cand = os; let dyFinal = 0; let lastY = sy; let lastX = sx; let lastAlt = false; let autoT: any = null;
         // reorder distance is measured in CONTENT space (pointerΔ + scrollΔ) so it keeps
         // growing while the timeline auto-scrolls under a pinned cursor.
         const refreshReorder = () => { dyFinal = (lastY - sy) + (tl.scrollTop - scrollStart); clip.style.transform = `translateY(${dyFinal}px)`; clip.style.zIndex = '60'; clip.style.opacity = '.85'; };
-        // while reordering with the cursor near the top/bottom edge, auto-scroll so
-        // off-screen tracks become reachable, then recompute the drag distance.
+        // recompute the clip's TIME position from the pointer in CONTENT space
+        // (pointerΔ + horizontal scrollΔ) so it keeps moving while the timeline auto-
+        // scrolls horizontally under a pinned cursor. (uses sceneOff/allowCrossScene/
+        // maxStart, declared below — only ever invoked from mv/autoTick, after init.)
+        const refreshTime = () => {
+          const effDx = (lastX - sx) + (tl.scrollLeft - scrollStartX);
+          const snappedAbs = snapTime(sceneOff + os + effDx / S.pxPerSec, allowCrossScene ? [0, S.playhead, ...S.offsets, effectiveTotal()] : sceneSnapTargets(si, scene, li), lastAlt);
+          if (allowCrossScene) { cand = clampStart(snappedAbs, Math.max(0, effectiveTotal() - 0.1)); clip.style.left = (LABELW + cand * S.pxPerSec) + 'px'; }
+          else { cand = clampStart(snappedAbs - sceneOff, maxStart); clip.style.left = (LABELW + (sceneOff + cand) * S.pxPerSec) + 'px'; }
+        };
+        // while dragging near an edge, auto-scroll: VERTICAL for a reorder, HORIZONTAL
+        // for a time-move; then recompute the respective drag position.
         const autoTick = () => {
-          const r = tl.getBoundingClientRect(); const EDGE = 32, max = tl.scrollHeight - tl.clientHeight;
-          let d = 0;
-          if (lastY < r.top + EDGE) d = -Math.ceil((r.top + EDGE - lastY) / 4);
-          else if (lastY > r.bottom - EDGE) d = Math.ceil((lastY - (r.bottom - EDGE)) / 4);
-          const next = Math.max(0, Math.min(max, tl.scrollTop + d));
-          if (d && next !== tl.scrollTop) { tl.scrollTop = next; refreshReorder(); }
+          const r = tl.getBoundingClientRect(); const EDGE = 32;
+          if (gesture === 'reorder') {
+            const max = tl.scrollHeight - tl.clientHeight; let d = 0;
+            if (lastY < r.top + EDGE) d = -Math.ceil((r.top + EDGE - lastY) / 4);
+            else if (lastY > r.bottom - EDGE) d = Math.ceil((lastY - (r.bottom - EDGE)) / 4);
+            const next = Math.max(0, Math.min(max, tl.scrollTop + d));
+            if (d && next !== tl.scrollTop) { tl.scrollTop = next; refreshReorder(); }
+          } else if (gesture === 'time') {
+            const max = tl.scrollWidth - tl.clientWidth; let d = 0;
+            if (lastX < r.left + LABELW + EDGE) d = -Math.ceil((r.left + LABELW + EDGE - lastX) / 3);
+            else if (lastX > r.right - EDGE) d = Math.ceil((lastX - (r.right - EDGE)) / 3);
+            const next = Math.max(0, Math.min(max, tl.scrollLeft + d));
+            if (d && next !== tl.scrollLeft) { tl.scrollLeft = next; refreshTime(); }
+          }
         };
         // The gesture is decided on the first significant movement, then locked:
         //  - mostly-HORIZONTAL drag  -> MOVE the clip in time (start).
@@ -609,26 +627,14 @@ function buildTimeline() {
         // ANYWHERE on the timeline (across scene seams), reassigning scene on drop.
         const allowCrossScene = layer.type !== 'fx';
         const mv = (ev: MouseEvent) => {
-          lastY = ev.clientY;
+          lastX = ev.clientX; lastY = ev.clientY; lastAlt = ev.altKey;
           const dx = ev.clientX - sx, dy = ev.clientY - sy;
           if (!gesture && (Math.abs(dx) > 4 || Math.abs(dy) > 6)) {
             gesture = (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6) ? 'reorder' : 'time';
-            if (gesture === 'reorder' && !autoT) autoT = setInterval(autoTick, 16); // edge auto-scroll while reordering
+            if (!autoT) autoT = setInterval(autoTick, 16); // edge auto-scroll: vertical for reorder, horizontal for time
           }
-          if (gesture === 'time') {
-            // snap the clip's absolute START to significant times (playhead/scene
-            // seams/0/total); Alt bypasses. fx stays scene-local; others go absolute.
-            const snappedAbs = snapTime(sceneOff + os + dx / S.pxPerSec, allowCrossScene ? [0, S.playhead, ...S.offsets, effectiveTotal()] : sceneSnapTargets(si, scene, li), ev.altKey);
-            if (allowCrossScene) {
-              cand = clampStart(snappedAbs, Math.max(0, effectiveTotal() - 0.1)); // cand = ABSOLUTE timeline start
-              clip.style.left = (LABELW + cand * S.pxPerSec) + 'px';
-            } else {
-              cand = clampStart(snappedAbs - sceneOff, maxStart); // scene-local
-              clip.style.left = (LABELW + (sceneOff + cand) * S.pxPerSec) + 'px';
-            }
-          } else if (gesture === 'reorder') {
-            refreshReorder();
-          }
+          if (gesture === 'time') refreshTime();
+          else if (gesture === 'reorder') refreshReorder();
         };
         const up = () => {
           window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); window.removeEventListener('blur', up);
