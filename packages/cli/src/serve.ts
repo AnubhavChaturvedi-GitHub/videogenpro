@@ -22,6 +22,10 @@ const withinRoot = (f: string) => { const r = relative(root, f); return r === ''
 
 let active = resolve(process.cwd(), process.argv[2] ?? 'examples/hello.json');
 if (!existsSync(active)) { console.error('composition not found:', active); process.exit(1); }
+// The exact bytes we last wrote to / read from `active`. When the file-watcher fires for
+// OUR OWN write, the on-disk bytes equal this → we skip the broadcast, so a user's save
+// never echoes back as a phantom "agent edit" and can't start the save↔SSE wipe-loop (bug #3).
+let knownBytes = '';
 const PORT = Number(process.argv[3] ?? 5174);
 const projectsDir = dirname(active);
 const assetBaseFor = (f: string) => '/' + relative(root, dirname(f)).split(/[\\/]/).join('/') + '/';
@@ -35,7 +39,12 @@ const MIME: Record<string, string> = {
 const sse = new Set<ServerResponse>();
 const send = (obj: any) => { const s = `data: ${JSON.stringify(obj)}\n\n`; for (const r of sse) r.write(s); };
 function broadcastDoc() {
-  try { send({ t: 'doc', ir: JSON.parse(readFileSync(active, 'utf8')) }); } catch {}
+  try {
+    const txt = readFileSync(active, 'utf8');
+    if (txt === knownBytes) return;   // our own write echoing back — don't bounce it to clients (bug #3)
+    knownBytes = txt;
+    send({ t: 'doc', ir: JSON.parse(txt) });
+  } catch {}
 }
 
 let watcher: FSWatcher;
@@ -53,13 +62,15 @@ const server = createServer((req, res) => {
   const url = new URL(req.url!, `http://localhost:${PORT}`);
   const path = url.pathname;
 
-  if (path === '/api/composition' && req.method === 'GET')
-    return json(res, 200, { ir: JSON.parse(readFileSync(active, 'utf8')), assetBase: assetBaseFor(active), file: relative(root, active) });
+  if (path === '/api/composition' && req.method === 'GET') {
+    const txt = readFileSync(active, 'utf8'); knownBytes = txt;
+    return json(res, 200, { ir: JSON.parse(txt), assetBase: assetBaseFor(active), file: relative(root, active) });
+  }
 
   if (path === '/api/composition' && req.method === 'POST') {
     let body = ''; req.on('data', (c) => (body += c));
     req.on('end', () => {
-      try { validateComposition(JSON.parse(body)); writeFileSync(active, body); json(res, 200, { ok: true }); }
+      try { validateComposition(JSON.parse(body)); knownBytes = body; writeFileSync(active, body); json(res, 200, { ok: true }); }
       catch (e: any) { json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
     });
     return;
@@ -80,7 +91,8 @@ const server = createServer((req, res) => {
         const f = resolve(root, rel);
         if (!withinRoot(f) || !existsSync(f)) return json(res, 400, { ok: false, error: 'not found' });
         active = f; setWatch(active);
-        json(res, 200, { ok: true, ir: JSON.parse(readFileSync(active, 'utf8')), assetBase: assetBaseFor(active), file: relative(root, active) });
+        const txt = readFileSync(active, 'utf8'); knownBytes = txt;
+        json(res, 200, { ok: true, ir: JSON.parse(txt), assetBase: assetBaseFor(active), file: relative(root, active) });
       } catch (e: any) { json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
     });
     return;
@@ -101,7 +113,7 @@ const server = createServer((req, res) => {
         if (ir) { doc = JSON.parse(JSON.stringify(ir)); validateComposition(doc); }      // imported content (validated)
         else doc = { fps: 30, width: Number(width) || 1920, height: Number(height) || 1080, scenes: [{ id: 'scene-1', duration: 5, background: '#0a0a0a', layers: [] }] };
         if (!doc.name) doc.name = String(name || 'Untitled').trim() || 'Untitled';
-        writeFileSync(file, JSON.stringify(doc, null, 2));
+        const out = JSON.stringify(doc, null, 2); knownBytes = out; writeFileSync(file, out);
         active = file; setWatch(active);
         json(res, 200, { ok: true, ir: doc, assetBase: assetBaseFor(active), file: relative(root, active) });
       } catch (e: any) { json(res, 400, { ok: false, error: String(e?.message ?? e) }); }
