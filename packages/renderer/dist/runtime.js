@@ -25188,6 +25188,7 @@ void main() {
     external_exports.object({ ...baseLayer, type: external_exports.literal("image"), src: external_exports.string(), fit: external_exports.enum(["cover", "contain"]).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("video"), src: external_exports.string(), trimStart: external_exports.number().nonnegative().finite().optional(), fit: external_exports.enum(["cover", "contain"]).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("html"), html: external_exports.string() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("hyperframes"), src: external_exports.string() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("three"), scene: external_exports.string(), props: external_exports.record(external_exports.number()).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("shape"), shape: external_exports.enum(["rect", "circle", "line"]), fill: external_exports.string().optional(), radius: external_exports.number().optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("overlay"), effect: overlayEffect, params: external_exports.record(external_exports.number()).optional() }),
@@ -25589,6 +25590,34 @@ void main() {
         el.innerHTML = layer2.html;
         break;
       }
+      case "hyperframes": {
+        const iframe = document.createElement("iframe");
+        iframe.src = resolveSrc(layer2.src);
+        iframe.style.width = "100%";
+        iframe.style.height = "100%";
+        iframe.style.border = "0";
+        iframe.setAttribute("scrolling", "no");
+        el.style.overflow = "hidden";
+        el.appendChild(iframe);
+        node.iframe = iframe;
+        node.hfReady = new Promise((res) => {
+          let done = false;
+          const finish = async () => {
+            if (done) return;
+            done = true;
+            try {
+              const d = iframe.contentDocument;
+              if (d?.fonts?.ready) await d.fonts.ready;
+            } catch {
+            }
+            res();
+          };
+          if (iframe.contentDocument && iframe.contentDocument.readyState === "complete") finish();
+          else iframe.addEventListener("load", finish, { once: true });
+          setTimeout(finish, 8e3);
+        });
+        break;
+      }
       case "three": {
         const canvas = document.createElement("canvas");
         const w = layer2.rect?.w ?? comp.width;
@@ -25736,6 +25765,17 @@ void main() {
       combine(wholeDelta, preset.apply(p, resolveParams(preset, e.inst.params), { index: 0, count: 1, time: e.localT, dur: e.dur }));
     }
     applyDelta(ln.el, wholeDelta);
+    if (ln.iframe) {
+      const w = ln.iframe.contentWindow;
+      const tl = w && w.__timelines && w.__timelines.root;
+      if (tl) {
+        try {
+          tl.pause();
+          tl.time(Math.max(0, Math.min(layerLocalT, tl.duration())), false);
+        } catch {
+        }
+      }
+    }
     if (ln.media) {
       const c = layer2.crop;
       ln.media.style.clipPath = c && (c.t || c.r || c.b || c.l) ? `inset(${c.t || 0}% ${c.r || 0}% ${c.b || 0}% ${c.l || 0}%)` : "";
@@ -25987,6 +26027,14 @@ void main() {
     if (document.fonts?.ready) {
       try {
         await document.fonts.ready;
+      } catch {
+      }
+    }
+    const hfReadies = sceneNodes.flatMap((sn) => sn.layers.map((ln) => ln.hfReady)).filter(Boolean);
+    if (hfReadies.length) {
+      try {
+        await Promise.all(hfReadies.map((p) => p.catch(() => {
+        })));
       } catch {
       }
     }

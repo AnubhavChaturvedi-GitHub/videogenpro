@@ -5,3 +5,6 @@ out/
 .vgp-cache/
 
 composition.json
+assets/
+composition-*.json
+project-python/

@@ -19,6 +19,8 @@ type LayerNode = {
   video?: HTMLVideoElement;
   media?: HTMLImageElement | HTMLVideoElement; // the img/video element (cropped via clip-path)
   fxLayers?: any[];            // fx control-layers that target THIS layer (drive effects onto it)
+  iframe?: HTMLIFrameElement;  // hyperframes layer: the embedded HyperFrames scene
+  hfReady?: Promise<void>;     // resolves when the embedded scene + its fonts have loaded
 };
 type ThreeHandle = { render: (t: number, props: Record<string, number>) => void; dispose?: () => void };
 
@@ -444,6 +446,32 @@ function buildLayer(layer: Layer, sceneDur: number, fxLayers: any[] = []): Layer
       el.innerHTML = layer.html;
       break;
     }
+    case 'hyperframes': {
+      // Embed the original HyperFrames scene EXACTLY in a same-origin iframe. Its inline
+      // script builds a PAUSED GSAP timeline at window.__timelines.root; renderLayer drives
+      // it via tl.time(layerLocalT) on every seek -> deterministic, render == preview.
+      const iframe = document.createElement('iframe');
+      iframe.src = resolveSrc(layer.src);
+      iframe.style.width = '100%'; iframe.style.height = '100%'; iframe.style.border = '0';
+      iframe.setAttribute('scrolling', 'no');
+      el.style.overflow = 'hidden';
+      el.appendChild(iframe);
+      node.iframe = iframe;
+      // ready gate: resolve once the embedded doc is loaded AND its fonts are ready, with a
+      // timeout backstop (mirrors the video readiness handling) so a failed embed never hangs.
+      node.hfReady = new Promise<void>((res) => {
+        let done = false;
+        const finish = async () => {
+          if (done) return; done = true;
+          try { const d = iframe.contentDocument as any; if (d?.fonts?.ready) await d.fonts.ready; } catch {}
+          res();
+        };
+        if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') finish();
+        else iframe.addEventListener('load', finish, { once: true });
+        setTimeout(finish, 8000);
+      });
+      break;
+    }
     case 'three': {
       const canvas = document.createElement('canvas');
       const w = layer.rect?.w ?? comp.width;
@@ -620,6 +648,14 @@ function renderLayer(ln: LayerNode, sceneLocalT: number, sceneDur: number) {
     combine(wholeDelta, preset.apply(p, resolveParams(preset, e.inst.params), { index: 0, count: 1, time: e.localT, dur: e.dur }));
   }
   applyDelta(ln.el, wholeDelta);
+
+  // hyperframes embed: drive the scene's PAUSED GSAP timeline to the layer-local time.
+  // Pure function of seek time (tl.time is a deterministic seek) -> render == preview.
+  if (ln.iframe) {
+    const w = ln.iframe.contentWindow as any;
+    const tl = w && w.__timelines && w.__timelines.root;
+    if (tl) { try { tl.pause(); tl.time(Math.max(0, Math.min(layerLocalT, tl.duration())), false); } catch {} }
+  }
 
   // crop (image/video): clip the MEDIA element by inset % — applied here (not on el) so
   // it never fights el's preset clip-path/transform. Pure fn of layer.crop -> deterministic,
@@ -841,6 +877,9 @@ async function ready(): Promise<void> {
   const imgs = Array.from(stage.querySelectorAll('img'));
   await Promise.all(imgs.map((img) => img.complete ? Promise.resolve() : new Promise((res) => { img.onload = img.onerror = () => res(null); })));
   if ((document as any).fonts?.ready) { try { await (document as any).fonts.ready; } catch {} }
+  // wait for any embedded HyperFrames scenes (iframe doc + its fonts) before the first seek
+  const hfReadies = sceneNodes.flatMap((sn) => sn.layers.map((ln) => ln.hfReady)).filter(Boolean) as Promise<void>[];
+  if (hfReadies.length) { try { await Promise.all(hfReadies.map((p) => p.catch(() => {}))); } catch {} }
   // prime videos for the first seek. A failed/aborted/stalled video must NOT hang
   // ready() forever — that would block editor init's buildTimeline()/renderRight()
   // (silent blank UI) and render.ts's `await ready()`. Resolve on 'error' too (mirrors

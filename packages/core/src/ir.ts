@@ -29,7 +29,7 @@ export type Transform = {
   anchor?: Vec2;    // 0..1 within layer box; default [0.5, 0.5]
 };
 
-export type LayerType = 'text' | 'image' | 'video' | 'html' | 'three' | 'shape' | 'overlay' | 'fx';
+export type LayerType = 'text' | 'image' | 'video' | 'html' | 'three' | 'shape' | 'overlay' | 'fx' | 'hyperframes';
 
 export interface BaseLayer {
   id?: string;
@@ -88,6 +88,16 @@ export interface ThreeLayer extends BaseLayer {
   props?: Record<string, number>;
 }
 
+// A self-contained HyperFrames scene embedded EXACTLY (its own HTML/CSS/GSAP), mounted
+// in a same-origin iframe and driven deterministically by seek: the runtime sets the
+// scene's paused GSAP timeline (window.__timelines.root) to the layer-local time. This
+// is the "exact render" path — VGP hosts/edits/renders, but the frame is the original
+// HyperFrames composition pixel-for-pixel, so render == preview still holds.
+export interface HyperframesLayer extends BaseLayer {
+  type: 'hyperframes';
+  src: string;        // url to the HyperFrames scene index.html (exposes window.__timelines.root)
+}
+
 export interface ShapeLayer extends BaseLayer {
   type: 'shape';
   shape: 'rect' | 'circle' | 'line';
@@ -109,7 +119,7 @@ export interface FxLayer extends BaseLayer {
   params?: Record<string, number>;
 }
 
-export type Layer = TextLayer | ImageLayer | VideoLayer | HtmlLayer | ThreeLayer | ShapeLayer | OverlayLayer | FxLayer;
+export type Layer = TextLayer | ImageLayer | VideoLayer | HtmlLayer | ThreeLayer | ShapeLayer | OverlayLayer | FxLayer | HyperframesLayer;
 
 export interface Scene {
   id?: string;

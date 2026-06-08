@@ -22188,6 +22188,7 @@
     external_exports.object({ ...baseLayer, type: external_exports.literal("image"), src: external_exports.string(), fit: external_exports.enum(["cover", "contain"]).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("video"), src: external_exports.string(), trimStart: external_exports.number().nonnegative().finite().optional(), fit: external_exports.enum(["cover", "contain"]).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("html"), html: external_exports.string() }),
+    external_exports.object({ ...baseLayer, type: external_exports.literal("hyperframes"), src: external_exports.string() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("three"), scene: external_exports.string(), props: external_exports.record(external_exports.number()).optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("shape"), shape: external_exports.enum(["rect", "circle", "line"]), fill: external_exports.string().optional(), radius: external_exports.number().optional() }),
     external_exports.object({ ...baseLayer, type: external_exports.literal("overlay"), effect: overlayEffect, params: external_exports.record(external_exports.number()).optional() }),

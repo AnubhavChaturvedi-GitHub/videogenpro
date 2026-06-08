@@ -5,14 +5,22 @@
 // the audio is muxed once at the end.
 import { chromium, type Browser } from 'playwright';
 import { spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
-import { cpus } from 'node:os';
+import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve, join, extname, normalize, sep } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, createReadStream, statSync } from 'node:fs';
+import { cpus, totalmem } from 'node:os';
 import { validateComposition, compositionDuration } from '../../core/src/index';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '../../..');
+
+// Supersampling factor: capture each frame at SSAA× the comp resolution (Playwright
+// deviceScaleFactor), then downscale (lanczos) to output. DEFAULT 1 = render at the comp's NATIVE
+// resolution — since the comp is authored at 1920×1080 that is already crisp (vector text/SVG/CSS
+// render at full res; raster is downscaled from high-res sources), and it is ~4× faster + ~4× less
+// memory than SSAA2. Bump VGP_SSAA=1.5 or 2 for extra edge anti-aliasing at a real time/RAM cost.
+const SSAA = Math.max(1, Number(process.env.VGP_SSAA) || 1);
 
 // Build the ffmpeg audio inputs + filtergraph for the composition's audio (composition tracks
 // PLUS any video layer whose own audio is enabled). Input 0 of the final mux is the video, so
@@ -44,10 +52,60 @@ function buildAudio(comp: any, absComp: string) {
   return { audioArgs, filters, hasAudio };
 }
 
+const MIME: Record<string, string> = {
+  '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json',
+  '.css': 'text/css', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf',
+  '.png': 'image/png', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg',
+};
+
+// Minimal static file server with HTTP range support. Two mounts: '/__asset/<p>' serves from the
+// composition dir; everything else serves from the repo root (the renderer package). Serving over
+// HTTP (not file://) gives the render host page AND any embedded hyperframes iframe the SAME origin,
+// so the runtime can drive the embed's GSAP timeline cross-frame — file:// gives every frame a
+// "null" origin, which the browser treats as cross-origin and blocks (SecurityError).
+function startStaticServer(rootDir: string, assetDir: string): Promise<{ port: number; close: () => Promise<void> }> {
+  const safeJoin = (base: string, p: string): string | null => {
+    const full = normalize(join(base, decodeURIComponent(p)));
+    return (full === base || full.startsWith(base + sep)) ? full : null;
+  };
+  const server = createServer((req, res) => {
+    try {
+      let pathname = new URL(req.url || '/', 'http://localhost').pathname;
+      let base = rootDir;
+      if (pathname.startsWith('/__asset/')) { base = assetDir; pathname = pathname.slice('/__asset'.length); }
+      const file = safeJoin(base, pathname);
+      if (!file) { res.statusCode = 404; res.end('not found'); return; }
+      let st; try { st = statSync(file); } catch { res.statusCode = 404; res.end('not found'); return; }
+      if (st.isDirectory()) { res.statusCode = 404; res.end('not found'); return; }
+      res.setHeader('Content-Type', MIME[extname(file).toLowerCase()] || 'application/octet-stream');
+      res.setHeader('Accept-Ranges', 'bytes');
+      const m = req.headers.range ? /bytes=(\d*)-(\d*)/.exec(req.headers.range) : null;
+      if (m) {
+        let start = m[1] ? parseInt(m[1], 10) : 0;
+        let end = m[2] ? parseInt(m[2], 10) : st.size - 1;
+        if (!Number.isFinite(start)) start = 0;
+        if (!Number.isFinite(end) || end >= st.size) end = st.size - 1;
+        if (start > end) { res.statusCode = 416; res.setHeader('Content-Range', `bytes */${st.size}`); res.end(); return; }
+        res.statusCode = 206;
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${st.size}`);
+        res.setHeader('Content-Length', String(end - start + 1));
+        createReadStream(file, { start, end }).pipe(res);
+      } else {
+        res.statusCode = 200;
+        res.setHeader('Content-Length', String(st.size));
+        createReadStream(file).pipe(res);
+      }
+    } catch { res.statusCode = 500; res.end('error'); }
+  });
+  return new Promise((res) => server.listen(0, '127.0.0.1', () => res({ port: (server.address() as any).port, close: () => new Promise<void>((r) => server.close(() => r())) })));
+}
+
 // Render frames [startF, endF) to `segOut` (video-only). Each segment runs on its own page so
 // they render concurrently. onFrame is called once per completed frame (progress + preview).
 async function renderSegment(browser: Browser, resolved: any, indexUrl: string, fps: number, startF: number, endF: number, segOut: string, onFrame: (buf: Buffer) => void, scaleFilter: string) {
-  const page = await browser.newPage({ viewport: { width: resolved.width, height: resolved.height }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: resolved.width, height: resolved.height }, deviceScaleFactor: SSAA });
   page.setDefaultTimeout(20000); // a wedged/crashed page errors out (diagnosable) instead of hanging the export forever
   page.on('pageerror', () => {}); // non-fatal (e.g. browser can't fetch() file:// audio for waveforms)
   // tsx (esbuild keepNames) wraps named inner fns in __name(); that helper is absent in the
@@ -144,16 +202,24 @@ async function main() {
   const targetH = heightArg ? Math.max(2, Math.round(Number(heightArg))) : comp.height;
   const tH = targetH - (targetH % 2);
   let tW = Math.round((comp.width / comp.height) * tH); tW -= tW % 2;
-  const scaleFilter = (tH !== comp.height || tW !== comp.width) ? `scale=${tW}:${tH}:flags=lanczos` : '';
+  // Frames are captured at SSAA× (deviceScaleFactor); always downscale the supersampled capture
+  // to the target output (lanczos) — this is what turns the 4K capture into a crisp 1080p.
+  const shotW = comp.width * SSAA, shotH = comp.height * SSAA;
+  const scaleFilter = (shotW !== tW || shotH !== tH) ? `scale=${tW}:${tH}:flags=lanczos` : '';
 
   if (!existsSync(resolve(root, 'packages/renderer/dist/runtime.js'))) { console.error('runtime not built. run: pnpm build:runtime'); process.exit(1); }
   if (spawnSync('ffmpeg', ['-version'], { encoding: 'utf8' }).status !== 0) { console.error('ffmpeg not found on PATH — install ffmpeg to export video.'); process.exit(1); }
 
   // resolve asset paths (image/video AND audio) relative to the composition file for the browser
-  const assetBase = pathToFileURL(dirname(absComp) + '/').href;
+  // Serve renderer package + composition dir over HTTP so the host page and any embedded
+  // hyperframes iframe share an origin (see startStaticServer). Asset srcs resolve to the
+  // '/__asset/' mount; the hyperframes embed is resolved the same way as image/video.
+  const srv = await startStaticServer(root, dirname(absComp));
+  const origin = `http://127.0.0.1:${srv.port}`;
+  const assetBase = `${origin}/__asset/`;
   const resolved = JSON.parse(JSON.stringify(comp));
   for (const s of resolved.scenes) for (const l of s.layers) {
-    if ((l.type === 'image' || l.type === 'video') && l.src && !/^https?:|^file:/.test(l.src)) l.src = new URL(l.src, assetBase).href;
+    if ((l.type === 'image' || l.type === 'video' || l.type === 'hyperframes') && l.src && !/^https?:|^file:/.test(l.src)) l.src = new URL(l.src, assetBase).href;
   }
   for (const a of ((resolved.audio ?? []) as any[])) { if (a.src && !/^https?:|^file:/.test(a.src)) a.src = new URL(a.src, assetBase).href; }
 
@@ -162,15 +228,23 @@ async function main() {
   // Parallelism: one page per worker. Default to (cores-1) capped at 6 for memory; override with
   // VGP_WORKERS=N to push it harder on a big machine. Tiny renders stay single-threaded.
   const envWorkers = Number(process.env.VGP_WORKERS);
-  let workers = Number.isInteger(envWorkers) && envWorkers > 0 ? envWorkers : Math.min(6, Math.max(1, cpus().length - 1));
+  // Default: one parallel worker per CPU (minus one for the OS/encoder), capped by RAM because
+  // each SSAA page is memory-heavy (~2GB budget/worker at 4K). On a 10-core/16GB Mac → 8 workers
+  // (was hard-capped at 6). Override with VGP_WORKERS=N to push harder or throttle.
+  // Per-worker RAM scales with the capture AREA (~SSAA²): a 4K (SSAA2) page costs ~4× a native
+  // 1080p one. Cap workers by RAM so we NEVER oversubscribe into swap — paging is far slower than
+  // running fewer workers (that was the regression). 16GB → ~9 workers at SSAA1, ~4 at SSAA2.
+  const perWorkerGB = Math.max(1.0, SSAA * SSAA);
+  const memCap = Math.max(1, Math.floor(totalmem() / 1e9 / perWorkerGB));
+  let workers = Number.isInteger(envWorkers) && envWorkers > 0 ? envWorkers : Math.min(Math.max(1, cpus().length - 1), memCap);
   if (totalFrames < 90) workers = 1;
   const per = Math.ceil(totalFrames / workers);
   const ranges: [number, number][] = [];
   for (let i = 0; i < workers; i++) { const s = i * per, e = Math.min(totalFrames, (i + 1) * per); if (s < e) ranges.push([s, e]); }
-  console.log(`▶ ${tW}x${tH} @ ${comp.fps}fps · ${totalDur.toFixed(2)}s · ${totalFrames} frames · ${ranges.length} worker(s)${scaleFilter ? ` (scaled from ${comp.width}x${comp.height})` : ''}`);
+  console.log(`▶ ${tW}x${tH} @ ${comp.fps}fps · ${totalDur.toFixed(2)}s · ${totalFrames} frames · ${ranges.length} worker(s) · SSAA ${SSAA}x (capture ${comp.width * SSAA}x${comp.height * SSAA})`);
 
   const browser = await chromium.launch({ args: ['--disable-gpu-vsync', '--force-color-profile=srgb'] });
-  const indexUrl = pathToFileURL(resolve(root, 'packages/renderer/index.html')).href;
+  const indexUrl = `${origin}/packages/renderer/index.html`;
   const outDir = dirname(absOut);
   const segPaths = ranges.map((_, i) => resolve(outDir, `._vgpseg_${i}.mp4`));
   let doneCount = 0;
@@ -178,7 +252,7 @@ async function main() {
 
   try {
     await Promise.all(ranges.map((r, i) => renderSegment(browser, resolved, indexUrl, comp.fps, r[0], r[1], segPaths[i], onFrame, scaleFilter)));
-  } finally { await browser.close(); }
+  } finally { await browser.close(); await srv.close(); }
 
   // concat the segments (stream copy — each starts on a keyframe, so it's seamless)
   let videoFile = segPaths[0];
